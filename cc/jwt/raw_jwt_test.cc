@@ -17,10 +17,14 @@
 #include "tink/jwt/raw_jwt.h"
 
 #include <string>
+#include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/escaping.h"
+#include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 #include "tink/util/test_util.h"
 
@@ -473,7 +477,15 @@ TEST(RawJwt, GetJsonPayload) {
       RawJwtBuilder().SetIssuer("issuer").WithoutExpiration().Build();
   ASSERT_THAT(jwt, IsOk());
 
-  ASSERT_THAT(jwt->GetJsonPayload(), IsOkAndHolds(R"({"iss":"issuer"})"));
+  EXPECT_THAT(jwt->GetJsonPayload(), IsOkAndHolds(R"({"iss":"issuer"})"));
+}
+
+TEST(RawJwt, IntegerIsEncodedAsInteger) {
+  util::StatusOr<RawJwt> jwt =
+      RawJwtBuilder().AddNumberClaim("num", 1).WithoutExpiration().Build();
+  ASSERT_THAT(jwt, IsOk());
+
+  EXPECT_THAT(jwt->GetJsonPayload(), IsOkAndHolds(R"({"num":1})"));
 }
 
 TEST(RawJwt, GetExpirationJsonPayload) {

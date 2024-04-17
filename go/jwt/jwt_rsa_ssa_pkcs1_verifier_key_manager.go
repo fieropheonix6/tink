@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package jwt
 
@@ -53,7 +51,7 @@ var validRSAlgToHash = map[jrsppb.JwtRsaSsaPkcs1Algorithm]string{
 	jrsppb.JwtRsaSsaPkcs1Algorithm_RS512: "SHA512",
 }
 
-func (km *jwtRSVerifierKeyManager) Primitive(serializedKey []byte) (interface{}, error) {
+func (km *jwtRSVerifierKeyManager) Primitive(serializedKey []byte) (any, error) {
 	if serializedKey == nil || len(serializedKey) == 0 {
 		return nil, fmt.Errorf("invalid key")
 	}

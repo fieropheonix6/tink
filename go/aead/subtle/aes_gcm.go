@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package subtle
 
@@ -63,9 +61,4 @@ func (a *AESGCM) Decrypt(ciphertext, associatedData []byte) ([]byte, error) {
 	}
 	iv := ciphertext[:AESGCMIVSize]
 	return a.aesGCMInsecureIV.Decrypt(iv, ciphertext, associatedData)
-}
-
-// Key returns the AES key.
-func (a *AESGCM) Key() []byte {
-	return a.aesGCMInsecureIV.Key
 }

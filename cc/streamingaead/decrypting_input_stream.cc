@@ -17,13 +17,16 @@
 #include "tink/streamingaead/decrypting_input_stream.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
+#include "absl/strings/string_view.h"
 #include "tink/input_stream.h"
 #include "tink/primitive_set.h"
 #include "tink/streaming_aead.h"
@@ -42,13 +45,14 @@ using crypto::tink::StreamingAead;
 using util::Status;
 using util::StatusOr;
 
+using StreamingAeadEntry = PrimitiveSet<StreamingAead>::Entry<StreamingAead>;
+
 // static
 StatusOr<std::unique_ptr<InputStream>> DecryptingInputStream::New(
     std::shared_ptr<PrimitiveSet<StreamingAead>> primitives,
     std::unique_ptr<crypto::tink::InputStream> ciphertext_source,
     absl::string_view associated_data) {
-  std::unique_ptr<DecryptingInputStream> dec_stream(
-      new DecryptingInputStream());
+  auto dec_stream = absl::WrapUnique(new DecryptingInputStream());
   dec_stream->primitives_ = primitives;
   dec_stream->buffered_ct_source_ =
       std::make_shared<BufferedInputStream>(std::move(ciphertext_source));
@@ -68,14 +72,12 @@ util::StatusOr<int> DecryptingInputStream::Next(const void** data) {
   }
   // Matching has not been attempted yet, so try it now.
   attempted_matching_ = true;
-  auto raw_primitives_result = primitives_->get_raw_primitives();
-  if (!raw_primitives_result.ok()) {
-    return Status(absl::StatusCode::kInternal, "No RAW primitives found");
-  }
-  for (auto& primitive : *(raw_primitives_result.value())) {
-    StreamingAead& streaming_aead = primitive->get_primitive();
-    auto shared_ct = absl::make_unique<SharedInputStream>(
-        buffered_ct_source_.get());
+  std::vector<StreamingAeadEntry*> all_primitives = primitives_->get_all();
+
+  for (const StreamingAeadEntry* entry : all_primitives) {
+    StreamingAead& streaming_aead = entry->get_primitive();
+    auto shared_ct =
+        std::make_unique<SharedInputStream>(buffered_ct_source_.get());
     auto decrypting_stream_result = streaming_aead.NewDecryptingStream(
         std::move(shared_ct), associated_data_);
     if (decrypting_stream_result.ok()) {

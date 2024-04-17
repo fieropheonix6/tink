@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package primitiveset_test
 
@@ -34,12 +32,12 @@ func makeTestKey(keyID int, status tinkpb.KeyStatusType, outputPrefixType tinkpb
 
 func TestPrimitvesetNew(t *testing.T) {
 	ps := primitiveset.New()
-	if ps.Primary != nil || ps.Entries == nil {
+	if ps.Primary != nil || ps.Entries == nil || ps.EntriesInKeysetOrder == nil {
 		t.Errorf("expect primary to be nil and primitives is initialized")
 	}
 }
 
-func TestPrimitivesetAddEntries(t *testing.T) {
+func TestPrimitivesetAddAndEntriesInKeysetOrder(t *testing.T) {
 	keys := []*tinkpb.Keyset_Key{
 		makeTestKey(1234543, tinkpb.KeyStatusType_ENABLED, tinkpb.OutputPrefixType_TINK, "type.url.1"),
 		makeTestKey(7213743, tinkpb.KeyStatusType_ENABLED, tinkpb.OutputPrefixType_LEGACY, "type.url.2"),
@@ -86,6 +84,9 @@ func TestPrimitivesetAddEntries(t *testing.T) {
 	}
 	if !cmp.Equal(got, want) {
 		t.Errorf("got = %v, want = %v", got, want)
+	}
+	if !cmp.Equal(ps.EntriesInKeysetOrder, want) {
+		t.Errorf("EntriesInKeysetOrder = %v, want = %v", ps.EntriesInKeysetOrder, want)
 	}
 }
 
@@ -136,7 +137,7 @@ func TestPrimitivesetPrefixedEntries(t *testing.T) {
 		tag        string
 		prefix     string
 		keys       []*tinkpb.Keyset_Key
-		primitives []interface{}
+		primitives []any
 		want       []*primitiveset.Entry
 	}
 	for _, tc := range []testCase{
@@ -147,7 +148,7 @@ func TestPrimitivesetPrefixedEntries(t *testing.T) {
 				makeTestKey(1234543, tinkpb.KeyStatusType_ENABLED, tinkpb.OutputPrefixType_LEGACY, "type.url.1"),
 				makeTestKey(7213743, tinkpb.KeyStatusType_ENABLED, tinkpb.OutputPrefixType_TINK, "type.url.2"),
 			},
-			primitives: []interface{}{
+			primitives: []any{
 				&testutil.DummyMAC{Name: "1"},
 				&testutil.DummyMAC{Name: "2"},
 			},
@@ -169,7 +170,7 @@ func TestPrimitivesetPrefixedEntries(t *testing.T) {
 				makeTestKey(1234543, tinkpb.KeyStatusType_ENABLED, tinkpb.OutputPrefixType_RAW, "type.url.1"),
 				makeTestKey(7213743, tinkpb.KeyStatusType_ENABLED, tinkpb.OutputPrefixType_TINK, "type.url.2"),
 			},
-			primitives: []interface{}{
+			primitives: []any{
 				&testutil.DummyMAC{Name: "1"},
 				&testutil.DummyMAC{Name: "2"},
 			},
@@ -193,7 +194,7 @@ func TestPrimitivesetPrefixedEntries(t *testing.T) {
 				makeTestKey(1234543, tinkpb.KeyStatusType_ENABLED, tinkpb.OutputPrefixType_RAW, "type.url.3"),
 				makeTestKey(7213743, tinkpb.KeyStatusType_ENABLED, tinkpb.OutputPrefixType_TINK, "type.url.4"),
 			},
-			primitives: []interface{}{
+			primitives: []any{
 				&testutil.DummyMAC{Name: "1"},
 				&testutil.DummyMAC{Name: "2"},
 				&testutil.DummyMAC{Name: "3"},
@@ -239,7 +240,7 @@ func TestAddWithInvalidInput(t *testing.T) {
 	ps := primitiveset.New()
 	type testCase struct {
 		tag       string
-		primitive interface{}
+		primitive any
 		key       *tinkpb.Keyset_Key
 	}
 	for _, tc := range []testCase{

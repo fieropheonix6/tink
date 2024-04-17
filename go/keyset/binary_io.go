@@ -11,14 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package keyset
 
 import (
 	"io"
-	"io/ioutil"
 
 	"google.golang.org/protobuf/proto"
 
@@ -56,7 +53,7 @@ func (bkr *BinaryReader) ReadEncrypted() (*tinkpb.EncryptedKeyset, error) {
 }
 
 func read(r io.Reader, msg proto.Message) error {
-	data, err := ioutil.ReadAll(r)
+	data, err := io.ReadAll(r)
 	if err != nil {
 		return err
 	}
@@ -81,7 +78,10 @@ func (bkw *BinaryWriter) Write(keyset *tinkpb.Keyset) error {
 
 // WriteEncrypted writes the encrypted keyset to the underlying io.Writer.
 func (bkw *BinaryWriter) WriteEncrypted(keyset *tinkpb.EncryptedKeyset) error {
-	return write(bkw.w, keyset)
+	encryptedKeysetWithoutInfo := &tinkpb.EncryptedKeyset{
+		EncryptedKeyset: keyset.GetEncryptedKeyset(),
+	}
+	return write(bkw.w, encryptedKeysetWithoutInfo)
 }
 
 func write(w io.Writer, msg proto.Message) error {

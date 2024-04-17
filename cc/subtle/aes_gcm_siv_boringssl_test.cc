@@ -16,6 +16,7 @@
 
 #include "tink/subtle/aes_gcm_siv_boringssl.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -24,6 +25,8 @@
 #include "absl/status/status.h"
 #include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
+#include "tink/aead.h"
 #include "tink/aead/internal/wycheproof_aead.h"
 #include "tink/config/tink_fips.h"
 #include "tink/internal/ssl_util.h"

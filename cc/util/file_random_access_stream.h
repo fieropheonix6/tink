@@ -17,6 +17,7 @@
 #ifndef TINK_UTIL_FILE_RANDOM_ACCESS_STREAM_H_
 #define TINK_UTIL_FILE_RANDOM_ACCESS_STREAM_H_
 
+#include <cstdint>
 #include <memory>
 
 #include "tink/random_access_stream.h"
@@ -29,6 +30,8 @@ namespace tink {
 namespace util {
 
 // An RandomAccessStream that reads from a file descriptor.
+//
+// NOTE: This class in not available when building on Windows.
 class FileRandomAccessStream : public crypto::tink::RandomAccessStream {
  public:
   // Constructs a FileRandomAccessStream that will read from the file specified

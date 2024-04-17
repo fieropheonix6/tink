@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package subtle
 
@@ -32,7 +30,7 @@ const (
 
 // AESCTR is an implementation of AEAD interface.
 type AESCTR struct {
-	Key    []byte
+	key    []byte
 	IVSize int
 }
 
@@ -48,7 +46,7 @@ func NewAESCTR(key []byte, ivSize int) (*AESCTR, error) {
 	if ivSize < AESCTRMinIVSize || ivSize > aes.BlockSize {
 		return nil, fmt.Errorf("aes_ctr: invalid IV size: %d", ivSize)
 	}
-	return &AESCTR{Key: key, IVSize: ivSize}, nil
+	return &AESCTR{key: key, IVSize: ivSize}, nil
 }
 
 // Encrypt encrypts plaintext using AES in CTR mode.
@@ -59,7 +57,7 @@ func (a *AESCTR) Encrypt(plaintext []byte) ([]byte, error) {
 		return nil, fmt.Errorf("aes_ctr: plaintext too long")
 	}
 	iv := a.newIV()
-	stream, err := newCipher(a.Key, iv)
+	stream, err := newCipher(a.key, iv)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +78,7 @@ func (a *AESCTR) Decrypt(ciphertext []byte) ([]byte, error) {
 	}
 
 	iv := ciphertext[:a.IVSize]
-	stream, err := newCipher(a.Key, iv)
+	stream, err := newCipher(a.key, iv)
 	if err != nil {
 		return nil, err
 	}

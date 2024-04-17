@@ -20,6 +20,7 @@
 #include <string>
 
 #include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 #include "tink/jwt/raw_jwt.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
@@ -41,7 +42,7 @@ class JwtPublicKeySignInternal {
   virtual crypto::tink::util::StatusOr<std::string> SignAndEncodeWithKid(
       const RawJwt& token, absl::optional<absl::string_view> kid) const = 0;
 
-  virtual ~JwtPublicKeySignInternal() {}
+  virtual ~JwtPublicKeySignInternal() = default;
 };
 
 }  // namespace tink

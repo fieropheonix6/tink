@@ -17,16 +17,24 @@
 #include "tink/subtle/prf/hkdf_streaming_prf.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "openssl/evp.h"
 #include "openssl/hmac.h"
+#include "tink/input_stream.h"
+#include "tink/internal/fips_utils.h"
 #include "tink/internal/md_util.h"
 #include "tink/internal/ssl_unique_ptr.h"
+#include "tink/subtle/common_enums.h"
+#include "tink/subtle/prf/streaming_prf.h"
 #include "tink/subtle/subtle_util.h"
 #include "tink/util/secret_data.h"
 #include "tink/util/status.h"
@@ -90,8 +98,8 @@ class HkdfInputStream : public InputStream {
     }
     ti_.resize(digest_size);
 
-    // BoringSSL's `HDKF_extract` function is implemented as an HMAC [1]. We
-    // replace calls to `HDKF_extract` with a direct call to `HMAC` to make this
+    // BoringSSL's `HKDF_extract` function is implemented as an HMAC [1]. We
+    // replace calls to `HKDF_extract` with a direct call to `HMAC` to make this
     // compatible to OpenSSL, which doesn't expose `HKDF*` functions.
     //
     // [1] https://github.com/google/boringssl/blob/master/crypto/hkdf/hkdf.c#L42

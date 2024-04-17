@@ -11,14 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package streamingaead
 
 import (
 	"errors"
 	"fmt"
+	"io"
 
 	"google.golang.org/protobuf/proto"
 	subtleaead "github.com/google/tink/go/aead/subtle"
@@ -45,7 +44,7 @@ var (
 type aesGCMHKDFKeyManager struct{}
 
 // Primitive creates an AESGCMHKDF subtle for the given serialized AESGCMHKDFKey proto.
-func (km *aesGCMHKDFKeyManager) Primitive(serializedKey []byte) (interface{}, error) {
+func (km *aesGCMHKDFKeyManager) Primitive(serializedKey []byte) (any, error) {
 	if len(serializedKey) == 0 {
 		return nil, errInvalidAESGCMHKDFKey
 	}
@@ -57,10 +56,10 @@ func (km *aesGCMHKDFKeyManager) Primitive(serializedKey []byte) (interface{}, er
 		return nil, err
 	}
 	ret, err := subtle.NewAESGCMHKDF(
-		key.KeyValue,
-		key.Params.HkdfHashType.String(),
-		int(key.Params.DerivedKeySize),
-		int(key.Params.CiphertextSegmentSize),
+		key.GetKeyValue(),
+		key.GetParams().GetHkdfHashType().String(),
+		int(key.GetParams().GetDerivedKeySize()),
+		int(key.GetParams().GetCiphertextSegmentSize()),
 		// no first segment offset
 		0)
 	if err != nil {
@@ -84,7 +83,7 @@ func (km *aesGCMHKDFKeyManager) NewKey(serializedKeyFormat []byte) (proto.Messag
 	}
 	return &ghpb.AesGcmHkdfStreamingKey{
 		Version:  aesGCMHKDFKeyVersion,
-		KeyValue: random.GetRandomBytes(keyFormat.KeySize),
+		KeyValue: random.GetRandomBytes(keyFormat.GetKeySize()),
 		Params:   keyFormat.Params,
 	}, nil
 }
@@ -103,7 +102,7 @@ func (km *aesGCMHKDFKeyManager) NewKeyData(serializedKeyFormat []byte) (*tinkpb.
 	return &tinkpb.KeyData{
 		TypeUrl:         km.TypeURL(),
 		Value:           serializedKey,
-		KeyMaterialType: tinkpb.KeyData_SYMMETRIC,
+		KeyMaterialType: km.KeyMaterialType(),
 	}, nil
 }
 
@@ -117,17 +116,48 @@ func (km *aesGCMHKDFKeyManager) TypeURL() string {
 	return aesGCMHKDFTypeURL
 }
 
+// KeyMaterialType returns the key material type of this key manager.
+func (km *aesGCMHKDFKeyManager) KeyMaterialType() tinkpb.KeyData_KeyMaterialType {
+	return tinkpb.KeyData_SYMMETRIC
+}
+
+// DeriveKey derives a new key from serializedKeyFormat and pseudorandomness.
+func (km *aesGCMHKDFKeyManager) DeriveKey(serializedKeyFormat []byte, pseudorandomness io.Reader) (proto.Message, error) {
+	if len(serializedKeyFormat) == 0 {
+		return nil, errInvalidAESGCMHKDFKeyFormat
+	}
+	keyFormat := &ghpb.AesGcmHkdfStreamingKeyFormat{}
+	if err := proto.Unmarshal(serializedKeyFormat, keyFormat); err != nil {
+		return nil, errInvalidAESGCMHKDFKeyFormat
+	}
+	if err := km.validateKeyFormat(keyFormat); err != nil {
+		return nil, fmt.Errorf("aes_gcm_hkdf_key_manager: invalid key format: %v", err)
+	}
+	if err := keyset.ValidateKeyVersion(keyFormat.GetVersion(), aesGCMHKDFKeyVersion); err != nil {
+		return nil, fmt.Errorf("aes_gcm_hkdf_key_manager: invalid key version: %s", err)
+	}
+
+	keyValue := make([]byte, keyFormat.GetKeySize())
+	if _, err := io.ReadFull(pseudorandomness, keyValue); err != nil {
+		return nil, fmt.Errorf("aes_gcm_hkdf_key_manager: not enough pseudorandomness given")
+	}
+	return &ghpb.AesGcmHkdfStreamingKey{
+		Version:  aesGCMHKDFKeyVersion,
+		KeyValue: keyValue,
+		Params:   keyFormat.GetParams(),
+	}, nil
+}
+
 // validateKey validates the given AESGCMHKDFKey.
 func (km *aesGCMHKDFKeyManager) validateKey(key *ghpb.AesGcmHkdfStreamingKey) error {
-	err := keyset.ValidateKeyVersion(key.Version, aesGCMHKDFKeyVersion)
-	if err != nil {
+	if err := keyset.ValidateKeyVersion(key.Version, aesGCMHKDFKeyVersion); err != nil {
 		return fmt.Errorf("aes_gcm_hkdf_key_manager: %s", err)
 	}
-	keySize := uint32(len(key.KeyValue))
+	keySize := uint32(len(key.GetKeyValue()))
 	if err := subtleaead.ValidateAESKeySize(keySize); err != nil {
 		return fmt.Errorf("aes_gcm_hkdf_key_manager: %s", err)
 	}
-	if err := km.validateParams(key.Params); err != nil {
+	if err := km.validateParams(key.GetParams()); err != nil {
 		return fmt.Errorf("aes_gcm_hkdf_key_manager: %s", err)
 	}
 	return nil
@@ -138,7 +168,7 @@ func (km *aesGCMHKDFKeyManager) validateKeyFormat(format *ghpb.AesGcmHkdfStreami
 	if err := subtleaead.ValidateAESKeySize(format.KeySize); err != nil {
 		return fmt.Errorf("aes_gcm_hkdf_key_manager: %s", err)
 	}
-	if err := km.validateParams(format.Params); err != nil {
+	if err := km.validateParams(format.GetParams()); err != nil {
 		return fmt.Errorf("aes_gcm_hkdf_key_manager: %s", err)
 	}
 	return nil
@@ -146,14 +176,17 @@ func (km *aesGCMHKDFKeyManager) validateKeyFormat(format *ghpb.AesGcmHkdfStreami
 
 // validateKeyFormat validates the given AESGCMHKDFKeyFormat.
 func (km *aesGCMHKDFKeyManager) validateParams(params *ghpb.AesGcmHkdfStreamingParams) error {
-	if err := subtleaead.ValidateAESKeySize(params.DerivedKeySize); err != nil {
+	if err := subtleaead.ValidateAESKeySize(params.GetDerivedKeySize()); err != nil {
 		return fmt.Errorf("aes_gcm_hkdf_key_manager: %s", err)
 	}
-	if params.HkdfHashType == commonpb.HashType_UNKNOWN_HASH {
+	if params.GetHkdfHashType() != commonpb.HashType_SHA1 && params.GetHkdfHashType() != commonpb.HashType_SHA256 && params.GetHkdfHashType() != commonpb.HashType_SHA512 {
 		return errors.New("unknown HKDF hash type")
 	}
-	minSegmentSize := params.DerivedKeySize + subtle.AESGCMHKDFNoncePrefixSizeInBytes + subtle.AESGCMHKDFTagSizeInBytes + 2
-	if params.CiphertextSegmentSize < minSegmentSize {
+	if params.GetCiphertextSegmentSize() > 0x7fffffff {
+		return errors.New("CiphertextSegmentSize must be at most 2^31 - 1")
+	}
+	minSegmentSize := params.GetDerivedKeySize() + subtle.AESGCMHKDFNoncePrefixSizeInBytes + subtle.AESGCMHKDFTagSizeInBytes + 2
+	if params.GetCiphertextSegmentSize() < minSegmentSize {
 		return fmt.Errorf("ciphertext segment_size must be at least (derivedKeySize + noncePrefixInBytes + tagSizeInBytes + 2)")
 	}
 	return nil

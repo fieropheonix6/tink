@@ -21,19 +21,34 @@ import com.google.crypto.tink.proto.KeyTemplate;
 import com.google.crypto.tink.proto.OutputPrefixType;
 
 /**
- * Pre-generated {@code KeyTemplate} for {@code DeterministicAead} keys. One can use these templates
- * to generate new {@code Keyset} with {@code KeysetHandle}. To generate a new keyset that contains
- * a single {@code AesSivKey}, one can do:
+ * Pre-generated {@code KeyTemplate} for {@code DeterministicAead} keys.
+ *
+ * <p>We recommend to avoid this class in order to keep dependencies small.
+ *
+ * <ul>
+ *   <li>Using this class adds a dependency on protobuf. We hope that eventually it is possible to
+ *       use Tink without a dependency on protobuf.
+ *   <li>Using this class adds a dependency on classes for all involved key types.
+ * </ul>
+ *
+ * These dependencies all come from static class member variables, which are initialized when the
+ * class is loaded. This implies that static analysis and code minimization tools (such as proguard)
+ * cannot remove the usages either.
+ *
+ * <p>Instead, we recommend to use {@code KeysetHandle.generateEntryFromParametersName} or {@code
+ * KeysetHandle.generateEntryFromParameters}.
+ *
+ * <p>One can use these templates to generate new {@code Keyset} with {@code KeysetHandle}. To
+ * generate a new keyset that contains a single {@code AesSivKey}, one can do:
  *
  * <pre>
- *   Config.register(DeterministicAeadConfig.TINK_1_1_0);
+ *   DeterministicAeadConfig.register();
  *   KeysetHandle handle = KeysetHandle.generateNew(DeterministicAeadKeyTemplates.AES256_SIV);
  *   DeterministicAead daead = handle.getPrimitive(DeterministicAead.class);
  * </pre>
  *
  * @since 1.1.0
- * @deprecated use {@link com.google.crypto.tink.KeyTemplates#get}, e.g.,
- *     KeyTemplates.get("AES256_SIV")
+ * @deprecated Use {@link PredefinedDeterministicAeadParameters} instead.
  */
 @Deprecated
 public final class DeterministicAeadKeyTemplates {
@@ -48,7 +63,7 @@ public final class DeterministicAeadKeyTemplates {
     AesSivKeyFormat format = AesSivKeyFormat.newBuilder().setKeySize(keySize).build();
     return KeyTemplate.newBuilder()
         .setValue(format.toByteString())
-        .setTypeUrl(new AesSivKeyManager().getKeyType())
+        .setTypeUrl(AesSivKeyManager.getKeyType())
         .setOutputPrefixType(OutputPrefixType.TINK)
         .build();
   }

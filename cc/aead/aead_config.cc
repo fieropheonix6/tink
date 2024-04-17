@@ -20,12 +20,17 @@
 #include "absl/status/status.h"
 #include "tink/aead/aead_wrapper.h"
 #include "tink/aead/aes_ctr_hmac_aead_key_manager.h"
+#include "tink/aead/aes_ctr_hmac_aead_proto_serialization.h"
 #include "tink/aead/aes_eax_key_manager.h"
+#include "tink/aead/aes_eax_proto_serialization.h"
 #include "tink/aead/aes_gcm_key_manager.h"
+#include "tink/aead/aes_gcm_proto_serialization.h"
 #include "tink/aead/aes_gcm_siv_key_manager.h"
+#include "tink/aead/aes_gcm_siv_proto_serialization.h"
 #include "tink/aead/kms_aead_key_manager.h"
 #include "tink/aead/kms_envelope_aead_key_manager.h"
 #include "tink/aead/xchacha20_poly1305_key_manager.h"
+#include "tink/aead/xchacha20_poly1305_proto_serialization.h"
 #include "tink/config/tink_fips.h"
 #include "tink/mac/mac_config.h"
 #include "tink/registry.h"
@@ -34,32 +39,42 @@
 
 namespace crypto {
 namespace tink {
-
-using ::google::crypto::tink::RegistryConfig;
-
-// static
-const RegistryConfig& AeadConfig::Latest() {
-  static const RegistryConfig* config = new RegistryConfig();
-  return *config;
-}
-
 // static
 util::Status AeadConfig::Register() {
   auto status = MacConfig::Register();
-  if (!status.ok()) return status;
+  if (!status.ok()) {
+    return status;
+  }
 
   // Register primitive wrapper.
   status = Registry::RegisterPrimitiveWrapper(absl::make_unique<AeadWrapper>());
-  if (!status.ok()) return status;
+  if (!status.ok()) {
+    return status;
+  }
 
   // Register key managers which utilize the FIPS validated BoringCrypto
   // implementations.
   status = Registry::RegisterKeyTypeManager(
       absl::make_unique<AesCtrHmacAeadKeyManager>(), true);
-  if (!status.ok()) return status;
+  if (!status.ok()) {
+    return status;
+  }
+
   status = Registry::RegisterKeyTypeManager(
       absl::make_unique<AesGcmKeyManager>(), true);
-  if (!status.ok()) return status;
+  if (!status.ok()) {
+    return status;
+  }
+
+  status = RegisterAesCtrHmacAeadProtoSerialization();
+  if (!status.ok()) {
+    return status;
+  }
+
+  status = RegisterAesGcmProtoSerialization();
+  if (!status.ok()) {
+    return status;
+  }
 
   if (IsFipsModeEnabled()) {
     return util::OkStatus();
@@ -68,19 +83,48 @@ util::Status AeadConfig::Register() {
   // Register all the other key managers.
   status = Registry::RegisterKeyTypeManager(
       absl::make_unique<AesGcmSivKeyManager>(), true);
-  if (!status.ok()) return status;
+  if (!status.ok()) {
+    return status;
+  }
+
   status = Registry::RegisterKeyTypeManager(
       absl::make_unique<AesEaxKeyManager>(), true);
-  if (!status.ok()) return status;
+  if (!status.ok()) {
+    return status;
+  }
+
   status = Registry::RegisterKeyTypeManager(
       absl::make_unique<XChaCha20Poly1305KeyManager>(), true);
-  if (!status.ok()) return status;
+  if (!status.ok()) {
+    return status;
+  }
+
   status = Registry::RegisterKeyTypeManager(
       absl::make_unique<KmsAeadKeyManager>(), true);
-  if (!status.ok()) return status;
+  if (!status.ok()) {
+    return status;
+  }
+
   status = Registry::RegisterKeyTypeManager(
       absl::make_unique<KmsEnvelopeAeadKeyManager>(), true);
-  if (!status.ok()) return status;
+  if (!status.ok()) {
+    return status;
+  }
+
+  status = RegisterAesGcmSivProtoSerialization();
+  if (!status.ok()) {
+    return status;
+  }
+
+  status = RegisterAesEaxProtoSerialization();
+  if (!status.ok()) {
+    return status;
+  }
+
+  status = RegisterXChaCha20Poly1305ProtoSerialization();
+  if (!status.ok()) {
+    return status;
+  }
 
   return util::OkStatus();
 }

@@ -26,6 +26,7 @@
 #include "tink/aead.h"
 #include "tink/core/key_type_manager.h"
 #include "tink/core/template_util.h"
+#include "tink/input_stream.h"
 #include "tink/internal/fips_utils.h"
 #include "tink/util/constants.h"
 #include "tink/util/status.h"
@@ -66,6 +67,10 @@ class AesCtrHmacAeadKeyManager
   crypto::tink::util::StatusOr<google::crypto::tink::AesCtrHmacAeadKey>
   CreateKey(const google::crypto::tink::AesCtrHmacAeadKeyFormat& key_format)
       const override;
+
+  crypto::tink::util::StatusOr<google::crypto::tink::AesCtrHmacAeadKey>
+  DeriveKey(const google::crypto::tink::AesCtrHmacAeadKeyFormat& key_format,
+            InputStream* input_stream) const override;
 
   internal::FipsCompatibility FipsStatus() const override {
     return internal::FipsCompatibility::kRequiresBoringCrypto;

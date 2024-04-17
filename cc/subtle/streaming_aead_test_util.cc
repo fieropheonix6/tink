@@ -16,38 +16,35 @@
 #include "tink/subtle/streaming_aead_test_util.h"
 
 #include <algorithm>
+#include <cstring>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <utility>
 
+#include "absl/memory/memory.h"
+#include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
+#include "tink/input_stream.h"
+#include "tink/internal/test_random_access_stream.h"
 #include "tink/random_access_stream.h"
+#include "tink/streaming_aead.h"
 #include "tink/subtle/test_util.h"
 #include "tink/util/buffer.h"
-#include "tink/util/file_random_access_stream.h"
 #include "tink/util/istream_input_stream.h"
 #include "tink/util/ostream_output_stream.h"
 #include "tink/util/status.h"
-#include "tink/util/test_util.h"
 
 namespace crypto {
 namespace tink {
 
-using ::crypto::tink::test::GetTestFileDescriptor;
+using ::crypto::tink::internal::TestRandomAccessStream;
 using ::crypto::tink::util::IstreamInputStream;
 using ::crypto::tink::util::OstreamOutputStream;
 using ::crypto::tink::util::Status;
 
 namespace {
-
-// Creates a RandomAccessStream with the specified contents.
-std::unique_ptr<RandomAccessStream> GetRandomAccessStreamContaining(
-    absl::string_view contents) {
-  static int index = 1;
-  std::string filename = absl::StrCat("stream_data_file_", index, ".txt");
-  index++;
-  int input_fd = GetTestFileDescriptor(filename, contents);
-  return {absl::make_unique<util::FileRandomAccessStream>(input_fd)};
-}
 
 // Reads up to 'count' bytes from 'ras' starting at position 'pos'
 // and verifies that the read bytes are equal to the corresponding
@@ -136,7 +133,8 @@ crypto::tink::util::Status EncryptThenDecrypt(StreamingAead* encrypter,
   }
 
   // Prepare a RandomAccessStream with the ciphertext.
-  auto ct_ras = GetRandomAccessStreamContaining(std::string(ct_buf->str()));
+  auto ct_ras =
+      std::make_unique<TestRandomAccessStream>(std::string(ct_buf->str()));
 
   // Decrypt fragments of the ciphertext using the decrypter.
   auto dec_ras_result = decrypter->NewDecryptingRandomAccessStream(

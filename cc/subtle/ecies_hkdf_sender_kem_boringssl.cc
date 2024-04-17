@@ -16,6 +16,8 @@
 
 #include "tink/subtle/ecies_hkdf_sender_kem_boringssl.h"
 
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -25,10 +27,13 @@
 #include "openssl/bn.h"
 #include "openssl/evp.h"
 #include "tink/internal/ec_util.h"
+#include "tink/internal/fips_utils.h"
 #include "tink/internal/ssl_unique_ptr.h"
 #include "tink/subtle/common_enums.h"
 #include "tink/subtle/hkdf.h"
 #include "tink/util/secret_data.h"
+#include "tink/util/status.h"
+#include "tink/util/statusor.h"
 
 namespace crypto {
 namespace tink {
@@ -71,10 +76,8 @@ EciesHkdfNistPCurveSendKemBoringSsl::New(subtle::EllipticCurveType curve,
 
   auto status_or_ec_point = internal::GetEcPoint(curve, pubx, puby);
   if (!status_or_ec_point.ok()) return status_or_ec_point.status();
-  std::unique_ptr<const EciesHkdfSenderKemBoringSsl> sender_kem(
-      new EciesHkdfNistPCurveSendKemBoringSsl(
-          curve, pubx, puby, std::move(status_or_ec_point.value())));
-  return std::move(sender_kem);
+  return absl::WrapUnique(new EciesHkdfNistPCurveSendKemBoringSsl(
+      curve, pubx, puby, std::move(status_or_ec_point.value())));
 }
 
 util::StatusOr<std::unique_ptr<const EciesHkdfSenderKemBoringSsl::KemKey>>
@@ -159,9 +162,8 @@ EciesHkdfX25519SendKemBoringSsl::New(subtle::EllipticCurveType curve,
     return util::Status(absl::StatusCode::kInternal,
                         "EVP_PKEY_new_raw_public_key failed");
   }
-  std::unique_ptr<const EciesHkdfSenderKemBoringSsl> sender_kem(
+  return absl::WrapUnique(
       new EciesHkdfX25519SendKemBoringSsl(std::move(peer_public_key)));
-  return std::move(sender_kem);
 }
 
 util::StatusOr<std::unique_ptr<const EciesHkdfSenderKemBoringSsl::KemKey>>
@@ -196,16 +198,15 @@ EciesHkdfX25519SendKemBoringSsl::GenerateKey(
       reinterpret_cast<const char*>((*ephemeral_key)->public_value),
       internal::X25519KeyPubKeySize());
 
-  util::StatusOr<util::SecretData> symmetric_key_or =
+  util::StatusOr<util::SecretData> symmetric_key =
       Hkdf::ComputeEciesHkdfSymmetricKey(hash, public_key, *shared_secret,
                                          hkdf_salt, hkdf_info,
                                          key_size_in_bytes);
-  if (!symmetric_key_or.ok()) {
-    return symmetric_key_or.status();
+  if (!symmetric_key.ok()) {
+    return symmetric_key.status();
   }
-  util::SecretData symmetric_key = *symmetric_key_or;
-  return absl::make_unique<const KemKey>(std::string(public_key),
-                                         symmetric_key);
+  return std::make_unique<const KemKey>(std::string(public_key),
+                                        *symmetric_key);
 }
 
 }  // namespace subtle

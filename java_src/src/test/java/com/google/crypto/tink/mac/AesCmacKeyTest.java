@@ -21,6 +21,8 @@ import static org.junit.Assert.assertThrows;
 
 import com.google.crypto.tink.InsecureSecretKeyAccess;
 import com.google.crypto.tink.internal.KeyTester;
+import com.google.crypto.tink.subtle.Hex;
+import com.google.crypto.tink.util.Bytes;
 import com.google.crypto.tink.util.SecretBytes;
 import java.security.GeneralSecurityException;
 import org.junit.BeforeClass;
@@ -117,15 +119,17 @@ public final class AesCmacKeyTest {
 
   @Test
   public void build_works() throws Exception {
-    AesCmacKey.builder()
-        .setParameters(noPrefixParameters16)
-        .setAesKeyBytes(SecretBytes.randomBytes(16))
-        .build();
-    AesCmacKey.builder()
-        .setParameters(tinkParameters32)
-        .setAesKeyBytes(SecretBytes.randomBytes(32))
-        .setIdRequirement(1907)
-        .build();
+    Object unused =
+        AesCmacKey.builder()
+            .setParameters(noPrefixParameters16)
+            .setAesKeyBytes(SecretBytes.randomBytes(16))
+            .build();
+    unused =
+        AesCmacKey.builder()
+            .setParameters(tinkParameters32)
+            .setAesKeyBytes(SecretBytes.randomBytes(32))
+            .setIdRequirement(1907)
+            .build();
   }
 
   @Test
@@ -210,6 +214,41 @@ public final class AesCmacKeyTest {
                 .build()
                 .getIdRequirementOrNull())
         .isEqualTo(1907);
+  }
+
+  @Test
+  public void getOutputPrefix() throws Exception {
+    assertThat(
+            AesCmacKey.builder()
+                .setParameters(noPrefixParameters16)
+                .setAesKeyBytes(SecretBytes.randomBytes(16))
+                .build()
+                .getOutputPrefix())
+        .isEqualTo(Bytes.copyFrom(new byte[] {}));
+    assertThat(
+            AesCmacKey.builder()
+                .setParameters(tinkParameters16)
+                .setAesKeyBytes(SecretBytes.randomBytes(16))
+                .setIdRequirement(0x66AABBCC)
+                .build()
+                .getOutputPrefix())
+        .isEqualTo(Bytes.copyFrom(Hex.decode("0166AABBCC")));
+    assertThat(
+            AesCmacKey.builder()
+                .setParameters(legacyParameters16)
+                .setAesKeyBytes(SecretBytes.randomBytes(16))
+                .setIdRequirement(0x66AABBCC)
+                .build()
+                .getOutputPrefix())
+        .isEqualTo(Bytes.copyFrom(Hex.decode("0066AABBCC")));
+    assertThat(
+            AesCmacKey.builder()
+                .setParameters(crunchyParameters16)
+                .setAesKeyBytes(SecretBytes.randomBytes(16))
+                .setIdRequirement(0x66AABBCC)
+                .build()
+                .getOutputPrefix())
+        .isEqualTo(Bytes.copyFrom(Hex.decode("0066AABBCC")));
   }
 
   @Test

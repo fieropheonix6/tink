@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package jwt
 
@@ -114,7 +112,7 @@ func (v *Validator) validateTimestamps(rawJWT *RawJWT) error {
 			return err
 		}
 		if !exp.After(now.Add(-v.opts.ClockSkew)) {
-			return fmt.Errorf("token has expired")
+			return errJwtExpired
 		}
 	}
 	if rawJWT.HasNotBefore() {
@@ -169,7 +167,7 @@ func (v *Validator) validateIssuer(rawJWT *RawJWT) error {
 		return err
 	}
 	if issuer != *v.opts.ExpectedIssuer {
-		return fmt.Errorf("wrong issuer")
+		return fmt.Errorf("got %s, want %s", issuer, *v.opts.ExpectedIssuer)
 	}
 	return nil
 }
@@ -191,7 +189,7 @@ func (v *Validator) validateAudiences(rawJWT *RawJWT) error {
 			break
 		}
 		if i == len(audiences)-1 {
-			return fmt.Errorf("audience not found")
+			return fmt.Errorf("%s not found", *v.opts.ExpectedAudience)
 		}
 	}
 	return nil

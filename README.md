@@ -1,15 +1,21 @@
 # Tink
 
-*A multi-language, cross-platform library that provides cryptographic APIs that are secure, easy to use correctly, and hard(er) to misuse.*
+> **NOTE**: **Tink moved to github.com/tink-crypto and this repo is no longer
+> active!**
+>
+> As planned, we have split Tink into
+> [multiple GitHub repositories][split_repo_roadmap_url] that are hosted at
+> [github.com/tink-crypto](https://github.com/tink-crypto). As a consequence, we
+> made this repository read-only and it is not going to be maintained moving
+> forward.
+>
 
-https://developers.google.com/tink
+*A multi-language, cross-platform library that provides cryptographic APIs that
+are secure, easy to use correctly, and hard(er) to misuse. See also:
+https://developers.google.com/tink*.
 
-**`Ubuntu`**                        | **`macOS`**
------------------------------------ | ---------------------------------
-[![Kokoro Ubuntu][ubuntu_badge]](#) | [![Kokoro macOS][macos_badge]](#)
-
-[ubuntu_badge]: https://storage.googleapis.com/tink-kokoro-build-badges/tink-ubuntu.png
-[macos_badge]: https://storage.googleapis.com/tink-kokoro-build-badges/tink-macos.png
+[split_repo_roadmap_url]: https://developers.google.com/tink/roadmap#splitting_tink_into_multiple_github_repositories
+[tink_mailing_list_url]: https://groups.google.com/forum/#!forum/tink-users
 
 ## Index
 
@@ -25,9 +31,10 @@ https://developers.google.com/tink
 Using crypto in your application [shouldn't have to][devs_are_users_too_slides]
 feel like juggling chainsaws in the dark. Tink is a crypto library written by a
 group of cryptographers and security engineers at Google. It was born out of our
-extensive experience working with Google's product teams, [fixing weaknesses in
-implementations](https://github.com/google/wycheproof), and providing simple
-APIs that can be used safely without needing a crypto background.
+extensive experience working with Google's product teams,
+[fixing weaknesses in implementations](https://github.com/google/wycheproof),
+and providing simple APIs that can be used safely without needing a crypto
+background.
 
 Tink provides secure APIs that are easy to use correctly and hard(er) to misuse.
 It reduces common crypto pitfalls with user-centered design, careful
@@ -52,6 +59,15 @@ latest version is [1.7.0](https://github.com/google/tink/releases/tag/v1.7.0),
 released on 2022-08-09.
 
 Javascript/Typescript is in an alpha state and should only be used for testing.
+Please see the intent to remove statement
+[here](https://github.com/google/tink/issues/689).
+
+**`Ubuntu`**                        | **`macOS`**
+----------------------------------- | ---------------------------------
+[![Kokoro Ubuntu][ubuntu_badge]](#) | [![Kokoro macOS][macos_badge]](#)
+
+[ubuntu_badge]: https://storage.googleapis.com/tink-kokoro-build-badges/tink-ubuntu.png
+[macos_badge]: https://storage.googleapis.com/tink-kokoro-build-badges/tink-macos.png
 
 ## Getting started
 
@@ -130,12 +146,11 @@ maintain them and have no plan to support them in the foreseeable future.
 
 ## Contact and mailing list
 
-If you want to contribute, please read [CONTRIBUTING](docs/CONTRIBUTING.md)
-and send us pull requests. You can also report bugs or file feature requests.
+If you want to contribute, please read [CONTRIBUTING](docs/CONTRIBUTING.md) and
+send us pull requests. You can also report bugs or file feature requests.
 
 If you'd like to talk to the developers or get notified about major product
-updates, you may want to subscribe to our
-[mailing list](https://groups.google.com/forum/#!forum/tink-users).
+updates, you may want to subscribe to our [mailing list][tink_mailing_list_url].
 
 ## Maintainers
 
@@ -168,3 +183,4 @@ Alumni:
 -   Veronika Slívová
 -   Paula Vidas
 -   Cathie Yun
+-   Federico Zalcberg

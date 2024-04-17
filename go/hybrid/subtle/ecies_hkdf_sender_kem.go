@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package subtle
 
@@ -24,12 +22,12 @@ type KEMKey struct {
 }
 
 // ECIESHKDFSenderKem represents HKDF-based ECIES-KEM (key encapsulation mechanism)
-//for ECIES sender.
+// for ECIES sender.
 type ECIESHKDFSenderKem struct {
 	recipientPublicKey *ECPublicKey
 }
 
-// GenerateKey a HDKF based KEM.
+// encapsulate generates an HKDF-based KEMKey.
 func (s *ECIESHKDFSenderKem) encapsulate(hashAlg string, salt []byte, info []byte, keySize uint32, pointFormat string) (*KEMKey, error) {
 
 	pvt, err := GenerateECDHKeyPair(s.recipientPublicKey.Curve)
@@ -46,7 +44,9 @@ func (s *ECIESHKDFSenderKem) encapsulate(hashAlg string, salt []byte, info []byt
 	if err != nil {
 		return nil, err
 	}
-	i := append(sdata, secret...)
+	i := make([]byte, 0, len(sdata)+len(secret))
+	i = append(i, sdata...)
+	i = append(i, secret...)
 
 	sKey, err := subtle.ComputeHKDF(hashAlg, i, salt, info, keySize)
 	if err != nil {

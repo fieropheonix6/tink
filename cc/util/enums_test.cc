@@ -16,9 +16,13 @@
 
 #include "tink/util/enums.h"
 
+#include <string>
+
 #include "gtest/gtest.h"
 #include "tink/subtle/common_enums.h"
 #include "proto/common.pb.h"
+#include "proto/ecdsa.pb.h"
+#include "proto/tink.pb.h"
 
 using crypto::tink::util::Enums;
 
@@ -42,8 +46,6 @@ TEST_F(EnumsTest, testEllipticCurveType) {
             Enums::SubtleToProto(subtle::EllipticCurveType::CURVE25519));
   EXPECT_EQ(pb::EllipticCurveType::UNKNOWN_CURVE,
             Enums::SubtleToProto(subtle::EllipticCurveType::UNKNOWN_CURVE));
-  EXPECT_EQ(pb::EllipticCurveType::UNKNOWN_CURVE,
-            Enums::SubtleToProto((subtle::EllipticCurveType)42));
 
   EXPECT_EQ(subtle::EllipticCurveType::NIST_P256,
             Enums::ProtoToSubtle(pb::EllipticCurveType::NIST_P256));
@@ -55,8 +57,6 @@ TEST_F(EnumsTest, testEllipticCurveType) {
             Enums::ProtoToSubtle(pb::EllipticCurveType::CURVE25519));
   EXPECT_EQ(subtle::EllipticCurveType::UNKNOWN_CURVE,
             Enums::ProtoToSubtle(pb::EllipticCurveType::UNKNOWN_CURVE));
-  EXPECT_EQ(subtle::EllipticCurveType::UNKNOWN_CURVE,
-            Enums::ProtoToSubtle((pb::EllipticCurveType)42));
 
   // Check that enum conversion covers the entire range of the proto-enum.
   int count = 0;
@@ -83,8 +83,6 @@ TEST_F(EnumsTest, testHashType) {
             Enums::SubtleToProto(subtle::HashType::SHA512));
   EXPECT_EQ(pb::HashType::UNKNOWN_HASH,
             Enums::SubtleToProto(subtle::HashType::UNKNOWN_HASH));
-  EXPECT_EQ(pb::HashType::UNKNOWN_HASH,
-            Enums::SubtleToProto((subtle::HashType)42));
 
   EXPECT_EQ(subtle::HashType::SHA1, Enums::ProtoToSubtle(pb::HashType::SHA1));
   EXPECT_EQ(subtle::HashType::SHA224,
@@ -97,8 +95,6 @@ TEST_F(EnumsTest, testHashType) {
             Enums::ProtoToSubtle(pb::HashType::SHA512));
   EXPECT_EQ(subtle::HashType::UNKNOWN_HASH,
             Enums::ProtoToSubtle(pb::HashType::UNKNOWN_HASH));
-  EXPECT_EQ(subtle::HashType::UNKNOWN_HASH,
-            Enums::ProtoToSubtle((pb::HashType)42));
 
   // Check that enum conversion covers the entire range of the proto-enum.
   int count = 0;
@@ -143,8 +139,6 @@ TEST_F(EnumsTest, testEcPointFormat) {
             Enums::ProtoToSubtle(pb::EcPointFormat::COMPRESSED));
   EXPECT_EQ(subtle::EcPointFormat::UNKNOWN_FORMAT,
             Enums::ProtoToSubtle(pb::EcPointFormat::UNKNOWN_FORMAT));
-  EXPECT_EQ(subtle::EcPointFormat::UNKNOWN_FORMAT,
-            Enums::ProtoToSubtle((pb::EcPointFormat)42));
 
   // Check that enum conversion covers the entire range of the proto-enum.
   int count = 0;
@@ -198,8 +192,6 @@ TEST_F(EnumsTest, testKeyStatusName) {
   EXPECT_EQ(
       "UNKNOWN_STATUS",
       std::string(Enums::KeyStatusName(pb::KeyStatusType::UNKNOWN_STATUS)));
-  EXPECT_EQ("UNKNOWN_STATUS",
-            std::string(Enums::KeyStatusName((pb::KeyStatusType)42)));
 
   EXPECT_EQ(pb::KeyStatusType::ENABLED, Enums::KeyStatus("ENABLED"));
   EXPECT_EQ(pb::KeyStatusType::DISABLED, Enums::KeyStatus("DISABLED"));

@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package signature
 
@@ -20,32 +18,27 @@ import (
 	"fmt"
 
 	"github.com/google/tink/go/core/primitiveset"
-	"github.com/google/tink/go/core/registry"
+	"github.com/google/tink/go/internal/internalregistry"
+	"github.com/google/tink/go/internal/monitoringutil"
 	"github.com/google/tink/go/keyset"
+	"github.com/google/tink/go/monitoring"
 	"github.com/google/tink/go/tink"
 	tinkpb "github.com/google/tink/go/proto/tink_go_proto"
 )
 
 // NewSigner returns a Signer primitive from the given keyset handle.
-func NewSigner(h *keyset.Handle) (tink.Signer, error) {
-	return NewSignerWithKeyManager(h, nil /*keyManager*/)
-}
-
-// NewSignerWithKeyManager returns a Signer primitive from the given keyset handle and custom key manager.
-//
-// Deprecated: Use [NewSigner].
-func NewSignerWithKeyManager(h *keyset.Handle, km registry.KeyManager) (tink.Signer, error) {
-	ps, err := h.PrimitivesWithKeyManager(km)
+func NewSigner(handle *keyset.Handle) (tink.Signer, error) {
+	ps, err := handle.Primitives()
 	if err != nil {
 		return nil, fmt.Errorf("public_key_sign_factory: cannot obtain primitive set: %s", err)
 	}
-
 	return newWrappedSigner(ps)
 }
 
 // wrappedSigner is an Signer implementation that uses the underlying primitive set for signing.
 type wrappedSigner struct {
-	ps *primitiveset.PrimitiveSet
+	ps     *primitiveset.PrimitiveSet
+	logger monitoring.Logger
 }
 
 // Asserts that wrappedSigner implements the Signer interface.
@@ -63,11 +56,30 @@ func newWrappedSigner(ps *primitiveset.PrimitiveSet) (*wrappedSigner, error) {
 			}
 		}
 	}
+	logger, err := createSignerLogger(ps)
+	if err != nil {
+		return nil, err
+	}
+	return &wrappedSigner{
+		ps:     ps,
+		logger: logger,
+	}, nil
+}
 
-	ret := new(wrappedSigner)
-	ret.ps = ps
-
-	return ret, nil
+func createSignerLogger(ps *primitiveset.PrimitiveSet) (monitoring.Logger, error) {
+	// only keysets which contain annotations are monitored.
+	if len(ps.Annotations) == 0 {
+		return &monitoringutil.DoNothingLogger{}, nil
+	}
+	keysetInfo, err := monitoringutil.KeysetInfoFromPrimitiveSet(ps)
+	if err != nil {
+		return nil, err
+	}
+	return internalregistry.GetMonitoringClient().NewLogger(&monitoring.Context{
+		KeysetInfo:  keysetInfo,
+		Primitive:   "public_key_sign",
+		APIFunction: "sign",
+	})
 }
 
 // Sign signs the given data and returns the signature concatenated with the identifier of the
@@ -81,6 +93,7 @@ func (s *wrappedSigner) Sign(data []byte) ([]byte, error) {
 
 	var signedData []byte
 	if primary.PrefixType == tinkpb.OutputPrefixType_LEGACY {
+		signedData = make([]byte, 0, len(data)+1)
 		signedData = append(signedData, data...)
 		signedData = append(signedData, byte(0))
 	} else {
@@ -89,7 +102,15 @@ func (s *wrappedSigner) Sign(data []byte) ([]byte, error) {
 
 	signature, err := signer.Sign(signedData)
 	if err != nil {
+		s.logger.LogFailure()
 		return nil, err
 	}
-	return append([]byte(primary.Prefix), signature...), nil
+	s.logger.Log(primary.KeyID, len(data))
+	if len(primary.Prefix) == 0 {
+		return signature, nil
+	}
+	output := make([]byte, 0, len(primary.Prefix)+len(signature))
+	output = append(output, primary.Prefix...)
+	output = append(output, signature...)
+	return output, nil
 }

@@ -20,16 +20,22 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "tink/config/tink_fips.h"
+#include "absl/memory/memory.h"
+#include "absl/strings/str_cat.h"
+#include "tink/crypto_format.h"
 #include "tink/experimental/pqcrypto/signature/dilithium_sign_key_manager.h"
 #include "tink/experimental/pqcrypto/signature/dilithium_verify_key_manager.h"
 #include "tink/experimental/pqcrypto/signature/signature_config.h"
+#include "tink/internal/fips_utils.h"
+#include "tink/primitive_set.h"
 #include "tink/public_key_sign.h"
 #include "tink/public_key_verify.h"
 #include "tink/registry.h"
 #include "tink/util/status.h"
+#include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 #include "tink/util/test_util.h"
+#include "proto/tink.pb.h"
 
 namespace crypto {
 namespace tink {
@@ -45,7 +51,7 @@ class PcqSignatureConfigTest : public ::testing::Test {
 };
 
 TEST_F(PcqSignatureConfigTest, CheckStatus) {
-  if (IsFipsModeEnabled() && !FIPS_mode()) {
+  if (internal::IsFipsModeEnabled() && !internal::IsFipsEnabledInSsl()) {
     GTEST_SKIP() << "Not supported if FIPS-mode is used";
   }
 
@@ -55,7 +61,7 @@ TEST_F(PcqSignatureConfigTest, CheckStatus) {
 // Tests that the PublicKeySignWrapper has been properly registered and we
 // can wrap primitives.
 TEST_F(PcqSignatureConfigTest, PublicKeySignWrapperRegistered) {
-  if (IsFipsModeEnabled() && !FIPS_mode()) {
+  if (internal::IsFipsModeEnabled() && !internal::IsFipsEnabledInSsl()) {
     GTEST_SKIP() << "Not supported if FIPS-mode is used";
   }
 
@@ -91,7 +97,7 @@ TEST_F(PcqSignatureConfigTest, PublicKeySignWrapperRegistered) {
 // Tests that the PublicKeyVerifyWrapper has been properly registered and we
 // can wrap primitives.
 TEST_F(PcqSignatureConfigTest, PublicKeyVerifyWrapperRegistered) {
-  if (IsFipsModeEnabled() && !FIPS_mode()) {
+  if (internal::IsFipsModeEnabled() && !internal::IsFipsEnabledInSsl()) {
     GTEST_SKIP() << "Not supported if FIPS-mode is used";
   }
 

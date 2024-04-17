@@ -16,6 +16,8 @@
 
 package com.google.crypto.tink.internal;
 
+import static com.google.crypto.tink.internal.TinkBugException.exceptionIsBug;
+
 import com.google.crypto.tink.Key;
 import com.google.crypto.tink.Parameters;
 import com.google.crypto.tink.SecretKeyAccess;
@@ -34,8 +36,17 @@ import javax.annotation.Nullable;
  * should register such an object into a global, mutable registry.
  */
 public final class MutableSerializationRegistry {
+  private static MutableSerializationRegistry createGlobalInstance()
+      throws GeneralSecurityException {
+    MutableSerializationRegistry registry = new MutableSerializationRegistry();
+    registry.registerKeySerializer(
+        KeySerializer.create(
+            LegacyProtoKey::getSerialization, LegacyProtoKey.class, ProtoKeySerialization.class));
+    return registry;
+  }
+
   private static final MutableSerializationRegistry GLOBAL_INSTANCE =
-      new MutableSerializationRegistry();
+      exceptionIsBug(MutableSerializationRegistry::createGlobalInstance);
 
   public static MutableSerializationRegistry globalInstance() {
     return GLOBAL_INSTANCE;
@@ -111,6 +122,12 @@ public final class MutableSerializationRegistry {
     registry.set(newRegistry);
   }
 
+  /** Returns true if a parser for this {@code serializedKey} has been registered. */
+  public <SerializationT extends Serialization> boolean hasParserForKey(
+      SerializationT serializedKey) {
+    return registry.get().hasParserForKey(serializedKey);
+  }
+
   /**
    * Parses the given serialization into a Key.
    *
@@ -131,24 +148,23 @@ public final class MutableSerializationRegistry {
    * types for which we did not yet register a parser; in this case we simply fall back to return a
    * LegacyProtoKey.
    *
-   * <p>This always requires SecretKeyAccess. This guarantees that it cannot fail (every
-   * ProtoKeySerialization can be parsed into a LegacyProtoKey).
+   * @throws GeneralSecurityException if a parser is registered but parsing fails or required
+   *     SecretKeyAccess is missing
    */
   public Key parseKeyWithLegacyFallback(
-      ProtoKeySerialization protoKeySerialization, SecretKeyAccess access) {
-    if (access == null) {
-      throw new NullPointerException("access cannot be null");
+      ProtoKeySerialization protoKeySerialization, @Nullable SecretKeyAccess access)
+      throws GeneralSecurityException {
+    if (!hasParserForKey(protoKeySerialization)) {
+      return new LegacyProtoKey(protoKeySerialization, access);
     }
-    try {
-      return parseKey(protoKeySerialization, access);
-    } catch (GeneralSecurityException e) {
-      try {
-        return new LegacyProtoKey(protoKeySerialization, access);
-      } catch (GeneralSecurityException e2) {
-        // Cannot happen -- this only throws if we have no access.
-        throw new TinkBugException("Creating a LegacyProtoKey failed", e2);
-      }
-    }
+    return parseKey(protoKeySerialization, access);
+  }
+
+
+  /** Returns true if a parser for this {@code serializedKey} has been registered. */
+  public <KeyT extends Key, SerializationT extends Serialization> boolean hasSerializerForKey(
+      KeyT key, Class<SerializationT> serializationClass) {
+    return registry.get().hasSerializerForKey(key, serializationClass);
   }
 
   /**
@@ -161,6 +177,12 @@ public final class MutableSerializationRegistry {
       KeyT key, Class<SerializationT> serializationClass, @Nullable SecretKeyAccess access)
       throws GeneralSecurityException {
     return registry.get().serializeKey(key, serializationClass, access);
+  }
+
+  /** Returns true if a parser for this {@code serializedKey} has been registered. */
+  public <SerializationT extends Serialization> boolean hasParserForParameters(
+      SerializationT serializedParameters) {
+    return registry.get().hasParserForParameters(serializedParameters);
   }
 
   /**
@@ -183,12 +205,19 @@ public final class MutableSerializationRegistry {
    * registered (e.g. for when we create a Key from a key template/parameters name object).
    */
   public Parameters parseParametersWithLegacyFallback(
-      ProtoParametersSerialization protoParametersSerialization) {
-    try {
-      return parseParameters(protoParametersSerialization);
-    } catch (GeneralSecurityException e) {
+      ProtoParametersSerialization protoParametersSerialization) throws GeneralSecurityException {
+    if (!hasParserForParameters(protoParametersSerialization)) {
       return new LegacyProtoParameters(protoParametersSerialization);
+    } else {
+      return parseParameters(protoParametersSerialization);
     }
+  }
+
+  /** Returns true if a parser for this {@code serializedKey} has been registered. */
+  public <ParametersT extends Parameters, SerializationT extends Serialization>
+      boolean hasSerializerForParameters(
+          ParametersT parameters, Class<SerializationT> serializationClass) {
+    return registry.get().hasSerializerForParameters(parameters, serializationClass);
   }
 
   /**

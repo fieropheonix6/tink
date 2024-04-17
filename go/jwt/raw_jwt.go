@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package jwt
 
@@ -53,7 +51,7 @@ type RawJWTOptions struct {
 	IssuedAt     *time.Time
 	ExpiresAt    *time.Time
 	NotBefore    *time.Time
-	CustomClaims map[string]interface{}
+	CustomClaims map[string]any
 
 	TypeHeader        *string
 	WithoutExpiration bool
@@ -134,7 +132,7 @@ func (r *RawJWT) Audiences() ([]string, error) {
 	if val, isString := aud.GetKind().(*spb.Value_StringValue); isString {
 		return []string{val.StringValue}, nil
 	}
-	s := []string{}
+	s := make([]string, 0, len(aud.GetListValue().GetValues()))
 	for _, a := range aud.GetListValue().GetValues() {
 		s = append(s, a.GetStringValue())
 	}
@@ -256,7 +254,7 @@ func (r *RawJWT) HasArrayClaim(name string) bool {
 }
 
 // ArrayClaim returns a slice representing a JSON array for a claim or an error if the claim is empty.
-func (r *RawJWT) ArrayClaim(name string) ([]interface{}, error) {
+func (r *RawJWT) ArrayClaim(name string) ([]any, error) {
 	val, err := r.customClaim(name)
 	if err != nil {
 		return nil, err
@@ -273,7 +271,7 @@ func (r *RawJWT) HasObjectClaim(name string) bool {
 }
 
 // ObjectClaim returns a map representing a JSON object for a claim or an error if the claim is empty.
-func (r *RawJWT) ObjectClaim(name string) (map[string]interface{}, error) {
+func (r *RawJWT) ObjectClaim(name string) (map[string]any, error) {
 	val, err := r.customClaim(name)
 	if err != nil {
 		return nil, err
@@ -485,7 +483,7 @@ func validateAudienceClaim(val *spb.Value) error {
 	return nil
 }
 
-func validateCustomClaims(cc map[string]interface{}) error {
+func validateCustomClaims(cc map[string]any) error {
 	if cc == nil {
 		return nil
 	}
@@ -516,7 +514,7 @@ func setAudiences(p *spb.Struct, claim string, vals []string) {
 		return
 	}
 	audList := &spb.ListValue{
-		Values: []*spb.Value{},
+		Values: make([]*spb.Value, 0, len(vals)),
 	}
 	for _, aud := range vals {
 		audList.Values = append(audList.Values, spb.NewStringValue(aud))

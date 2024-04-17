@@ -17,222 +17,184 @@
 package com.google.crypto.tink.mac;
 
 import static com.google.common.truth.Truth.assertThat;
-import static com.google.crypto.tink.testing.KeyTypeManagerTestUtil.testKeyTemplateCompatible;
 import static org.junit.Assert.assertThrows;
 
 import com.google.crypto.tink.KeyTemplate;
+import com.google.crypto.tink.KeyTemplates;
+import com.google.crypto.tink.KeysetHandle;
 import com.google.crypto.tink.Mac;
-import com.google.crypto.tink.internal.KeyTypeManager;
-import com.google.crypto.tink.proto.AesCmacKey;
-import com.google.crypto.tink.proto.AesCmacKeyFormat;
-import com.google.crypto.tink.proto.AesCmacParams;
-import com.google.crypto.tink.subtle.PrfAesCmac;
-import com.google.crypto.tink.subtle.PrfMac;
-import com.google.crypto.tink.subtle.Random;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.ExtensionRegistryLite;
+import com.google.crypto.tink.Parameters;
+import com.google.crypto.tink.internal.KeyManagerRegistry;
+import com.google.crypto.tink.util.SecretBytes;
 import java.security.GeneralSecurityException;
+import org.junit.Before;
 import org.junit.Test;
+import org.junit.experimental.theories.DataPoints;
+import org.junit.experimental.theories.FromDataPoints;
+import org.junit.experimental.theories.Theories;
+import org.junit.experimental.theories.Theory;
 import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
 
 /** Test for AesCmacKeyManager. */
-@RunWith(JUnit4.class)
+@RunWith(Theories.class)
 public class AesCmacKeyManagerTest {
-  private final AesCmacKeyManager manager = new AesCmacKeyManager();
-  private final KeyTypeManager.KeyFactory<AesCmacKeyFormat, AesCmacKey> factory =
-      manager.keyFactory();
-
-  @Test
-  public void validateKeyFormat_empty() throws Exception {
-    assertThrows(
-        GeneralSecurityException.class,
-        () ->
-            new AesCmacKeyManager()
-                .keyFactory()
-                .validateKeyFormat(AesCmacKeyFormat.getDefaultInstance()));
-  }
-
-  private static AesCmacKeyFormat makeAesCmacKeyFormat(int keySize, int tagSize) {
-    return AesCmacKeyFormat.newBuilder()
-        .setKeySize(keySize)
-        .setParams(AesCmacParams.newBuilder().setTagSize(tagSize).build())
-        .build();
+  @Before
+  public void register() throws Exception {
+    MacConfig.register();
   }
 
   @Test
-  public void validateKeyFormat_valid() throws Exception {
-    AesCmacKeyManager manager = new AesCmacKeyManager();
-    manager.keyFactory().validateKeyFormat(makeAesCmacKeyFormat(32, 10));
-    manager.keyFactory().validateKeyFormat(makeAesCmacKeyFormat(32, 11));
-    manager.keyFactory().validateKeyFormat(makeAesCmacKeyFormat(32, 12));
-    manager.keyFactory().validateKeyFormat(makeAesCmacKeyFormat(32, 13));
-    manager.keyFactory().validateKeyFormat(makeAesCmacKeyFormat(32, 14));
-    manager.keyFactory().validateKeyFormat(makeAesCmacKeyFormat(32, 15));
-    manager.keyFactory().validateKeyFormat(makeAesCmacKeyFormat(32, 16));
+  public void testKeyManagerRegistered() throws Exception {
+    assertThat(
+            KeyManagerRegistry.globalInstance()
+                .getKeyManager("type.googleapis.com/google.crypto.tink.AesCmacKey", Mac.class))
+        .isNotNull();
   }
 
   @Test
-  public void validateKeyFormat_notValid_throws() throws Exception {
-    AesCmacKeyManager manager = new AesCmacKeyManager();
-    assertThrows(
-        GeneralSecurityException.class,
-        () -> manager.keyFactory().validateKeyFormat(makeAesCmacKeyFormat(32, 9)));
-    assertThrows(
-        GeneralSecurityException.class,
-        () -> manager.keyFactory().validateKeyFormat(makeAesCmacKeyFormat(32, 17)));
-    assertThrows(
-        GeneralSecurityException.class,
-        () -> manager.keyFactory().validateKeyFormat(makeAesCmacKeyFormat(32, 32)));
-    assertThrows(
-        GeneralSecurityException.class,
-        () -> manager.keyFactory().validateKeyFormat(makeAesCmacKeyFormat(16, 16)));
-    assertThrows(
-        GeneralSecurityException.class,
-        () -> manager.keyFactory().validateKeyFormat(makeAesCmacKeyFormat(64, 16)));
+  public void testKeyCreationWorks() throws Exception {
+    Parameters validParameters =
+        AesCmacParameters.builder()
+            .setKeySizeBytes(32)
+            .setTagSizeBytes(16)
+            .setVariant(AesCmacParameters.Variant.TINK)
+            .build();
+    assertThat(KeysetHandle.generateNew(validParameters).getAt(0).getKey().getParameters())
+        .isEqualTo(validParameters);
   }
 
   @Test
-  public void createKey_valid() throws Exception {
-    AesCmacKeyManager manager = new AesCmacKeyManager();
-    manager.validateKey(manager.keyFactory().createKey(makeAesCmacKeyFormat(32, 16)));
+  public void testKeyCreation_invalidParameters_fails() throws Exception {
+    // These parameters can be created but aren't accepted by the key manager.
+    Parameters validParameters =
+        AesCmacParameters.builder()
+            .setKeySizeBytes(16)
+            .setTagSizeBytes(16)
+            .setVariant(AesCmacParameters.Variant.TINK)
+            .build();
+    assertThrows(GeneralSecurityException.class, () -> KeysetHandle.generateNew(validParameters));
   }
 
   @Test
-  public void createKey_checkValues() throws Exception {
-    AesCmacKeyFormat keyFormat = makeAesCmacKeyFormat(32, 16);
-    AesCmacKey key = new AesCmacKeyManager().keyFactory().createKey(keyFormat);
-    assertThat(key.getKeyValue()).hasSize(keyFormat.getKeySize());
-    assertThat(key.getParams().getTagSize()).isEqualTo(keyFormat.getParams().getTagSize());
+  public void testMacCreation_succeeds() throws Exception {
+    AesCmacParameters validParameters =
+        AesCmacParameters.builder()
+            .setKeySizeBytes(32)
+            .setTagSizeBytes(16)
+            .setVariant(AesCmacParameters.Variant.TINK)
+            .build();
+    AesCmacKey validKey =
+        AesCmacKey.builder()
+            .setParameters(validParameters)
+            .setAesKeyBytes(SecretBytes.randomBytes(validParameters.getKeySizeBytes()))
+            .setIdRequirement(739)
+            .build();
+    KeysetHandle keyset =
+        KeysetHandle.newBuilder().addEntry(KeysetHandle.importKey(validKey).makePrimary()).build();
+    assertThat(keyset.getPrimitive(Mac.class)).isNotNull();
   }
 
   @Test
-  public void createKey_multipleTimes() throws Exception {
-    AesCmacKeyManager manager = new AesCmacKeyManager();
-    AesCmacKeyFormat keyFormat = makeAesCmacKeyFormat(32, 16);
-    assertThat(manager.keyFactory().createKey(keyFormat).getKeyValue())
-        .isNotEqualTo(manager.keyFactory().createKey(keyFormat).getKeyValue());
+  public void testMacCreation_invalidKey_throws() throws Exception {
+    // These parameters can be created but aren't accepted by the key manager.
+    AesCmacParameters validParameters =
+        AesCmacParameters.builder()
+            .setKeySizeBytes(16)
+            .setTagSizeBytes(16)
+            .setVariant(AesCmacParameters.Variant.TINK)
+            .build();
+    AesCmacKey validKey =
+        AesCmacKey.builder()
+            .setParameters(validParameters)
+            .setAesKeyBytes(SecretBytes.randomBytes(validParameters.getKeySizeBytes()))
+            .setIdRequirement(739)
+            .build();
+    KeysetHandle keyset =
+        KeysetHandle.newBuilder().addEntry(KeysetHandle.importKey(validKey).makePrimary()).build();
+    assertThrows(GeneralSecurityException.class, () -> keyset.getPrimitive(Mac.class));
   }
 
   @Test
-  public void validateKey_valid() throws Exception {
-    AesCmacKeyManager manager = new AesCmacKeyManager();
-    manager.validateKey(manager.keyFactory().createKey(makeAesCmacKeyFormat(32, 10)));
-    manager.validateKey(manager.keyFactory().createKey(makeAesCmacKeyFormat(32, 11)));
-    manager.validateKey(manager.keyFactory().createKey(makeAesCmacKeyFormat(32, 12)));
-    manager.validateKey(manager.keyFactory().createKey(makeAesCmacKeyFormat(32, 13)));
-    manager.validateKey(manager.keyFactory().createKey(makeAesCmacKeyFormat(32, 14)));
-    manager.validateKey(manager.keyFactory().createKey(makeAesCmacKeyFormat(32, 15)));
-    manager.validateKey(manager.keyFactory().createKey(makeAesCmacKeyFormat(32, 16)));
+  public void testChunkedMacCreation_succeeds() throws Exception {
+    // These parameters can be created but aren't accepted by the key manager.
+    AesCmacParameters validParameters =
+        AesCmacParameters.builder()
+            .setKeySizeBytes(32)
+            .setTagSizeBytes(16)
+            .setVariant(AesCmacParameters.Variant.TINK)
+            .build();
+    AesCmacKey validKey =
+        AesCmacKey.builder()
+            .setParameters(validParameters)
+            .setAesKeyBytes(SecretBytes.randomBytes(validParameters.getKeySizeBytes()))
+            .setIdRequirement(1023)
+            .build();
+    KeysetHandle keyset =
+        KeysetHandle.newBuilder().addEntry(KeysetHandle.importKey(validKey).makePrimary()).build();
+    assertThat(keyset.getPrimitive(ChunkedMac.class)).isNotNull();
   }
 
   @Test
-  public void validateKey_wrongVersion_throws() throws Exception {
-    AesCmacKeyManager manager = new AesCmacKeyManager();
-    AesCmacKey validKey = manager.keyFactory().createKey(makeAesCmacKeyFormat(32, 16));
-    assertThrows(
-        GeneralSecurityException.class,
-        () -> manager.validateKey(AesCmacKey.newBuilder(validKey).setVersion(1).build()));
-  }
-
-  @Test
-  public void validateKey_notValid_throws() throws Exception {
-    AesCmacKeyManager manager = new AesCmacKeyManager();
-    AesCmacKey validKey = manager.keyFactory().createKey(makeAesCmacKeyFormat(32, 16));
-    assertThrows(
-        GeneralSecurityException.class,
-        () ->
-            manager.validateKey(
-                AesCmacKey.newBuilder(validKey)
-                    .setKeyValue(ByteString.copyFrom(Random.randBytes(16)))
-                    .build()));
-    assertThrows(
-        GeneralSecurityException.class,
-        () ->
-            manager.validateKey(
-                AesCmacKey.newBuilder(validKey)
-                    .setKeyValue(ByteString.copyFrom(Random.randBytes(64)))
-                    .build()));
-    assertThrows(
-        GeneralSecurityException.class,
-        () ->
-            manager.validateKey(
-                AesCmacKey.newBuilder(validKey)
-                    .setParams(AesCmacParams.newBuilder(validKey.getParams()).setTagSize(0).build())
-                    .build()));
-    assertThrows(
-        GeneralSecurityException.class,
-        () ->
-            manager.validateKey(
-                AesCmacKey.newBuilder(validKey)
-                    .setParams(AesCmacParams.newBuilder(validKey.getParams()).setTagSize(9).build())
-                    .build()));
-    assertThrows(
-        GeneralSecurityException.class,
-        () ->
-            manager.validateKey(
-                AesCmacKey.newBuilder(validKey)
-                    .setParams(
-                        AesCmacParams.newBuilder(validKey.getParams()).setTagSize(17).build())
-                    .build()));
-    assertThrows(
-        GeneralSecurityException.class,
-        () ->
-            manager.validateKey(
-                AesCmacKey.newBuilder(validKey)
-                    .setParams(
-                        AesCmacParams.newBuilder(validKey.getParams()).setTagSize(32).build())
-                    .build()));
-  }
-
-  @Test
-  public void getPrimitive_works() throws Exception {
-    AesCmacKeyManager manager = new AesCmacKeyManager();
-    AesCmacKey validKey = manager.keyFactory().createKey(makeAesCmacKeyFormat(32, 16));
-    Mac managerMac = manager.getPrimitive(validKey, Mac.class);
-    Mac directMac =
-        new PrfMac(
-            new PrfAesCmac(validKey.getKeyValue().toByteArray()),
-            validKey.getParams().getTagSize());
-    byte[] message = Random.randBytes(50);
-    managerMac.verifyMac(directMac.computeMac(message), message);
+  public void testChunkedMacCreation_invalidKey_throws() throws Exception {
+    // These parameters can be created but aren't accepted by the key manager.
+    AesCmacParameters validParameters =
+        AesCmacParameters.builder()
+            .setKeySizeBytes(16)
+            .setTagSizeBytes(16)
+            .setVariant(AesCmacParameters.Variant.TINK)
+            .build();
+    AesCmacKey validKey =
+        AesCmacKey.builder()
+            .setParameters(validParameters)
+            .setAesKeyBytes(SecretBytes.randomBytes(validParameters.getKeySizeBytes()))
+            .setIdRequirement(739)
+            .build();
+    KeysetHandle keyset =
+        KeysetHandle.newBuilder().addEntry(KeysetHandle.importKey(validKey).makePrimary()).build();
+    assertThrows(GeneralSecurityException.class, () -> keyset.getPrimitive(ChunkedMac.class));
   }
 
   @Test
   public void testAes256CmacTemplate() throws Exception {
     KeyTemplate template = AesCmacKeyManager.aes256CmacTemplate();
-    assertThat(template.getTypeUrl()).isEqualTo(new AesCmacKeyManager().getKeyType());
-    assertThat(template.getOutputPrefixType()).isEqualTo(KeyTemplate.OutputPrefixType.TINK);
-    AesCmacKeyFormat format =
-        AesCmacKeyFormat.parseFrom(template.getValue(), ExtensionRegistryLite.getEmptyRegistry());
-
-    assertThat(format.getKeySize()).isEqualTo(32);
-    assertThat(format.getParams().getTagSize()).isEqualTo(16);
+    assertThat(template.toParameters())
+        .isEqualTo(
+            AesCmacParameters.builder()
+                .setKeySizeBytes(32)
+                .setTagSizeBytes(16)
+                .setVariant(AesCmacParameters.Variant.TINK)
+                .build());
   }
 
   @Test
   public void testRawAes256CmacTemplate() throws Exception {
     KeyTemplate template = AesCmacKeyManager.rawAes256CmacTemplate();
-    assertThat(template.getTypeUrl()).isEqualTo(new AesCmacKeyManager().getKeyType());
-    assertThat(template.getOutputPrefixType()).isEqualTo(KeyTemplate.OutputPrefixType.RAW);
-    AesCmacKeyFormat format =
-        AesCmacKeyFormat.parseFrom(template.getValue(), ExtensionRegistryLite.getEmptyRegistry());
-
-    assertThat(format.getKeySize()).isEqualTo(32);
-    assertThat(format.getParams().getTagSize()).isEqualTo(16);
+    assertThat(template.toParameters())
+        .isEqualTo(
+            AesCmacParameters.builder()
+                .setKeySizeBytes(32)
+                .setTagSizeBytes(16)
+                .setVariant(AesCmacParameters.Variant.NO_PREFIX)
+                .build());
   }
 
   @Test
-  public void testKeyTemplateAndManagerCompatibility() throws Exception {
-    AesCmacKeyManager manager = new AesCmacKeyManager();
+  public void testKeyTemplatesWork() throws Exception {
+    Parameters p = AesCmacKeyManager.aes256CmacTemplate().toParameters();
+    assertThat(KeysetHandle.generateNew(p).getAt(0).getKey().getParameters()).isEqualTo(p);
 
-    testKeyTemplateCompatible(manager, AesCmacKeyManager.aes256CmacTemplate());
-    testKeyTemplateCompatible(manager, AesCmacKeyManager.rawAes256CmacTemplate());
+    p = AesCmacKeyManager.rawAes256CmacTemplate().toParameters();
+    assertThat(KeysetHandle.generateNew(p).getAt(0).getKey().getParameters()).isEqualTo(p);
   }
 
-  @Test
-  public void testKeyFormats() throws Exception {
-    factory.validateKeyFormat(factory.keyFormats().get("AES256_CMAC").keyFormat);
-    factory.validateKeyFormat(factory.keyFormats().get("AES256_CMAC_RAW").keyFormat);
+  @DataPoints("templateNames")
+  public static final String[] KEY_TEMPLATES = new String[] {"AES256_CMAC", "AES256_CMAC_RAW"};
+
+  @Theory
+  public void testTemplates(@FromDataPoints("templateNames") String templateName) throws Exception {
+    KeysetHandle h = KeysetHandle.generateNew(KeyTemplates.get(templateName));
+    assertThat(h.size()).isEqualTo(1);
+    assertThat(h.getAt(0).getKey().getParameters())
+        .isEqualTo(KeyTemplates.get(templateName).toParameters());
   }
 }

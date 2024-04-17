@@ -16,13 +16,20 @@
 
 #include "tink/jwt/internal/jwt_format.h"
 
+#include <cstdint>
 #include <string>
 
+#include "absl/base/internal/endian.h"
 #include "absl/status/status.h"
 #include "absl/strings/escaping.h"
 #include "absl/strings/str_split.h"
+#include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 #include "tink/crypto_format.h"
 #include "tink/jwt/internal/json_util.h"
+#include "tink/jwt/raw_jwt.h"
+#include "tink/util/status.h"
+#include "tink/util/statusor.h"
 #include "proto/tink.pb.h"
 
 namespace crypto {
@@ -98,7 +105,6 @@ util::StatusOr<std::string> CreateHeader(
   google::protobuf::Struct header;
   auto fields = header.mutable_fields();
   if (kid.has_value()) {
-    google::protobuf::Value kid_value;
     (*fields)["kid"].set_string_value(std::string(kid.value()));
   }
   if (type_header.has_value()) {

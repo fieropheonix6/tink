@@ -13,60 +13,67 @@
 // limitations under the License.
 //
 ///////////////////////////////////////////////////////////////////////////////
+
 #include "tink/internal/registry_impl.h"
 
+#include <atomic>
+#include <functional>
 #include <memory>
-#include <typeindex>
-#include <utility>
 
 #include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
+#include "absl/synchronization/mutex.h"
+#include "tink/input_stream.h"
+#include "tink/internal/key_type_info_store.h"
+#include "tink/internal/keyset_wrapper_store.h"
+#include "tink/key_manager.h"
 #include "tink/monitoring/monitoring.h"
 #include "tink/util/errors.h"
+#include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "proto/tink.pb.h"
-
-using crypto::tink::util::StatusOr;
-using google::crypto::tink::KeyData;
-using google::crypto::tink::KeyTemplate;
 
 namespace crypto {
 namespace tink {
 namespace internal {
 
 using ::crypto::tink::MonitoringClientFactory;
+using ::google::crypto::tink::KeyData;
+using ::google::crypto::tink::KeyTemplate;
 
-StatusOr<const RegistryImpl::KeyTypeInfo*> RegistryImpl::get_key_type_info(
+util::StatusOr<const KeyTypeInfoStore::Info*> RegistryImpl::get_key_type_info(
     absl::string_view type_url) const {
   absl::MutexLock lock(&maps_mutex_);
-  auto it = type_url_to_info_.find(type_url);
-  if (it == type_url_to_info_.end()) {
-    return ToStatusF(absl::StatusCode::kNotFound,
-                     "No manager for type '%s' has been registered.", type_url);
-  }
-  return &it->second;
+  return key_type_info_store_.Get(type_url);
 }
 
-StatusOr<std::unique_ptr<KeyData>> RegistryImpl::NewKeyData(
+util::StatusOr<std::unique_ptr<KeyData>> RegistryImpl::NewKeyData(
     const KeyTemplate& key_template) const {
-  auto key_type_info_or = get_key_type_info(key_template.type_url());
-  if (!key_type_info_or.ok()) return key_type_info_or.status();
-  if (!key_type_info_or.value()->new_key_allowed()) {
+  util::StatusOr<const internal::KeyTypeInfoStore::Info*> info =
+      get_key_type_info(key_template.type_url());
+  if (!info.ok()) {
+    return info.status();
+  }
+  if (!(*info)->new_key_allowed()) {
     return crypto::tink::util::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrCat("KeyManager for type ", key_template.type_url(),
                      " does not allow for creation of new keys."));
   }
-  return key_type_info_or.value()->key_factory().NewKeyData(
-      key_template.value());
+  return (*info)->key_factory().NewKeyData(key_template.value());
 }
 
-StatusOr<std::unique_ptr<KeyData>> RegistryImpl::GetPublicKeyData(
+util::StatusOr<std::unique_ptr<KeyData>> RegistryImpl::GetPublicKeyData(
     absl::string_view type_url,
     absl::string_view serialized_private_key) const {
-  auto key_type_info_or = get_key_type_info(type_url);
-  if (!key_type_info_or.ok()) return key_type_info_or.status();
-  auto factory = dynamic_cast<const PrivateKeyFactory*>(
-      &key_type_info_or.value()->key_factory());
+  util::StatusOr<const internal::KeyTypeInfoStore::Info*> info =
+      get_key_type_info(type_url);
+  if (!info.ok()) {
+    return info.status();
+  }
+  auto factory =
+      dynamic_cast<const PrivateKeyFactory*>(&(*info)->key_factory());
   if (factory == nullptr) {
     return ToStatusF(absl::StatusCode::kInvalidArgument,
                      "KeyManager for type '%s' does not have "
@@ -77,64 +84,47 @@ StatusOr<std::unique_ptr<KeyData>> RegistryImpl::GetPublicKeyData(
   return result;
 }
 
-crypto::tink::util::Status RegistryImpl::CheckInsertable(
-    absl::string_view type_url, const std::type_index& key_manager_type_index,
-    bool new_key_allowed) const {
-  auto it = type_url_to_info_.find(type_url);
-
-  if (it == type_url_to_info_.end()) {
-    return crypto::tink::util::OkStatus();
+util::StatusOr<KeyData> RegistryImpl::DeriveKey(const KeyTemplate& key_template,
+                                                InputStream* randomness) const {
+  util::StatusOr<const internal::KeyTypeInfoStore::Info*> info =
+      get_key_type_info(key_template.type_url());
+  if (!info.ok()) {
+    return info.status();
   }
-  if (it->second.key_manager_type_index() != key_manager_type_index) {
-    return ToStatusF(absl::StatusCode::kAlreadyExists,
-                     "A manager for type '%s' has been already registered.",
-                     type_url);
-  }
-  if (!it->second.new_key_allowed() && new_key_allowed) {
-    return ToStatusF(absl::StatusCode::kAlreadyExists,
-                     "A manager for type '%s' has been already registered "
-                     "with forbidden new key operation.",
-                     type_url);
-  }
-  return crypto::tink::util::OkStatus();
-}
-
-crypto::tink::util::StatusOr<google::crypto::tink::KeyData>
-RegistryImpl::DeriveKey(const google::crypto::tink::KeyTemplate& key_template,
-                        InputStream* randomness) const {
-  auto key_type_info_or = get_key_type_info(key_template.type_url());
-  if (!key_type_info_or.ok()) return key_type_info_or.status();
-  if (!key_type_info_or.value()->key_deriver()) {
+  if (!(*info)->key_deriver()) {
     return crypto::tink::util::Status(
         absl::StatusCode::kInvalidArgument,
         absl::StrCat("Manager for type '", key_template.type_url(),
                      "' cannot derive keys."));
   }
-  return key_type_info_or.value()->key_deriver()(key_template.value(),
-                                                 randomness);
+  return (*info)->key_deriver()(key_template.value(), randomness);
 }
 
 util::Status RegistryImpl::RegisterMonitoringClientFactory(
     std::unique_ptr<MonitoringClientFactory> factory) {
+  if (factory == nullptr) {
+    return util::Status(absl::StatusCode::kInvalidArgument,
+                        "Monitoring factory must not be null");
+  }
   absl::MutexLock lock(&monitoring_factory_mutex_);
-  if (monitoring_factory_ != nullptr) {
+  if (GetMonitoringClientFactory() != nullptr) {
     return util::Status(absl::StatusCode::kAlreadyExists,
                         "A monitoring factory is already registered");
   }
-  monitoring_factory_ = std::move(factory);
+  monitoring_factory_.store(factory.release(), std::memory_order_release);
   return util::OkStatus();
 }
 
 void RegistryImpl::Reset() {
   {
     absl::MutexLock lock(&maps_mutex_);
-    type_url_to_info_.clear();
-    name_to_catalogue_map_.clear();
-    primitive_to_wrapper_.clear();
+    key_type_info_store_ = KeyTypeInfoStore();
+    keyset_wrapper_store_ = KeysetWrapperStore();
   }
   {
     absl::MutexLock lock(&monitoring_factory_mutex_);
-    monitoring_factory_.reset();
+    MonitoringClientFactory* factory = monitoring_factory_.exchange(nullptr);
+    delete factory;
   }
 }
 

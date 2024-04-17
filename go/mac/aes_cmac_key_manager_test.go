@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package mac_test
 
@@ -23,7 +21,6 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	"github.com/google/tink/go/core/registry"
-	"github.com/google/tink/go/mac/subtle"
 	subtleMac "github.com/google/tink/go/mac/subtle"
 	"github.com/google/tink/go/subtle/random"
 	"github.com/google/tink/go/testutil"
@@ -38,7 +35,10 @@ func TestGetPrimitiveCMACBasic(t *testing.T) {
 	}
 	testKeys := genValidCMACKeys()
 	for i := 0; i < len(testKeys); i++ {
-		serializedKey, _ := proto.Marshal(testKeys[i])
+		serializedKey, err := proto.Marshal(testKeys[i])
+		if err != nil {
+			t.Fatalf("proto.Marshal() err = %q, want nil", err)
+		}
 		p, err := km.Primitive(serializedKey)
 		if err != nil {
 			t.Errorf("unexpected error in test case %d: %s", i, err)
@@ -57,7 +57,10 @@ func TestGetPrimitiveCMACWithInvalidInput(t *testing.T) {
 	// invalid key
 	testKeys := genInvalidCMACKeys()
 	for i := 0; i < len(testKeys); i++ {
-		serializedKey, _ := proto.Marshal(testKeys[i])
+		serializedKey, err := proto.Marshal(testKeys[i])
+		if err != nil {
+			t.Fatalf("proto.Marshal() err = %q, want nil", err)
+		}
 		if _, err := km.Primitive(serializedKey); err == nil {
 			t.Errorf("expect an error in test case %d", i)
 		}
@@ -76,15 +79,27 @@ func TestNewKeyCMACMultipleTimes(t *testing.T) {
 	if err != nil {
 		t.Errorf("cannot obtain AESCMAC key manager: %s", err)
 	}
-	serializedFormat, _ := proto.Marshal(testutil.NewAESCMACKeyFormat(16))
+	serializedFormat, err := proto.Marshal(testutil.NewAESCMACKeyFormat(16))
+	if err != nil {
+		t.Fatalf("proto.Marshal() err = %q, want nil", err)
+	}
 	keys := make(map[string]bool)
 	nTest := 26
 	for i := 0; i < nTest; i++ {
-		key, _ := km.NewKey(serializedFormat)
-		serializedKey, _ := proto.Marshal(key)
+		key, err := km.NewKey(serializedFormat)
+		if err != nil {
+			t.Fatalf("km.NewKey() err = %q, want nil", err)
+		}
+		serializedKey, err := proto.Marshal(key)
+		if err != nil {
+			t.Fatalf("proto.Marshal() err = %q, want nil", err)
+		}
 		keys[string(serializedKey)] = true
 
-		keyData, _ := km.NewKeyData(serializedFormat)
+		keyData, err := km.NewKeyData(serializedFormat)
+		if err != nil {
+			t.Fatalf("km.NewKeyData() err = %q, want nil", err)
+		}
 		serializedKey = keyData.Value
 		keys[string(serializedKey)] = true
 	}
@@ -100,7 +115,10 @@ func TestNewKeyCMACBasic(t *testing.T) {
 	}
 	testFormats := genValidCMACKeyFormats()
 	for i := 0; i < len(testFormats); i++ {
-		serializedFormat, _ := proto.Marshal(testFormats[i])
+		serializedFormat, err := proto.Marshal(testFormats[i])
+		if err != nil {
+			t.Fatalf("proto.Marshal() err = %q, want nil", err)
+		}
 		key, err := km.NewKey(serializedFormat)
 		if err != nil {
 			t.Errorf("unexpected error in test case %d: %s", i, err)
@@ -143,7 +161,10 @@ func TestNewKeyDataCMACBasic(t *testing.T) {
 	}
 	testFormats := genValidCMACKeyFormats()
 	for i := 0; i < len(testFormats); i++ {
-		serializedFormat, _ := proto.Marshal(testFormats[i])
+		serializedFormat, err := proto.Marshal(testFormats[i])
+		if err != nil {
+			t.Fatalf("proto.Marshal() err = %q, want nil", err)
+		}
 		keyData, err := km.NewKeyData(serializedFormat)
 		if err != nil {
 			t.Errorf("unexpected error in test case %d: %s", i, err)
@@ -172,7 +193,10 @@ func TestNewKeyDataCMACWithInvalidInput(t *testing.T) {
 	// invalid key formats
 	testFormats := genInvalidCMACKeyFormats()
 	for i := 0; i < len(testFormats); i++ {
-		serializedFormat, _ := proto.Marshal(testFormats[i])
+		serializedFormat, err := proto.Marshal(testFormats[i])
+		if err != nil {
+			t.Fatalf("proto.Marshal() err = %q, want nil", err)
+		}
 		if _, err := km.NewKeyData(serializedFormat); err == nil {
 			t.Errorf("expect an error in test case %d", i)
 		}
@@ -211,6 +235,8 @@ func genInvalidCMACKeys() []proto.Message {
 	badVersionKey.Version++
 	shortKey := testutil.NewAESCMACKey(16)
 	shortKey.KeyValue = []byte{1, 1}
+	nilParams := testutil.NewAESCMACKey(16)
+	nilParams.Params = nil
 	return []proto.Message{
 		// not a AESCMACKey
 		testutil.NewAESCMACParams(16),
@@ -222,12 +248,16 @@ func genInvalidCMACKeys() []proto.Message {
 		testutil.NewAESCMACKey(1),
 		// key too short
 		shortKey,
+		// params field is unset
+		nilParams,
 	}
 }
 
 func genInvalidCMACKeyFormats() []proto.Message {
 	shortKeyFormat := testutil.NewAESCMACKeyFormat(16)
 	shortKeyFormat.KeySize = 1
+	nilParams := testutil.NewAESCMACKeyFormat(16)
+	nilParams.Params = nil
 	return []proto.Message{
 		// not a AESCMACKeyFormat
 		testutil.NewAESCMACParams(16),
@@ -237,6 +267,8 @@ func genInvalidCMACKeyFormats() []proto.Message {
 		testutil.NewAESCMACKeyFormat(1),
 		// key too short
 		shortKeyFormat,
+		// params field is unset
+		nilParams,
 	}
 }
 
@@ -268,9 +300,9 @@ func validateCMACKey(format *cmacpb.AesCmacKeyFormat, key *cmacpb.AesCmacKey) er
 }
 
 // validateCMACPrimitive checks whether the given primitive matches the given AESCMACKey
-func validateCMACPrimitive(p interface{}, key *cmacpb.AesCmacKey) error {
+func validateCMACPrimitive(p any, key *cmacpb.AesCmacKey) error {
 	cmacPrimitive := p.(*subtleMac.AESCMAC)
-	keyPrimitive, err := subtle.NewAESCMAC(key.KeyValue, key.Params.TagSize)
+	keyPrimitive, err := subtleMac.NewAESCMAC(key.KeyValue, key.Params.TagSize)
 	if err != nil {
 		return fmt.Errorf("Could not create AES CMAC with key material %q and tag size %d: %s", hex.EncodeToString(key.KeyValue), key.Params.TagSize, err)
 	}

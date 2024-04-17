@@ -22,6 +22,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/algorithm/container.h"
 #include "absl/base/config.h"
@@ -33,6 +34,7 @@
 #include "tink/aead/internal/ssl_aead.h"
 #include "tink/internal/err_util.h"
 #include "tink/subtle/random.h"
+#include "tink/subtle/stream_segment_encrypter.h"
 #include "tink/subtle/subtle_util.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"

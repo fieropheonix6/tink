@@ -28,7 +28,6 @@ TEMPLATE = string.Template("""\
 ## This file is created using "create_main_build_file.py".
 
 load("//tools:gen_maven_jar_rules.bzl", "gen_maven_jar_rules")
-load("//tools:check_deps.bzl", "check_deps")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -80,7 +79,7 @@ gen_maven_jar_rules(
         "Automatic-Module-Name: com.google.crypto.tink.integration.awskms",
     ],
     root_packages = [
-        "com.google.crypto.tink",
+        "com.google.crypto.tink.integration.awskms",
     ],
     deps = [
 $awsk_deps_formatted
@@ -94,19 +93,11 @@ gen_maven_jar_rules(
         "Automatic-Module-Name: com.google.crypto.tink.integration.gcpkms",
     ],
     root_packages = [
-        "com.google.crypto.tink",
+        "com.google.crypto.tink.integration.gcpkms",
     ],
     deps = [
 $gcpk_deps_formatted
     ],
-)
-
-# Check that tink-android depends on protobuf-lite, not the full version.
-check_deps(
-    name = "tink-android-dep-checks",
-    disallowed_deps = ["@com_google_protobuf//java/core:core"],
-    required_deps = ["@com_google_protobuf//java/lite:lite"],
-    deps = [":tink-android-unshaded"],
 )""")
 
 

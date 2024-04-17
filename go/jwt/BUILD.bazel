@@ -37,6 +37,7 @@ go_library(
         "//core/primitiveset",
         "//core/registry",
         "//internal/signature",
+        "//internal/tinkerror",
         "//keyset",
         "//mac/subtle",
         "//proto/jwt_ecdsa_go_proto",
@@ -78,8 +79,10 @@ go_test(
     embed = [":jwt"],
     deps = [
         "//core/registry",
+        "//insecurecleartextkeyset",
         "//keyset",
         "//mac/subtle",
+        "//proto/ecdsa_go_proto",
         "//proto/jwt_ecdsa_go_proto",
         "//proto/jwt_hmac_go_proto",
         "//proto/jwt_rsa_ssa_pkcs1_go_proto",

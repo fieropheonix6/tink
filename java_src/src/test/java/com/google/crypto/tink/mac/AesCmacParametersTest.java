@@ -64,6 +64,18 @@ public final class AesCmacParametersTest {
   }
 
   @Test
+  public void testAesCmacParameters_buildWithVariantSetToNull_fails() throws Exception {
+    assertThrows(
+        GeneralSecurityException.class,
+        () ->
+            AesCmacParameters.builder()
+                .setKeySizeBytes(16)
+                .setTagSizeBytes(16)
+                .setVariant(null)
+                .build());
+  }
+
+  @Test
   public void testAesCmacParameters_basic() throws Exception {
     AesCmacParameters parameters = create(16, 16);
     assertThat(parameters.getKeySizeBytes()).isEqualTo(16);
@@ -242,5 +254,16 @@ public final class AesCmacParametersTest {
     assertThat(create(16, 16, TINK).hashCode()).isEqualTo(create(16, 16, TINK).hashCode());
     assertThat(create(32, 16, LEGACY).hashCode()).isEqualTo(create(32, 16, LEGACY).hashCode());
     assertThat(create(16, 16, CRUNCHY).hashCode()).isEqualTo(create(16, 16, CRUNCHY).hashCode());
+  }
+
+  @Test
+  public void testAesCmacParameters_notEqualHashes() throws Exception {
+    assertThat(create(32, 10, NO_PREFIX).hashCode())
+        .isNotEqualTo(create(16, 10, NO_PREFIX).hashCode());
+    assertThat(create(16, 10, NO_PREFIX).hashCode())
+        .isNotEqualTo(create(16, 11, NO_PREFIX).hashCode());
+    assertThat(create(32, 10, NO_PREFIX).hashCode()).isNotEqualTo(create(32, 10, TINK).hashCode());
+    assertThat(create(16, 10, TINK).hashCode()).isNotEqualTo(create(16, 10, LEGACY).hashCode());
+    assertThat(create(32, 10, LEGACY).hashCode()).isNotEqualTo(create(32, 10, CRUNCHY).hashCode());
   }
 }

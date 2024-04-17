@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package aead_test
 
@@ -232,34 +230,10 @@ func TestAESGCMInsecureIVModifyCiphertext(t *testing.T) {
 	}
 }
 
-type aeadSuite struct {
-	testutil.WycheproofSuite
-	TestGroups []*aeadGroup `json:"testGroups"`
-}
-
-type aeadGroup struct {
-	testutil.WycheproofGroup
-	IVSize  uint32      `json:"ivSize"`
-	KeySize uint32      `json:"keySize"`
-	TagSize uint32      `json:"tagSize"`
-	Type    string      `json:"type"`
-	Tests   []*aeadCase `json:"tests"`
-}
-
-type aeadCase struct {
-	testutil.WycheproofCase
-	AD      testutil.HexBytes `json:"aad"`
-	CT      testutil.HexBytes `json:"ct"`
-	IV      testutil.HexBytes `json:"iv"`
-	Key     testutil.HexBytes `json:"key"`
-	Message testutil.HexBytes `json:"msg"`
-	Tag     testutil.HexBytes `json:"tag"`
-}
-
 func TestAESGCMInsecureIVWycheproofVectors(t *testing.T) {
 	testutil.SkipTestIfTestSrcDirIsNotSet(t)
 
-	suite := new(aeadSuite)
+	suite := new(AEADSuite)
 	if err := testutil.PopulateSuite(suite, "aes_gcm_test.json"); err != nil {
 		t.Fatalf("failed to populate suite: %s", err)
 	}
@@ -271,7 +245,7 @@ func TestAESGCMInsecureIVWycheproofVectors(t *testing.T) {
 			continue
 		}
 		for _, tc := range group.Tests {
-			name := fmt.Sprintf("%s-%s(%d,%d)/Case-%d", suite.Algorithm, group.Type, group.KeySize, group.TagSize, tc.CaseID)
+			name := fmt.Sprintf("%s-%s(%d,%d):Case-%d", suite.Algorithm, group.Type, group.KeySize, group.TagSize, tc.CaseID)
 			t.Run(name, func(t *testing.T) {
 				a, err := aead.NewAESGCMInsecureIV(tc.Key, false /*=prependIV*/)
 				if err != nil {
@@ -297,5 +271,28 @@ func TestAESGCMInsecureIVWycheproofVectors(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestPreallocatedCiphertextMemoryIsExact(t *testing.T) {
+	key := random.GetRandomBytes(16)
+	a, err := aead.NewAESGCMInsecureIV(key, true /*=prependIV*/)
+	if err != nil {
+		t.Fatalf("aead.NewAESGCMInsecureIV() err = %v, want nil", err)
+	}
+	iv := random.GetRandomBytes(aead.AESGCMIVSize)
+	plaintext := random.GetRandomBytes(13)
+	associatedData := random.GetRandomBytes(17)
+
+	ciphertext, err := a.Encrypt(iv, plaintext, associatedData)
+	if err != nil {
+		t.Fatalf("a.Encrypt() err = %v, want nil", err)
+	}
+  // Encrypt() uses cipher.Overhead() to pre-allocate the memory needed store the ciphertext.
+	// For AES GCM, the size of the allocated memory should always be exact. If this check fails, the
+	// pre-allocated memory was too large or too small. If it was too small, the system had to
+	// re-allocate more memory, which is expensive and should be avoided.
+	if len(ciphertext) != cap(ciphertext) {
+		t.Errorf("want len(ciphertext) == cap(ciphertext), got %d != %d", len(ciphertext), cap(ciphertext))
 	}
 }

@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package keyset
 
@@ -44,22 +42,6 @@ func NewManagerFromHandle(kh *Handle) *Manager {
 	ret := new(Manager)
 	ret.ks = kh.ks
 	return ret
-}
-
-// Rotate generates a fresh key using the given key template and
-// sets the new key as the primary key.
-//
-// Deprecated: please use Add instead. Rotate adds a new key and immediately promotes it to primary.
-// However, when performing keyset rotation, you almost never want a newly added key to immediately be set as the primary key.
-// Instead, you want to allow sufficient time for key propagation to occur.
-func (km *Manager) Rotate(kt *tinkpb.KeyTemplate) error {
-	keyID, err := km.Add(kt)
-	if err != nil {
-		return err
-	}
-	// Set the new key as the primary key
-	km.ks.PrimaryKeyId = keyID
-	return nil
 }
 
 // Add generates and adds a fresh key using the given key template.

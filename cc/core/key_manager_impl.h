@@ -16,6 +16,7 @@
 #ifndef TINK_CORE_KEY_MANAGER_IMPL_H_
 #define TINK_CORE_KEY_MANAGER_IMPL_H_
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -25,10 +26,16 @@
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "tink/core/key_type_manager.h"
+#include "tink/core/template_util.h"
+#include "tink/input_stream.h"
 #include "tink/key_manager.h"
 #include "tink/util/constants.h"
+#include "tink/util/errors.h"
+#include "tink/util/secret_proto.h"
 #include "tink/util/status.h"
+#include "tink/util/statusor.h"
 #include "proto/tink.pb.h"
 
 namespace crypto {
@@ -78,7 +85,7 @@ class KeyFactoryImpl<
   crypto::tink::util::StatusOr<std::unique_ptr<portable_proto::MessageLite>>
   NewKey(absl::string_view serialized_key_format) const override {
     KeyFormatProto key_format;
-    if (!key_format.ParseFromString(std::string(serialized_key_format))) {
+    if (!key_format.ParseFromString(serialized_key_format)) {
       return crypto::tink::util::Status(
           absl::StatusCode::kInvalidArgument,
           absl::StrCat("Could not parse the passed string as proto '",
@@ -180,17 +187,17 @@ class KeyManagerImpl<
                        "Key type '%s' is not supported by this manager.",
                        key_data.type_url());
     }
-    KeyProto key_proto;
-    if (!key_proto.ParseFromString(key_data.value())) {
+    crypto::tink::util::SecretProto<KeyProto> key_proto;
+    if (!key_proto->ParseFromString(key_data.value())) {
       return ToStatusF(absl::StatusCode::kInvalidArgument,
                        "Could not parse key_data.value as key type '%s'.",
                        key_data.type_url());
     }
-    auto validation = key_type_manager_->ValidateKey(key_proto);
+    auto validation = key_type_manager_->ValidateKey(*key_proto);
     if (!validation.ok()) {
       return validation;
     }
-    return key_type_manager_->template GetPrimitive<Primitive>(key_proto);
+    return key_type_manager_->template GetPrimitive<Primitive>(*key_proto);
   }
 
   crypto::tink::util::StatusOr<std::unique_ptr<Primitive>> GetPrimitive(
@@ -256,7 +263,7 @@ CreateDeriverFunctionFor(
                             InputStream* randomness)
              -> crypto::tink::util::StatusOr<google::crypto::tink::KeyData> {
     KeyFormatProto key_format;
-    if (!key_format.ParseFromString(std::string(serialized_key_format))) {
+    if (!key_format.ParseFromString(serialized_key_format)) {
       return crypto::tink::util::Status(
           absl::StatusCode::kInvalidArgument,
           absl::StrCat("Could not parse the passed string as proto '",

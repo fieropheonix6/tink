@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 // Package monitoring defines the structs and interfaces for monitoring primitives with Tink.
 // This package isn't yet production ready and might go through various changes.
@@ -33,11 +31,24 @@ const (
 	DoNotUse KeyStatus = 20
 )
 
+func (status KeyStatus) String() string {
+	switch status {
+	case Enabled:
+		return "ENABLED"
+	case Disabled:
+		return "DISABLED"
+	case Destroyed:
+		return "DESTROYED"
+	}
+	return "UNKNOWN"
+}
+
 // Entry represents each entry inside a Keyset.
 type Entry struct {
-	Status         KeyStatus
-	KeyID          uint32
-	FormatAsString string
+	Status    KeyStatus
+	KeyID     uint32
+	KeyType   string
+	KeyPrefix string
 }
 
 // KeysetInfo represents a keyset in a certain point in time for the

@@ -14,6 +14,7 @@
 
 import datetime
 import json
+import sys
 
 from typing import cast, Dict, List
 
@@ -127,6 +128,11 @@ class RawJwtTest(absltest.TestCase):
         token.expiration(),
         datetime.datetime.fromtimestamp(123, datetime.timezone.utc))
 
+  @absltest.skipIf(
+      sys.platform.startswith('win32'),
+      'Windows does not allow `localtime` values after 23:59:59, December 31,'
+      ' 3000, UTC',
+  )
   def test_large_timestamps_success(self):
     # year 9999
     large = datetime.datetime.fromtimestamp(253402300799,
@@ -140,6 +146,11 @@ class RawJwtTest(absltest.TestCase):
     self.assertEqual(token.issued_at(), large)
     self.assertEqual(token.not_before(), large)
 
+  @absltest.skipIf(
+      sys.platform.startswith('win32'),
+      'Windows does not allow `localtime` values after 23:59:59, December 31,'
+      ' 3000, UTC',
+  )
   def test_too_large_timestamps_fail(self):
     with self.assertRaises(ValueError):
       datetime.datetime.fromtimestamp(253402300800, datetime.timezone.utc)
@@ -289,6 +300,12 @@ class RawJwtTest(absltest.TestCase):
     token = jwt.RawJwt._from_json(None, json.dumps(payload))
     self.assertEqual(json.loads(token.json_payload()), payload)
 
+  def test_integer_is_encoded_as_integer(self):
+    token = jwt.new_raw_jwt(
+        without_expiration=True,
+        custom_claims={'num': 1})
+    self.assertEqual(token.json_payload(), '{"num":1}')
+
   def test_exp_to_payload(self):
     expiration = datetime.datetime.fromtimestamp(2218027244,
                                                  datetime.timezone.utc)
@@ -381,6 +398,14 @@ class RawJwtTest(absltest.TestCase):
       jwt.RawJwt._from_json(None, u'{"\\uD834":"issuer"}')
     with self.assertRaises(jwt.JwtInvalidError):
       jwt.RawJwt._from_json(None, u'{"a":{"a":{"a":"\\uD834"}}}')
+
+  def test_from_payload_with_duplicate_map_keys_fails(self):
+    with self.assertRaises(jwt.JwtInvalidError):
+      jwt.RawJwt._from_json(None, '{"claim": "claim1", "claim": "claim2"}')
+    with self.assertRaises(jwt.JwtInvalidError):
+      jwt.RawJwt._from_json(None, '{"nested": {"a: "a1", "a": "a2"}}')
+    # this is fine, since the two 'a' keys are not in the same map
+    _ = jwt.RawJwt._from_json(None, '{"a": "a1", "b": {"a": "a2"}}')
 
   def test_modification(self):
     audiences = ['alice', 'bob']

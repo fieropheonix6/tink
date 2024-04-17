@@ -17,7 +17,9 @@
 #include "tink/streamingaead/buffered_input_stream.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -135,9 +137,7 @@ crypto::tink::util::Status BufferedInputStream::Rewind() {
   return status_;
 }
 
-
-BufferedInputStream::~BufferedInputStream() {
-}
+BufferedInputStream::~BufferedInputStream() = default;
 
 int64_t BufferedInputStream::Position() const {
   if (direct_access_) return input_stream_->Position();

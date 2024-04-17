@@ -20,10 +20,15 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.fail;
 
+import com.google.crypto.tink.InsecureSecretKeyAccess;
+import com.google.crypto.tink.StreamingAead;
 import com.google.crypto.tink.config.TinkFips;
+import com.google.crypto.tink.streamingaead.AesCtrHmacStreamingKey;
+import com.google.crypto.tink.streamingaead.AesCtrHmacStreamingParameters;
+import com.google.crypto.tink.streamingaead.AesCtrHmacStreamingParameters.HashType;
 import com.google.crypto.tink.testing.StreamingTestUtil;
 import com.google.crypto.tink.testing.StreamingTestUtil.SeekableByteBufferChannel;
-import com.google.crypto.tink.testing.TestUtil;
+import com.google.crypto.tink.util.SecretBytes;
 import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
 import java.security.GeneralSecurityException;
@@ -46,7 +51,7 @@ public class AesCtrHmacStreamingTest {
   @Rule public TemporaryFolder tmpFolder = new TemporaryFolder();
 
   private AesCtrHmacStreaming createAesCtrHmacStreaming() throws Exception {
-    byte[] ikm = TestUtil.hexDecode("000102030405060708090a0b0c0d0e0f");
+    byte[] ikm = Hex.decode("000102030405060708090a0b0c0d0e0f");
     String hkdfAlgo = "HmacSha256";
     int keySize = 16;
     String tagAlgo = "HmacSha256";
@@ -75,11 +80,7 @@ public class AesCtrHmacStreamingTest {
       int plaintextSize,
       int chunkSize)
       throws Exception {
-    if (TestUtil.shouldSkipTestWithAesKeySize(keySizeInBytes)) {
-      return;
-    }
-    byte[] ikm =
-        TestUtil.hexDecode("000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff");
+    byte[] ikm = Hex.decode("000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff");
     AesCtrHmacStreaming ags =
         new AesCtrHmacStreaming(ikm, "HmacSha256", keySizeInBytes, "HmacSha256",
             tagSizeInBytes, segmentSize, firstSegmentOffset);
@@ -180,11 +181,7 @@ public class AesCtrHmacStreamingTest {
       int firstSegmentOffset,
       int plaintextSize)
       throws Exception {
-    if (TestUtil.shouldSkipTestWithAesKeySize(keySizeInBytes)) {
-      return;
-    }
-    byte[] ikm =
-        TestUtil.hexDecode("000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff");
+    byte[] ikm = Hex.decode("000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff");
     AesCtrHmacStreaming ags =
         new AesCtrHmacStreaming(ikm, "HmacSha256", keySizeInBytes, "HmacSha256",
             tagSizeInBytes, segmentSize, firstSegmentOffset);
@@ -265,15 +262,10 @@ public class AesCtrHmacStreamingTest {
    * this stream.
    */
   public void testEncryptSingleBytes(int keySizeInBytes, int plaintextSize) throws Exception {
-    if (TestUtil.shouldSkipTestWithAesKeySize(keySizeInBytes)) {
-      return;
-    }
-
     int firstSegmentOffset = 0;
     int segmentSize = 512;
     int tagSizeInBytes = 12;
-    byte[] ikm =
-        TestUtil.hexDecode("000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff");
+    byte[] ikm = Hex.decode("000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff");
     AesCtrHmacStreaming ags = new AesCtrHmacStreaming(ikm, "HmacSha256", keySizeInBytes,
         "HmacSha256", tagSizeInBytes, segmentSize, firstSegmentOffset);
     StreamingTestUtil.testEncryptSingleBytes(ags, plaintextSize);
@@ -308,26 +300,24 @@ public class AesCtrHmacStreamingTest {
     int firstSegmentOffset = 0;
     int keySizeInBytes = 16;
     int tagSizeInBytes = 12;
-    byte[] ikm =
-        TestUtil.hexDecode("000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff");
+    byte[] ikm = Hex.decode("000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff");
     AesCtrHmacStreaming ags = new AesCtrHmacStreaming(ikm, "HmacSha256", keySizeInBytes,
         "HmacSha256", tagSizeInBytes, segmentSize, firstSegmentOffset);
 
     int plaintextSize = 1 << 15;
     int maxChunkSize = 100;
-    byte[] aad = TestUtil.hexDecode("aabbccddeeff");
+    byte[] aad = Hex.decode("aabbccddeeff");
     byte[] plaintext = StreamingTestUtil.generatePlaintext(plaintextSize);
     int ciphertextLength = (int) ags.expectedCiphertextSize(plaintextSize);
     ByteBuffer ciphertext = ByteBuffer.allocate(ciphertextLength);
     WritableByteChannel ctChannel = new SeekableByteBufferChannel(ciphertext, maxChunkSize);
-    WritableByteChannel encChannel = ags.newEncryptingChannel(ctChannel, aad);
+    WritableByteChannel encChannel = ((StreamingAead) ags).newEncryptingChannel(ctChannel, aad);
     ByteBuffer plaintextBuffer = ByteBuffer.wrap(plaintext);
     int loops = 0;
     while (plaintextBuffer.remaining() > 0) {
       encChannel.write(plaintextBuffer);
       loops += 1;
       if (loops > 100000) {
-        System.out.println(encChannel.toString());
         fail("Too many loops");
       }
     }
@@ -349,7 +339,7 @@ public class AesCtrHmacStreamingTest {
   public void testModifiedCiphertext() throws Exception {
     Assume.assumeFalse(TinkFips.useOnlyFips());
 
-    byte[] ikm = TestUtil.hexDecode("000102030405060708090a0b0c0d0e0f");
+    byte[] ikm = Hex.decode("000102030405060708090a0b0c0d0e0f");
     int keySize = 16;
     int tagSize = 12;
     int segmentSize = 256;
@@ -363,7 +353,7 @@ public class AesCtrHmacStreamingTest {
   public void testSkipWithStream() throws Exception {
     Assume.assumeFalse(TinkFips.useOnlyFips());
 
-    byte[] ikm = TestUtil.hexDecode("000102030405060708090a0b0c0d0e0f");
+    byte[] ikm = Hex.decode("000102030405060708090a0b0c0d0e0f");
     int keySize = 16;
     int tagSize = 12;
     int segmentSize = 256;
@@ -386,7 +376,7 @@ public class AesCtrHmacStreamingTest {
   public void testModifiedCiphertextWithSeekableByteChannel() throws Exception {
     Assume.assumeFalse(TinkFips.useOnlyFips());
 
-    byte[] ikm = TestUtil.hexDecode("000102030405060708090a0b0c0d0e0f");
+    byte[] ikm = Hex.decode("000102030405060708090a0b0c0d0e0f");
     int keySize = 16;
     int tagSize = 12;
     int segmentSize = 256;
@@ -397,7 +387,7 @@ public class AesCtrHmacStreamingTest {
   }
 
   @Test
-  /**
+  /*
    * Encrypts a plaintext consisting of 0's and checks that the ciphertext has no repeating blocks.
    * This is a simple test to catch basic errors that violate semantic security. The probability of
    * false positives is smaller than 2^{-100}.
@@ -406,8 +396,8 @@ public class AesCtrHmacStreamingTest {
     Assume.assumeFalse(TinkFips.useOnlyFips());
 
     HashSet<String> ciphertextBlocks = new HashSet<String>();
-    byte[] ikm = TestUtil.hexDecode("000102030405060708090a0b0c0d0e0f");
-    byte[] aad = TestUtil.hexDecode("aabbccddeeff");
+    byte[] ikm = Hex.decode("000102030405060708090a0b0c0d0e0f");
+    byte[] aad = Hex.decode("aabbccddeeff");
     int keySize = 16;
     int tagSize = 12;
     int segmentSize = 256;
@@ -422,7 +412,7 @@ public class AesCtrHmacStreamingTest {
       byte[] ciphertext =
           StreamingTestUtil.encryptWithChannel(ags, plaintext, aad, ags.getFirstSegmentOffset());
       for (int pos = ags.getHeaderLength(); pos + blocksize <= ciphertext.length; pos++) {
-        String block = TestUtil.hexEncode(Arrays.copyOfRange(ciphertext, pos, pos + blocksize));
+        String block = Hex.encode(Arrays.copyOfRange(ciphertext, pos, pos + blocksize));
         if (!ciphertextBlocks.add(block)) {
           fail("Ciphertext contains a repeating block " + block + " at position " + pos);
         }
@@ -454,5 +444,282 @@ public class AesCtrHmacStreamingTest {
     Assume.assumeTrue(TinkFips.useOnlyFips());
 
     assertThrows(GeneralSecurityException.class, () -> testEncryptDecrypt(16, 12, 256, 0, 20, 64));
+  }
+
+  @Test
+  public void testCompareConstructorToCreate_basic_works() throws Exception {
+    Assume.assumeFalse(TinkFips.useOnlyFips());
+
+    byte[] ikm = Hex.decode("000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff");
+    AesCtrHmacStreaming constructorAead =
+        new AesCtrHmacStreaming(
+            ikm,
+            "HmacSha256",
+            /* keySizeInBytes= */ 16,
+            "HmacSha256",
+            /* tagSizeInBytes= */ 12,
+            /* ciphertextSegmentSize= */ 256,
+            /* firstSegmentOffset= */ 0);
+    AesCtrHmacStreamingParameters params =
+        AesCtrHmacStreamingParameters.builder()
+            .setKeySizeBytes(ikm.length)
+            .setHkdfHashType(HashType.SHA256)
+            .setDerivedKeySizeBytes(16)
+            .setHmacHashType(HashType.SHA256)
+            .setHmacTagSizeBytes(12)
+            .setCiphertextSegmentSizeBytes(256)
+            .build();
+    AesCtrHmacStreamingKey key =
+        AesCtrHmacStreamingKey.create(
+            params, SecretBytes.copyFrom(ikm, InsecureSecretKeyAccess.get()));
+    StreamingAead createMethodAead = AesCtrHmacStreaming.create(key);
+
+    StreamingTestUtil.testEncryptDecryptDifferentInstances(
+        constructorAead, createMethodAead, 0, 2049, 1000);
+  }
+
+  @Test
+  public void testCompareConstructorToCreate_differentKeySize_works() throws Exception {
+    Assume.assumeFalse(TinkFips.useOnlyFips());
+
+    byte[] ikm =
+        Hex.decode(
+            "000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff"
+                + "000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff");
+    AesCtrHmacStreaming constructorAead =
+        new AesCtrHmacStreaming(
+            ikm,
+            "HmacSha256",
+            /* keySizeInBytes= */ 16,
+            "HmacSha256",
+            /* tagSizeInBytes= */ 12,
+            /* ciphertextSegmentSize= */ 256,
+            /* firstSegmentOffset= */ 0);
+    AesCtrHmacStreamingParameters params =
+        AesCtrHmacStreamingParameters.builder()
+            .setKeySizeBytes(ikm.length)
+            .setHkdfHashType(HashType.SHA256)
+            .setDerivedKeySizeBytes(16)
+            .setHmacHashType(HashType.SHA256)
+            .setHmacTagSizeBytes(12)
+            .setCiphertextSegmentSizeBytes(256)
+            .build();
+    AesCtrHmacStreamingKey key =
+        AesCtrHmacStreamingKey.create(
+            params, SecretBytes.copyFrom(ikm, InsecureSecretKeyAccess.get()));
+    StreamingAead createMethodAead = AesCtrHmacStreaming.create(key);
+
+    StreamingTestUtil.testEncryptDecryptDifferentInstances(
+        constructorAead, createMethodAead, 0, 2049, 1000);
+  }
+
+  @Test
+  public void testCompareConstructorToCreate_differentDerivedKeySize_works() throws Exception {
+    Assume.assumeFalse(TinkFips.useOnlyFips());
+
+    byte[] ikm =
+        Hex.decode(
+            "000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff"
+                + "000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff");
+    AesCtrHmacStreaming constructorAead =
+        new AesCtrHmacStreaming(
+            ikm,
+            "HmacSha256",
+            /* keySizeInBytes= */ 32,
+            "HmacSha256",
+            /* tagSizeInBytes= */ 12,
+            /* ciphertextSegmentSize= */ 256,
+            /* firstSegmentOffset= */ 0);
+    AesCtrHmacStreamingParameters params =
+        AesCtrHmacStreamingParameters.builder()
+            .setKeySizeBytes(ikm.length)
+            .setHkdfHashType(HashType.SHA256)
+            .setDerivedKeySizeBytes(32)
+            .setHmacHashType(HashType.SHA256)
+            .setHmacTagSizeBytes(12)
+            .setCiphertextSegmentSizeBytes(256)
+            .build();
+    AesCtrHmacStreamingKey key =
+        AesCtrHmacStreamingKey.create(
+            params, SecretBytes.copyFrom(ikm, InsecureSecretKeyAccess.get()));
+    StreamingAead createMethodAead = AesCtrHmacStreaming.create(key);
+
+    StreamingTestUtil.testEncryptDecryptDifferentInstances(
+        constructorAead, createMethodAead, 0, 2049, 1000);
+  }
+
+  @Test
+  public void testCompareConstructorToCreate_differentTagSize_works() throws Exception {
+    Assume.assumeFalse(TinkFips.useOnlyFips());
+
+    byte[] ikm =
+        Hex.decode(
+            "000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff"
+                + "000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff");
+    AesCtrHmacStreaming constructorAead =
+        new AesCtrHmacStreaming(
+            ikm,
+            "HmacSha256",
+            /* keySizeInBytes= */ 16,
+            "HmacSha256",
+            /* tagSizeInBytes= */ 17,
+            /* ciphertextSegmentSize= */ 256,
+            /* firstSegmentOffset= */ 0);
+    AesCtrHmacStreamingParameters params =
+        AesCtrHmacStreamingParameters.builder()
+            .setKeySizeBytes(ikm.length)
+            .setHkdfHashType(HashType.SHA256)
+            .setDerivedKeySizeBytes(16)
+            .setHmacHashType(HashType.SHA256)
+            .setHmacTagSizeBytes(17)
+            .setCiphertextSegmentSizeBytes(256)
+            .build();
+    AesCtrHmacStreamingKey key =
+        AesCtrHmacStreamingKey.create(
+            params, SecretBytes.copyFrom(ikm, InsecureSecretKeyAccess.get()));
+    StreamingAead createMethodAead = AesCtrHmacStreaming.create(key);
+
+    StreamingTestUtil.testEncryptDecryptDifferentInstances(
+        constructorAead, createMethodAead, 0, 2049, 1000);
+  }
+
+  @Test
+  public void testCompareConstructorToCreate_differentSegmentSize_works() throws Exception {
+    Assume.assumeFalse(TinkFips.useOnlyFips());
+
+    byte[] ikm =
+        Hex.decode(
+            "000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff"
+                + "000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff");
+    AesCtrHmacStreaming constructorAead =
+        new AesCtrHmacStreaming(
+            ikm,
+            "HmacSha256",
+            /* keySizeInBytes= */ 16,
+            "HmacSha256",
+            /* tagSizeInBytes= */ 12,
+            /* ciphertextSegmentSize= */ 128,
+            /* firstSegmentOffset= */ 0);
+    AesCtrHmacStreamingParameters params =
+        AesCtrHmacStreamingParameters.builder()
+            .setKeySizeBytes(ikm.length)
+            .setHkdfHashType(HashType.SHA256)
+            .setDerivedKeySizeBytes(16)
+            .setHmacHashType(HashType.SHA256)
+            .setHmacTagSizeBytes(12)
+            .setCiphertextSegmentSizeBytes(128)
+            .build();
+    AesCtrHmacStreamingKey key =
+        AesCtrHmacStreamingKey.create(
+            params, SecretBytes.copyFrom(ikm, InsecureSecretKeyAccess.get()));
+    StreamingAead createMethodAead = AesCtrHmacStreaming.create(key);
+
+    StreamingTestUtil.testEncryptDecryptDifferentInstances(
+        constructorAead, createMethodAead, 0, 2049, 1000);
+  }
+
+  @Test
+  public void testCompareConstructorToCreate_varyHkdfType_works() throws Exception {
+    Assume.assumeFalse(TinkFips.useOnlyFips());
+
+    byte[] ikm =
+        Hex.decode(
+            "000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff"
+                + "000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff");
+    AesCtrHmacStreaming constructorAead =
+        new AesCtrHmacStreaming(
+            ikm,
+            "HmacSha1",
+            /* keySizeInBytes= */ 16,
+            "HmacSha256",
+            /* tagSizeInBytes= */ 12,
+            /* ciphertextSegmentSize= */ 256,
+            /* firstSegmentOffset= */ 0);
+    AesCtrHmacStreamingParameters params =
+        AesCtrHmacStreamingParameters.builder()
+            .setKeySizeBytes(ikm.length)
+            .setHkdfHashType(HashType.SHA1)
+            .setDerivedKeySizeBytes(16)
+            .setHmacHashType(HashType.SHA256)
+            .setHmacTagSizeBytes(12)
+            .setCiphertextSegmentSizeBytes(256)
+            .build();
+    AesCtrHmacStreamingKey key =
+        AesCtrHmacStreamingKey.create(
+            params, SecretBytes.copyFrom(ikm, InsecureSecretKeyAccess.get()));
+    StreamingAead createMethodAead = AesCtrHmacStreaming.create(key);
+
+    StreamingTestUtil.testEncryptDecryptDifferentInstances(
+        constructorAead, createMethodAead, 0, 2049, 1000);
+  }
+
+  @Test
+  public void testCompareConstructorToCreate_varyHmacType_works() throws Exception {
+    Assume.assumeFalse(TinkFips.useOnlyFips());
+
+    byte[] ikm =
+        Hex.decode(
+            "000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff"
+                + "000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff");
+    AesCtrHmacStreaming constructorAead =
+        new AesCtrHmacStreaming(
+            ikm,
+            "HmacSha256",
+            /* keySizeInBytes= */ 16,
+            "HmacSha512",
+            /* tagSizeInBytes= */ 12,
+            /* ciphertextSegmentSize= */ 256,
+            /* firstSegmentOffset= */ 0);
+    AesCtrHmacStreamingParameters params =
+        AesCtrHmacStreamingParameters.builder()
+            .setKeySizeBytes(ikm.length)
+            .setHkdfHashType(HashType.SHA256)
+            .setDerivedKeySizeBytes(16)
+            .setHmacHashType(HashType.SHA512)
+            .setHmacTagSizeBytes(12)
+            .setCiphertextSegmentSizeBytes(256)
+            .build();
+    AesCtrHmacStreamingKey key =
+        AesCtrHmacStreamingKey.create(
+            params, SecretBytes.copyFrom(ikm, InsecureSecretKeyAccess.get()));
+    StreamingAead createMethodAead = AesCtrHmacStreaming.create(key);
+
+    StreamingTestUtil.testEncryptDecryptDifferentInstances(
+        constructorAead, createMethodAead, 0, 2049, 1000);
+  }
+
+  @Test
+  public void testCompareConstructorToCreate_varyHkdfAndHmacType_works() throws Exception {
+    Assume.assumeFalse(TinkFips.useOnlyFips());
+
+    byte[] ikm =
+        Hex.decode(
+            "000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff"
+                + "000102030405060708090a0b0c0d0e0f00112233445566778899aabbccddeeff");
+    AesCtrHmacStreaming constructorAead =
+        new AesCtrHmacStreaming(
+            ikm,
+            "HmacSha512",
+            /* keySizeInBytes= */ 16,
+            "HmacSha1",
+            /* tagSizeInBytes= */ 12,
+            /* ciphertextSegmentSize= */ 256,
+            /* firstSegmentOffset= */ 0);
+    AesCtrHmacStreamingParameters params =
+        AesCtrHmacStreamingParameters.builder()
+            .setKeySizeBytes(ikm.length)
+            .setHkdfHashType(HashType.SHA512)
+            .setDerivedKeySizeBytes(16)
+            .setHmacHashType(HashType.SHA1)
+            .setHmacTagSizeBytes(12)
+            .setCiphertextSegmentSizeBytes(256)
+            .build();
+    AesCtrHmacStreamingKey key =
+        AesCtrHmacStreamingKey.create(
+            params, SecretBytes.copyFrom(ikm, InsecureSecretKeyAccess.get()));
+    StreamingAead createMethodAead = AesCtrHmacStreaming.create(key);
+
+    StreamingTestUtil.testEncryptDecryptDifferentInstances(
+        constructorAead, createMethodAead, 0, 2049, 1000);
   }
 }

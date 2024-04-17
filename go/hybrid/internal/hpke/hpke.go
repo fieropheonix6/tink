@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 // Package hpke provides implementations of Hybrid Public Key Encryption.
 package hpke
@@ -52,24 +50,26 @@ var (
 // kemSuiteID generates the KEM suite ID from kemID according to
 // https://www.rfc-editor.org/rfc/rfc9180.html#section-4.1-5.
 func kemSuiteID(kemID uint16) []byte {
-	return appendBigEndianUint16([]byte("KEM"), kemID)
+	return binary.BigEndian.AppendUint16([]byte("KEM"), kemID)
 }
 
 // hpkeSuiteID generates the HPKE suite ID according to
 // https://www.rfc-editor.org/rfc/rfc9180.html#section-5.1-8.
 func hpkeSuiteID(kemID, kdfID, aeadID uint16) []byte {
-	var res []byte
+	// Allocate memory for the return value with the exact amount of bytes needed.
+	res := make([]byte, 0, 4+2+2+2)
 	res = append(res, "HPKE"...)
-	res = appendBigEndianUint16(res, kemID)
-	res = appendBigEndianUint16(res, kdfID)
-	res = appendBigEndianUint16(res, aeadID)
+	res = binary.BigEndian.AppendUint16(res, kemID)
+	res = binary.BigEndian.AppendUint16(res, kdfID)
+	res = binary.BigEndian.AppendUint16(res, aeadID)
 	return res
 }
 
 // keyScheduleContext creates the key_schedule_context defined at
 // https://www.rfc-editor.org/rfc/rfc9180.html#section-5.1-10.
 func keyScheduleContext(mode uint8, pskIDHash, infoHash []byte) []byte {
-	var res []byte
+	// Allocate memory for the return value with the exact amount of bytes needed.
+	res := make([]byte, 0, 1+len(pskIDHash)+len(infoHash))
 	res = append(res, mode)
 	res = append(res, pskIDHash...)
 	res = append(res, infoHash...)
@@ -79,7 +79,8 @@ func keyScheduleContext(mode uint8, pskIDHash, infoHash []byte) []byte {
 // labelIKM returns a labeled IKM according to LabeledExtract() defined at
 // https://www.rfc-editor.org/rfc/rfc9180.html#section-4.
 func labelIKM(label string, ikm, suiteID []byte) []byte {
-	var res []byte
+	// Allocate memory for the return value with the exact amount of bytes needed.
+	res := make([]byte, 0, len(hpkeV1)+len(suiteID)+len(label)+len(ikm))
 	res = append(res, hpkeV1...)
 	res = append(res, suiteID...)
 	res = append(res, label...)
@@ -95,18 +96,12 @@ func labelInfo(label string, info, suiteID []byte, length int) ([]byte, error) {
 		return nil, fmt.Errorf("length %d must be a valid uint16 value", length)
 	}
 
-	var res []byte
-	res = appendBigEndianUint16(res, length16)
+	// Allocate memory for the return value with the exact amount of bytes needed.
+	res := make([]byte, 0, 2+len(hpkeV1)+len(suiteID)+len(label)+len(info))
+	res = binary.BigEndian.AppendUint16(res, length16)
 	res = append(res, hpkeV1...)
 	res = append(res, suiteID...)
 	res = append(res, label...)
 	res = append(res, info...)
 	return res, nil
-}
-
-// appendBigEndianUint16 appends a uint16 v to the end of a byte array out.
-func appendBigEndianUint16(out []byte, v uint16) []byte {
-	b := make([]byte, 2)
-	binary.BigEndian.PutUint16(b, v)
-	return append(out, b...)
 }

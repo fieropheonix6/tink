@@ -27,6 +27,7 @@
 #ifndef TINK_SUBTLE_MAC_STATEFUL_MAC_H_
 #define TINK_SUBTLE_MAC_STATEFUL_MAC_H_
 
+#include <memory>
 #include <string>
 
 #include "absl/strings/string_view.h"
@@ -39,8 +40,8 @@ namespace subtle {
 
 class StatefulMac {
  public:
-  StatefulMac() {}
-  virtual ~StatefulMac() {}
+  StatefulMac() = default;
+  virtual ~StatefulMac() = default;
 
   virtual util::Status Update(absl::string_view data) = 0;
   virtual util::StatusOr<std::string> Finalize() = 0;
@@ -48,7 +49,7 @@ class StatefulMac {
 
 class StatefulMacFactory {
  public:
-  virtual ~StatefulMacFactory() {}
+  virtual ~StatefulMacFactory() = default;
 
   virtual util::StatusOr<std::unique_ptr<StatefulMac>> Create() const = 0;
 };

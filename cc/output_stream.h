@@ -17,6 +17,8 @@
 #ifndef TINK_OUTPUT_STREAM_H_
 #define TINK_OUTPUT_STREAM_H_
 
+#include <cstdint>
+
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 
@@ -27,8 +29,8 @@ namespace tink {
 // Protocol Buffers' google::protobuf::io::ZeroCopyOutputStream.
 class OutputStream {
  public:
-  OutputStream() {}
-  virtual ~OutputStream() {}
+  OutputStream() = default;
+  virtual ~OutputStream() = default;
 
   // Obtains a buffer into which data can be written.  Any data written
   // into this buffer will eventually (maybe instantly, maybe later on)

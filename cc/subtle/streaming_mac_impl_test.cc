@@ -16,11 +16,17 @@
 
 #include "tink/subtle/streaming_mac_impl.h"
 
+#include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
+#include "tink/output_stream_with_result.h"
+#include "tink/subtle/mac/stateful_mac.h"
 #include "tink/subtle/random.h"
 #include "tink/subtle/test_util.h"
 #include "tink/util/status.h"
@@ -40,8 +46,8 @@ using ::testing::HasSubstr;
 
 class DummyStatefulMacFactory : public StatefulMacFactory {
  public:
-  DummyStatefulMacFactory() {}
-  ~DummyStatefulMacFactory() override {}
+  DummyStatefulMacFactory() = default;
+  ~DummyStatefulMacFactory() override = default;
 
   // Constructs a StatefulMac using the DummyStatefulMac, which creates
   // returns a MAC of the header concatenated with the plaintext.

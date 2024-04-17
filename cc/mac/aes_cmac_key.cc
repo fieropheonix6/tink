@@ -18,11 +18,15 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "absl/base/attributes.h"
+#include "absl/status/status.h"
 #include "absl/strings/escaping.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/types/optional.h"
+#include "tink/key.h"
 #include "tink/mac/aes_cmac_parameters.h"
 #include "tink/partial_key_access_token.h"
 #include "tink/restricted_data.h"
@@ -34,9 +38,9 @@ namespace crypto {
 namespace tink {
 
 util::StatusOr<AesCmacKey> AesCmacKey::Create(
-    AesCmacParameters parameters, RestrictedData aes_key_bytes,
+    const AesCmacParameters& parameters, const RestrictedData& key_bytes,
     absl::optional<int> id_requirement, PartialKeyAccessToken token) {
-  if (parameters.KeySizeInBytes() != aes_key_bytes.size()) {
+  if (parameters.KeySizeInBytes() != key_bytes.size()) {
     return util::Status(absl::StatusCode::kInvalidArgument,
                         "Key size does not match AES-CMAC parameters");
   }
@@ -52,25 +56,41 @@ util::StatusOr<AesCmacKey> AesCmacKey::Create(
         "Cannot create key with ID requirement with parameters without ID "
         "requirement");
   }
-  return AesCmacKey(parameters, aes_key_bytes, id_requirement);
+  util::StatusOr<std::string> output_prefix =
+      ComputeOutputPrefix(parameters, id_requirement);
+  if (!output_prefix.ok()) {
+    return output_prefix.status();
+  }
+  return AesCmacKey(parameters, key_bytes, id_requirement,
+                    *std::move(output_prefix));
 }
 
-util::StatusOr<std::string> AesCmacKey::GetOutputPrefix() const {
-  switch (parameters_.GetVariant()) {
+util::StatusOr<std::string> AesCmacKey::ComputeOutputPrefix(
+    const AesCmacParameters& parameters, absl::optional<int> id_requirement) {
+  switch (parameters.GetVariant()) {
     case AesCmacParameters::Variant::kNoPrefix:
       return std::string("");  // Empty prefix.
     case AesCmacParameters::Variant::kLegacy:
       ABSL_FALLTHROUGH_INTENDED;
     case AesCmacParameters::Variant::kCrunchy:
+      if (!id_requirement.has_value()) {
+        return util::Status(
+            absl::StatusCode::kInvalidArgument,
+            "id requirement must have value with kCrunchy or kLegacy");
+      }
       return absl::StrCat(absl::HexStringToBytes("00"),
-                          subtle::BigEndian32(*id_requirement_));
+                          subtle::BigEndian32(*id_requirement));
     case AesCmacParameters::Variant::kTink:
+      if (!id_requirement.has_value()) {
+        return util::Status(absl::StatusCode::kInvalidArgument,
+                            "id requirement must have value with kTink");
+      }
       return absl::StrCat(absl::HexStringToBytes("01"),
-                          subtle::BigEndian32(*id_requirement_));
+                          subtle::BigEndian32(*id_requirement));
     default:
       return util::Status(
           absl::StatusCode::kInvalidArgument,
-          absl::StrCat("Invalid variant: ", parameters_.GetVariant()));
+          absl::StrCat("Invalid variant: ", parameters.GetVariant()));
   }
 }
 
@@ -85,7 +105,7 @@ bool AesCmacKey::operator==(const Key& other) const {
   if (id_requirement_ != that->id_requirement_) {
     return false;
   }
-  return aes_key_bytes_ == that->aes_key_bytes_;
+  return key_bytes_ == that->key_bytes_;
 }
 
 }  // namespace tink

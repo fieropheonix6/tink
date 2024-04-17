@@ -9,18 +9,8 @@ java_library(
     srcs = ["KeysDownloader.java"],
     deps = [
         "@maven//:com_google_code_findbugs_jsr305",
+        "@maven//:com_google_errorprone_error_prone_annotations",
         "@maven//:com_google_http_client_google_http_client",
-        "@maven//:joda_time_joda_time",
-    ],
-)
-
-android_library(
-    name = "keys_downloader-android",
-    srcs = ["KeysDownloader.java"],
-    deps = [
-        "@maven//:com_google_code_findbugs_jsr305",
-        "@maven//:com_google_http_client_google_http_client",
-        "@maven//:joda_time_joda_time",
     ],
 )
 
@@ -30,7 +20,6 @@ java_library(
     deps = [
         ":bytes",
         "//src/main/java/com/google/crypto/tink:secret_key_access",
-        "//src/main/java/com/google/crypto/tink/annotations:alpha",
         "//src/main/java/com/google/crypto/tink/subtle:random",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
@@ -42,7 +31,6 @@ android_library(
     deps = [
         ":bytes-android",
         "//src/main/java/com/google/crypto/tink:secret_key_access-android",
-        "//src/main/java/com/google/crypto/tink/annotations:alpha-android",
         "//src/main/java/com/google/crypto/tink/subtle:random-android",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
@@ -62,6 +50,24 @@ android_library(
     srcs = ["Bytes.java"],
     deps = [
         "//src/main/java/com/google/crypto/tink/subtle:hex-android",
+        "@maven//:com_google_errorprone_error_prone_annotations",
+    ],
+)
+
+java_library(
+    name = "secret_big_integer",
+    srcs = ["SecretBigInteger.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink:secret_key_access",
+        "@maven//:com_google_errorprone_error_prone_annotations",
+    ],
+)
+
+android_library(
+    name = "secret_big_integer-android",
+    srcs = ["SecretBigInteger.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink:secret_key_access-android",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )

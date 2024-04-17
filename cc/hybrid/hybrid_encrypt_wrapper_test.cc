@@ -16,20 +16,26 @@
 
 #include "tink/hybrid/hybrid_encrypt_wrapper.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/container/flat_hash_map.h"
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
+#include "absl/strings/string_view.h"
 #include "tink/hybrid/failing_hybrid.h"
 #include "tink/hybrid_encrypt.h"
 #include "tink/internal/registry_impl.h"
 #include "tink/monitoring/monitoring.h"
 #include "tink/monitoring/monitoring_client_mocks.h"
 #include "tink/primitive_set.h"
+#include "tink/registry.h"
 #include "tink/util/status.h"
+#include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 #include "tink/util/test_util.h"
 #include "proto/tink.pb.h"
@@ -117,11 +123,11 @@ TEST_F(HybridEncryptSetWrapperTest, testBasic) {
     auto entry_result = hybrid_encrypt_set->AddPrimitive(
         std::move(hybrid_encrypt), keyset_info.key_info(0));
     ASSERT_TRUE(entry_result.ok());
-    hybrid_encrypt.reset(new DummyHybridEncrypt(hybrid_name_1));
+    hybrid_encrypt = std::make_unique<DummyHybridEncrypt>(hybrid_name_1);
     entry_result = hybrid_encrypt_set->AddPrimitive(std::move(hybrid_encrypt),
                                                     keyset_info.key_info(1));
     ASSERT_TRUE(entry_result.ok());
-    hybrid_encrypt.reset(new DummyHybridEncrypt(hybrid_name_2));
+    hybrid_encrypt = std::make_unique<DummyHybridEncrypt>(hybrid_name_2);
     entry_result = hybrid_encrypt_set->AddPrimitive(std::move(hybrid_encrypt),
                                                     keyset_info.key_info(2));
     ASSERT_TRUE(entry_result.ok());

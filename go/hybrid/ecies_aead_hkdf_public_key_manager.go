@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package hybrid
 
@@ -47,7 +45,7 @@ type eciesAEADHKDFPublicKeyKeyManager struct{}
 var _ registry.KeyManager = (*eciesAEADHKDFPublicKeyKeyManager)(nil)
 
 // Primitive creates an ECIESAEADHKDFPublicKey subtle for the given serialized ECIESAEADHKDFPublicKey proto.
-func (km *eciesAEADHKDFPublicKeyKeyManager) Primitive(serializedKey []byte) (interface{}, error) {
+func (km *eciesAEADHKDFPublicKeyKeyManager) Primitive(serializedKey []byte) (any, error) {
 	if len(serializedKey) == 0 {
 		return nil, errInvalidECIESAEADHKDFPublicKeyKey
 	}
@@ -58,26 +56,27 @@ func (km *eciesAEADHKDFPublicKeyKeyManager) Primitive(serializedKey []byte) (int
 	if err := km.validateKey(key); err != nil {
 		return nil, errInvalidECIESAEADHKDFPublicKeyKey
 	}
-	curve, err := subtle.GetCurve(key.Params.KemParams.CurveType.String())
+	params := key.GetParams()
+	curve, err := subtle.GetCurve(params.GetKemParams().GetCurveType().String())
 	if err != nil {
 		return nil, err
 	}
 	pub := subtle.ECPublicKey{
 		Curve: curve,
 		Point: subtle.ECPoint{
-			X: new(big.Int).SetBytes(key.X),
-			Y: new(big.Int).SetBytes(key.Y),
+			X: new(big.Int).SetBytes(key.GetX()),
+			Y: new(big.Int).SetBytes(key.GetY()),
 		},
 	}
-	rDem, err := newRegisterECIESAEADHKDFDemHelper(key.Params.DemParams.AeadDem)
+	rDem, err := newRegisterECIESAEADHKDFDemHelper(params.GetDemParams().GetAeadDem())
 	if err != nil {
 		return nil, err
 	}
-	salt := key.Params.KemParams.HkdfSalt
-	hash := key.Params.KemParams.HkdfHashType.String()
-	ptFormat := key.Params.EcPointFormat.String()
+	salt := params.GetKemParams().GetHkdfSalt()
+	hash := params.GetKemParams().GetHkdfHashType().String()
+	pointFormat := params.GetEcPointFormat().String()
 
-	return subtle.NewECIESAEADHKDFHybridEncrypt(&pub, salt, hash, ptFormat, rDem)
+	return subtle.NewECIESAEADHKDFHybridEncrypt(&pub, salt, hash, pointFormat, rDem)
 }
 
 // DoesSupport indicates if this key manager supports the given key type.
@@ -92,7 +91,7 @@ func (km *eciesAEADHKDFPublicKeyKeyManager) TypeURL() string {
 
 // validateKey validates the given ECDSAPrivateKey.
 func (km *eciesAEADHKDFPublicKeyKeyManager) validateKey(key *eahpb.EciesAeadHkdfPublicKey) error {
-	if err := keyset.ValidateKeyVersion(key.Version, eciesAEADHKDFPublicKeyKeyVersion); err != nil {
+	if err := keyset.ValidateKeyVersion(key.GetVersion(), eciesAEADHKDFPublicKeyKeyVersion); err != nil {
 		return fmt.Errorf("ecies_aead_hkdf_public_key_manager: invalid key: %s", err)
 	}
 	return checkECIESAEADHKDFParams(key.Params)

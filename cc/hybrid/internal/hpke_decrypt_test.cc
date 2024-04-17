@@ -20,11 +20,15 @@
 #include <string>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "tink/hybrid/internal/hpke_encrypt.h"
 #include "tink/hybrid/internal/hpke_test_util.h"
+#include "tink/hybrid_decrypt.h"
+#include "tink/hybrid_encrypt.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 #include "proto/hpke.pb.h"
@@ -105,12 +109,16 @@ class HpkeDecryptWithBadParamTest : public testing::TestWithParam<HpkeParams> {
 
 INSTANTIATE_TEST_SUITE_P(
     HpkeDecryptionWithBadParamTestSuite, HpkeDecryptWithBadParamTest,
-    Values(CreateHpkeParams(HpkeKem::KEM_UNKNOWN,
-                            HpkeKdf::HKDF_SHA256, HpkeAead::AES_128_GCM),
+    Values(CreateHpkeParams(HpkeKem::KEM_UNKNOWN, HpkeKdf::HKDF_SHA256,
+                            HpkeAead::AES_128_GCM),
            CreateHpkeParams(HpkeKem::DHKEM_X25519_HKDF_SHA256,
                             HpkeKdf::KDF_UNKNOWN, HpkeAead::AES_128_GCM),
            CreateHpkeParams(HpkeKem::DHKEM_X25519_HKDF_SHA256,
-                            HpkeKdf::HKDF_SHA256, HpkeAead::AEAD_UNKNOWN)));
+                            HpkeKdf::HKDF_SHA256, HpkeAead::AEAD_UNKNOWN),
+           CreateHpkeParams(HpkeKem::DHKEM_P256_HKDF_SHA256,
+                            HpkeKdf::HKDF_SHA256, HpkeAead::AES_128_GCM),
+           CreateHpkeParams(HpkeKem::DHKEM_X25519_HKDF_SHA256,
+                            HpkeKdf::HKDF_SHA384, HpkeAead::AES_128_GCM)));
 
 TEST_P(HpkeDecryptWithBadParamTest, BadParamsFails) {
   HpkeParams bad_params = GetParam();
@@ -119,12 +127,7 @@ TEST_P(HpkeDecryptWithBadParamTest, BadParamsFails) {
       CreateHpkePrivateKey(bad_params, params.recipient_private_key);
   util::StatusOr<std::unique_ptr<HybridDecrypt>> hpke_decrypt =
       HpkeDecrypt::New(recipient_key);
-  ASSERT_THAT(hpke_decrypt, IsOk());
-
-  util::StatusOr<std::string> decryption =
-      (*hpke_decrypt)->Decrypt(params.ciphertext, params.application_info);
-
-  EXPECT_THAT(decryption.status(),
+  ASSERT_THAT(hpke_decrypt.status(),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 

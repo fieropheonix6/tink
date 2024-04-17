@@ -16,9 +16,10 @@
 
 package com.google.crypto.tink.hybrid.internal;
 
-import com.google.crypto.tink.proto.HpkePublicKey;
+import com.google.crypto.tink.AccessesPartialKey;
+import com.google.crypto.tink.hybrid.HpkePublicKey;
+import com.google.crypto.tink.internal.BigIntegerEncoding;
 import com.google.crypto.tink.subtle.Bytes;
-import com.google.crypto.tink.subtle.SubtleUtil;
 import java.math.BigInteger;
 import java.security.GeneralSecurityException;
 import javax.annotation.concurrent.GuardedBy;
@@ -30,7 +31,7 @@ import javax.annotation.concurrent.ThreadSafe;
  * <p>https://www.rfc-editor.org/rfc/rfc9180.html#name-creating-the-encryption-con
  */
 @ThreadSafe
-final class HpkeContext {
+public final class HpkeContext {
   private static final byte[] EMPTY_IKM = new byte[0];
 
   private final HpkeAead aead;
@@ -58,6 +59,7 @@ final class HpkeContext {
 
   /** Helper function factored out to facilitate unit testing. */
   static HpkeContext createContext(
+      byte[] mode,
       byte[] encapsulatedKey,
       byte[] sharedSecret,
       HpkeKem kem,
@@ -68,7 +70,7 @@ final class HpkeContext {
     byte[] suiteId = HpkeUtil.hpkeSuiteId(kem.getKemId(), kdf.getKdfId(), aead.getAeadId());
     byte[] pskIdHash = kdf.labeledExtract(HpkeUtil.EMPTY_SALT, EMPTY_IKM, "psk_id_hash", suiteId);
     byte[] infoHash = kdf.labeledExtract(HpkeUtil.EMPTY_SALT, info, "info_hash", suiteId);
-    byte[] keyScheduleContext = Bytes.concat(HpkeUtil.BASE_MODE, pskIdHash, infoHash);
+    byte[] keyScheduleContext = Bytes.concat(mode, pskIdHash, infoHash);
     byte[] secret = kdf.labeledExtract(sharedSecret, EMPTY_IKM, "secret", suiteId);
 
     byte[] key = kdf.labeledExpand(secret, keyScheduleContext, "key", suiteId, aead.getKeyLength());
@@ -90,13 +92,39 @@ final class HpkeContext {
    * @param info application-specific information parameter to influence key generation
    */
   static HpkeContext createSenderContext(
-      HpkePublicKey recipientPublicKey, HpkeKem kem, HpkeKdf kdf, HpkeAead aead, byte[] info)
+      byte[] recipientPublicKey, HpkeKem kem, HpkeKdf kdf, HpkeAead aead, byte[] info)
       throws GeneralSecurityException {
-    HpkeKemEncapOutput encapOutput =
-        kem.encapsulate(recipientPublicKey.getPublicKey().toByteArray());
+    HpkeKemEncapOutput encapOutput = kem.encapsulate(recipientPublicKey);
     byte[] encapsulatedKey = encapOutput.getEncapsulatedKey();
     byte[] sharedSecret = encapOutput.getSharedSecret();
-    return createContext(encapsulatedKey, sharedSecret, kem, kdf, aead, info);
+    return createContext(HpkeUtil.BASE_MODE, encapsulatedKey, sharedSecret, kem, kdf, aead, info);
+  }
+
+  /**
+   * Creates HPKE sender context with authentication according to KeySchedule() defined in
+   * https://www.rfc-editor.org/rfc/rfc9180.html#section-5.1.3.
+   *
+   * @param recipientPublicKey recipient's public key (pkR)
+   * @param kem key encapsulation mechanism primitive
+   * @param kdf key derivation function primitive
+   * @param aead authenticated encryption with associated data primitive
+   * @param info application-specific information parameter to influence key generation
+   * @param senderPrivateKey sender's private key (skS)
+   */
+  @AccessesPartialKey
+  public static HpkeContext createAuthSenderContext(
+      HpkePublicKey recipientPublicKey,
+      HpkeKem kem,
+      HpkeKdf kdf,
+      HpkeAead aead,
+      byte[] info,
+      HpkeKemPrivateKey senderPrivateKey)
+      throws GeneralSecurityException {
+    HpkeKemEncapOutput encapOutput =
+        kem.authEncapsulate(recipientPublicKey.getPublicKeyBytes().toByteArray(), senderPrivateKey);
+    byte[] encapsulatedKey = encapOutput.getEncapsulatedKey();
+    byte[] sharedSecret = encapOutput.getSharedSecret();
+    return createContext(HpkeUtil.AUTH_MODE, encapsulatedKey, sharedSecret, kem, kdf, aead, info);
   }
 
   /**
@@ -110,7 +138,7 @@ final class HpkeContext {
    * @param aead authenticated encryption with associated data primitive
    * @param info application-specific information parameter to influence key generation
    */
-  static HpkeContext createRecipientContext(
+  public static HpkeContext createRecipientContext(
       byte[] encapsulatedKey,
       HpkeKemPrivateKey recipientPrivateKey,
       HpkeKem kem,
@@ -119,7 +147,37 @@ final class HpkeContext {
       byte[] info)
       throws GeneralSecurityException {
     byte[] sharedSecret = kem.decapsulate(encapsulatedKey, recipientPrivateKey);
-    return createContext(encapsulatedKey, sharedSecret, kem, kdf, aead, info);
+    return createContext(HpkeUtil.BASE_MODE, encapsulatedKey, sharedSecret, kem, kdf, aead, info);
+  }
+
+  /**
+   * Creates HPKE recipient context with authentication according to KeySchedule() defined in
+   * https://www.rfc-editor.org/rfc/rfc9180.html#section-5.1.3.
+   *
+   * @param encapsulatedKey encapsulated key (enc)
+   * @param recipientPrivateKey recipient's private key (skR)
+   * @param kem key encapsulation mechanism primitive
+   * @param kdf key derivation function primitive
+   * @param aead authenticated encryption with associated data primitive
+   * @param info application-specific information parameter to influence key generation
+   * @param senderPublicKey sender's public key (pkS)
+   */
+  @AccessesPartialKey
+  public static HpkeContext createAuthRecipientContext(
+      byte[] encapsulatedKey,
+      HpkeKemPrivateKey recipientPrivateKey,
+      HpkeKem kem,
+      HpkeKdf kdf,
+      HpkeAead aead,
+      byte[] info,
+      HpkePublicKey senderPublicKey)
+      throws GeneralSecurityException {
+    byte[] sharedSecret =
+        kem.authDecapsulate(
+            encapsulatedKey,
+            recipientPrivateKey,
+            senderPublicKey.getPublicKeyBytes().toByteArray());
+    return createContext(HpkeUtil.AUTH_MODE, encapsulatedKey, sharedSecret, kem, kdf, aead, info);
   }
 
   private static BigInteger maxSequenceNumber(int nonceLength) {
@@ -137,7 +195,9 @@ final class HpkeContext {
   /** ComputeNonce() from https://www.rfc-editor.org/rfc/rfc9180.html#section-5.2-11. */
   @GuardedBy("this")
   private byte[] computeNonce() throws GeneralSecurityException {
-    return Bytes.xor(baseNonce, SubtleUtil.integer2Bytes(sequenceNumber, aead.getNonceLength()));
+    return Bytes.xor(
+        baseNonce,
+        BigIntegerEncoding.toBigEndianBytesOfFixedLength(sequenceNumber, aead.getNonceLength()));
   }
 
   /** Returns the next nonce to use for seal/open. Also, increments the sequence number. */
@@ -156,7 +216,7 @@ final class HpkeContext {
     return baseNonce;
   }
 
-  byte[] getEncapsulatedKey() {
+  public byte[] getEncapsulatedKey() {
     return encapsulatedKey;
   }
 
@@ -166,7 +226,7 @@ final class HpkeContext {
    *
    * @return ciphertext
    */
-  byte[] seal(byte[] plaintext, byte[] associatedData) throws GeneralSecurityException {
+  public byte[] seal(byte[] plaintext, byte[] associatedData) throws GeneralSecurityException {
     byte[] nonce = computeNonceAndIncrementSequenceNumber();
     return aead.seal(key, nonce, plaintext, associatedData);
   }
@@ -177,7 +237,7 @@ final class HpkeContext {
    *
    * @return plaintext
    */
-  byte[] open(byte[] ciphertext, byte[] associatedData) throws GeneralSecurityException {
+  public byte[] open(byte[] ciphertext, byte[] associatedData) throws GeneralSecurityException {
     byte[] nonce = computeNonceAndIncrementSequenceNumber();
     return aead.open(key, nonce, ciphertext, associatedData);
   }

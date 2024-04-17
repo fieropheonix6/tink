@@ -15,18 +15,17 @@
 ////////////////////////////////////////////////////////////////////////////////
 #include "tink/keyset_manager.h"
 
+#include <string>
 #include <utility>
 
 #include "gtest/gtest.h"
+#include "absl/status/status.h"
 #include "tink/aead/aead_config.h"
 #include "tink/aead/aes_gcm_key_manager.h"
-#include "tink/config.h"
 #include "tink/keyset_handle.h"
 #include "tink/util/test_keyset_handle.h"
 #include "proto/aes_gcm.pb.h"
 #include "proto/tink.pb.h"
-
-using crypto::tink::TestKeysetHandle;
 
 using google::crypto::tink::AesGcmKeyFormat;
 using google::crypto::tink::KeyData;

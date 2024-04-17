@@ -17,6 +17,7 @@
 #ifndef TINK_EXPERIMENTAL_PQCRYPTO_SIGNATURE_SUBTLE_FALCON_SUBTLE_UTILS_H_
 #define TINK_EXPERIMENTAL_PQCRYPTO_SIGNATURE_SUBTLE_FALCON_SUBTLE_UTILS_H_
 
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -24,6 +25,7 @@
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "tink/util/secret_data.h"
+#include "tink/util/status.h"
 #include "tink/util/statusor.h"
 
 namespace crypto {
@@ -102,7 +104,7 @@ class FalconKeyPair {
 // This is an utility function that generates a new Falcon key pair.
 // This function is expected to be called from a key manager class.
 crypto::tink::util::StatusOr<FalconKeyPair> GenerateFalconKeyPair(
-    int32 private_key_size);
+    int32_t private_key_size);
 
 // Validates whether the private key size is safe to use for falcon signature.
 crypto::tink::util::Status ValidateFalconPrivateKeySize(int32_t key_size);

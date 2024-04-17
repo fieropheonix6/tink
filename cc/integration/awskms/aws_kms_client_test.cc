@@ -17,6 +17,8 @@
 #include "tink/integration/awskms/aws_kms_client.h"
 
 #include <cstdlib>
+#include <fstream>
+#include <ios>
 #include <string>
 #include <vector>
 
@@ -25,6 +27,7 @@
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
+#include "tink/integration/awskms/internal/test_file_util.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
@@ -41,6 +44,7 @@ using ::crypto::tink::test::IsOk;
 using ::crypto::tink::test::IsOkAndHolds;
 using ::crypto::tink::test::StatusIs;
 using ::testing::IsNull;
+using ::testing::IsSubstring;
 using ::testing::Not;
 
 constexpr absl::string_view kAwsKey1 =
@@ -51,7 +55,7 @@ constexpr absl::string_view kNonAwsKey = "gcp-kms:://some/gcp/key";
 
 TEST(AwsKmsClientTest, CreateClientNotBoundToSpecificKeySupportsAllValidKeys) {
   std::string creds_file =
-      absl::StrCat(getenv("TEST_SRCDIR"), "/tink_cc_awskms/testdata/aws/credentials.ini");
+      internal::RunfilesPath("testdata/aws/credentials.ini");
   util::StatusOr<std::unique_ptr<AwsKmsClient>> client =
       AwsKmsClient::New(/*key_uri=*/"", creds_file);
   ASSERT_THAT(client, IsOk());
@@ -64,7 +68,7 @@ TEST(AwsKmsClientTest, CreateClientNotBoundToSpecificKeySupportsAllValidKeys) {
 // different key URI.
 TEST(AwsKmsClientTest, CreateClientBoundToSpecificKeySupportOnlyOneKey) {
   std::string creds_file =
-      absl::StrCat(getenv("TEST_SRCDIR"), "/tink_cc_awskms/testdata/aws/credentials.ini");
+      internal::RunfilesPath("testdata/aws/credentials.ini");
   util::StatusOr<std::unique_ptr<AwsKmsClient>> client =
       AwsKmsClient::New(kAwsKey1, creds_file);
   ASSERT_THAT(client, IsOk());
@@ -75,18 +79,43 @@ TEST(AwsKmsClientTest, CreateClientBoundToSpecificKeySupportOnlyOneKey) {
 
 TEST(AwsKmsClientTest, RegisterKmsClient) {
   std::string creds_file =
-      absl::StrCat(getenv("TEST_SRCDIR"), "/tink_cc_awskms/testdata/aws/credentials.ini");
+      internal::RunfilesPath("testdata/aws/credentials.ini");
   ASSERT_THAT(AwsKmsClient::RegisterNewClient(kAwsKey1, creds_file), IsOk());
   util::StatusOr<const KmsClient*> kms_client = KmsClients::Get(kAwsKey1);
   EXPECT_THAT(kms_client, IsOkAndHolds(Not(IsNull())));
 }
 
 TEST(AwsKmsClientTest, RegisterKmsClientFailsWhenKeyIsInvalid) {
-  std::string creds_file = absl::StrCat(getenv("TEST_SRCDIR"),
-                                        "/tink_cc_awskms/testdata/gcp/credentials.json");
-  auto client = AwsKmsClient::RegisterNewClient(
-      "gcp-kms://projects/someProject/.../cryptoKeys/key1", creds_file);
+  util::Status client = AwsKmsClient::RegisterNewClient(
+      "gcp-kms://projects/someProject/.../cryptoKeys/key1",
+      internal::RunfilesPath("testdata/aws/credentials.ini"));
   EXPECT_THAT(client, StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_PRED_FORMAT2(IsSubstring, "Invalid key URI",
+                      std::string(client.message()));
+}
+
+TEST(AwsKmsClientTest, RegisterKmsClientFailsWhenCredentialsDoNotExist) {
+  util::Status client =
+      AwsKmsClient::RegisterNewClient(kAwsKey1, "this/file/does/not/exist.ini");
+  EXPECT_THAT(client, StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_PRED_FORMAT2(IsSubstring, "Error opening file",
+                      std::string(client.message()));
+}
+
+TEST(AwsKmsClientTest, RegisterKmsClientFailsWhenMalformedCredentials) {
+  // Create an invalid credentials file.
+  std::string malformed_content = "These are malformed credentials.";
+  std::string invalid_credentials_file =
+      internal::RunfilesPath("testdata/aws/invalid.ini");
+  std::ofstream out_stream(invalid_credentials_file, std::ios::binary);
+  out_stream.write(malformed_content.data(), malformed_content.size());
+  out_stream.close();
+
+  util::Status client =
+      AwsKmsClient::RegisterNewClient(kAwsKey1, invalid_credentials_file);
+  EXPECT_THAT(client, StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_PRED_FORMAT2(IsSubstring, "Invalid format",
+                      std::string(client.message()));
 }
 
 }  // namespace

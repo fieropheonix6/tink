@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 // Package subtle provides subtle implementations of the MAC primitive.
 package subtle
@@ -39,7 +37,7 @@ var errHMACInvalidInput = errors.New("HMAC: invalid input")
 // HMAC implementation of interface tink.MAC
 type HMAC struct {
 	HashFunc func() hash.Hash
-	Key      []byte
+	key      []byte
 	TagSize  uint32
 }
 
@@ -55,7 +53,7 @@ func NewHMAC(hashAlg string, key []byte, tagSize uint32) (*HMAC, error) {
 	}
 	return &HMAC{
 		HashFunc: hashFunc,
-		Key:      key,
+		key:      key,
 		TagSize:  tagSize,
 	}, nil
 }
@@ -82,10 +80,11 @@ func ValidateHMACParams(hash string, keySize uint32, tagSize uint32) error {
 
 // ComputeMAC computes message authentication code (MAC) for the given data.
 func (h *HMAC) ComputeMAC(data []byte) ([]byte, error) {
-	mac := hmac.New(h.HashFunc, h.Key)
-	if _, err := mac.Write(data); err != nil {
-		return nil, err
+	if h.HashFunc == nil {
+		return nil, fmt.Errorf("hmac: invalid hash algorithm")
 	}
+	mac := hmac.New(h.HashFunc, h.key)
+	mac.Write(data)
 	tag := mac.Sum(nil)
 	return tag[:h.TagSize], nil
 }

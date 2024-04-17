@@ -17,6 +17,7 @@
 #ifndef TINK_SUBTLE_AES_CTR_HMAC_STREAMING_H_
 #define TINK_SUBTLE_AES_CTR_HMAC_STREAMING_H_
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -183,7 +184,7 @@ class AesCtrHmacStreamSegmentDecrypter : public StreamSegmentDecrypter {
     return ciphertext_segment_size_;
   }
   int get_ciphertext_offset() const override { return ciphertext_offset_; }
-  ~AesCtrHmacStreamSegmentDecrypter() override {}
+  ~AesCtrHmacStreamSegmentDecrypter() override = default;
 
  private:
   AesCtrHmacStreamSegmentDecrypter(util::SecretData ikm, HashType hkdf_algo,

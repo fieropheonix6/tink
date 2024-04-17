@@ -37,16 +37,6 @@ namespace tink {
 //
 class SignatureConfig {
  public:
-  static constexpr char kPublicKeySignCatalogueName[] = "TinkPublicKeySign";
-  static constexpr char kPublicKeyVerifyCatalogueName[] = "TinkPublicKeyVerify";
-  static constexpr char kPublicKeySignPrimitiveName[] = "PublicKeySign";
-  static constexpr char kPublicKeyVerifyPrimitiveName[] = "PublicKeyVerify";
-
-  // Returns config with implementations of PublicKeySign and PublicKeyVerify
-  // supported in the current Tink release.
-  ABSL_DEPRECATED("This is not supported anymore.")
-  static const google::crypto::tink::RegistryConfig& Latest();
-
   // Registers PublicKeySign and PublicKeyVerify primitive wrappers, and key
   // managers for all implementations of PublicKeySign and PublicKeyVerify from
   // the current Tink release.

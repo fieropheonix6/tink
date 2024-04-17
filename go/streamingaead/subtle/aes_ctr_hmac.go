@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package subtle
 
@@ -48,7 +46,7 @@ const (
 // HKDF and are derived from the key derivation key, a randomly chosen salt of
 // the same size as the key and a nonce prefix.
 type AESCTRHMAC struct {
-	MainKey                      []byte
+	mainKey                      []byte
 	hkdfAlg                      string
 	keySizeInBytes               int
 	tagAlg                       string
@@ -76,15 +74,7 @@ type AESCTRHMAC struct {
 // ciphertextSegmentSize is the size of ciphertext segments.
 //
 // firstSegmentOffset is the offset of the first ciphertext segment.
-func NewAESCTRHMAC(
-	mainKey []byte,
-	hkdfAlg string,
-	keySizeInBytes int,
-	tagAlg string,
-	tagSizeInBytes int,
-	ciphertextSegmentSize int,
-	firstSegmentOffset int,
-) (*AESCTRHMAC, error) {
+func NewAESCTRHMAC(mainKey []byte, hkdfAlg string, keySizeInBytes int, tagAlg string, tagSizeInBytes, ciphertextSegmentSize, firstSegmentOffset int) (*AESCTRHMAC, error) {
 	if len(mainKey) < 16 || len(mainKey) < keySizeInBytes {
 		return nil, errors.New("mainKey too short")
 	}
@@ -110,7 +100,7 @@ func NewAESCTRHMAC(
 	copy(keyClone, mainKey)
 
 	return &AESCTRHMAC{
-		MainKey:                      keyClone,
+		mainKey:                      keyClone,
 		hkdfAlg:                      hkdfAlg,
 		keySizeInBytes:               keySizeInBytes,
 		tagAlg:                       tagAlg,
@@ -126,11 +116,18 @@ func (a *AESCTRHMAC) HeaderLength() int {
 	return 1 + a.keySizeInBytes + AESCTRHMACNoncePrefixSizeInBytes
 }
 
-// deriveKeyMaterial returns a key derived from the main key using salt and aad
-// as parameters.
-func (a *AESCTRHMAC) deriveKeyMaterial(salt, aad []byte) ([]byte, error) {
+// deriveKeys returns an AES of size a.keySizeInBytes and an HMAC key of size AESCTRHMACKeySizeInBytes.
+//
+// They are derived from the main key using salt and aad as parameters.
+func (a *AESCTRHMAC) deriveKeys(salt, aad []byte) ([]byte, []byte, error) {
 	keyMaterialSize := a.keySizeInBytes + AESCTRHMACKeySizeInBytes
-	return subtle.ComputeHKDF(a.hkdfAlg, a.MainKey, salt, aad, uint32(keyMaterialSize))
+	km, err := subtle.ComputeHKDF(a.hkdfAlg, a.mainKey, salt, aad, uint32(keyMaterialSize))
+	if err != nil {
+		return nil, nil, err
+	}
+	aesKey := km[:a.keySizeInBytes]
+	hmacKey := km[a.keySizeInBytes:]
+	return aesKey, hmacKey, nil
 }
 
 type aesCTRHMACSegmentEncrypter struct {
@@ -178,20 +175,16 @@ func (a *AESCTRHMAC) NewEncryptingWriter(w io.Writer, aad []byte) (io.WriteClose
 	salt := random.GetRandomBytes(uint32(a.keySizeInBytes))
 	noncePrefix := random.GetRandomBytes(AESCTRHMACNoncePrefixSizeInBytes)
 
-	km, err := a.deriveKeyMaterial(salt, aad)
+	aesKey, hmacKey, err := a.deriveKeys(salt, aad)
 	if err != nil {
 		return nil, err
 	}
 
-	aesKey := make([]byte, a.keySizeInBytes)
-	copy(aesKey, km)
 	blockCipher, err := aes.NewCipher(aesKey)
 	if err != nil {
 		return nil, err
 	}
 
-	hmacKey := make([]byte, AESCTRHMACKeySizeInBytes)
-	copy(hmacKey, km[a.keySizeInBytes:])
 	hmac, err := subtlemac.NewHMAC(a.tagAlg, hmacKey, uint32(a.tagSizeInBytes))
 	if err != nil {
 		return nil, err
@@ -279,20 +272,16 @@ func (a *AESCTRHMAC) NewDecryptingReader(r io.Reader, aad []byte) (io.Reader, er
 		return nil, fmt.Errorf("cannot read noncePrefix: %v", err)
 	}
 
-	km, err := a.deriveKeyMaterial(salt, aad)
+	aesKey, hmacKey, err := a.deriveKeys(salt, aad)
 	if err != nil {
 		return nil, err
 	}
 
-	aesKey := make([]byte, a.keySizeInBytes)
-	copy(aesKey, km)
 	blockCipher, err := aes.NewCipher(aesKey)
 	if err != nil {
 		return nil, err
 	}
 
-	hmacKey := make([]byte, AESCTRHMACKeySizeInBytes)
-	copy(hmacKey, km[a.keySizeInBytes:])
 	hmac, err := subtlemac.NewHMAC(a.tagAlg, hmacKey, uint32(a.tagSizeInBytes))
 	if err != nil {
 		return nil, err

@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 // Package subtle provides common methods needed in subtle implementations.
 package subtle
@@ -124,12 +122,7 @@ func ComputeHash(hashFunc func() hash.Hash, data []byte) ([]byte, error) {
 		return nil, errNilHashFunc
 	}
 	h := hashFunc()
-
-	_, err := h.Write(data)
-	if err != nil {
-		return nil, err
-	}
-
+	h.Write(data)
 	return h.Sum(nil), nil
 }
 

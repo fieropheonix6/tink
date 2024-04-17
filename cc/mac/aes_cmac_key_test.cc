@@ -23,6 +23,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/status/status.h"
 #include "absl/types/optional.h"
 #include "tink/mac/aes_cmac_parameters.h"
 #include "tink/partial_key_access.h"
@@ -35,7 +36,6 @@ namespace tink {
 namespace {
 
 using ::crypto::tink::test::IsOk;
-using ::crypto::tink::test::IsOkAndHolds;
 using ::crypto::tink::test::StatusIs;
 using ::testing::Combine;
 using ::testing::Eq;
@@ -80,7 +80,7 @@ TEST_P(AesCmacKeyTest, CreateSucceeds) {
 
   EXPECT_THAT(key->GetParameters(), Eq(*params));
   EXPECT_THAT(key->GetIdRequirement(), Eq(test_case.id_requirement));
-  EXPECT_THAT(key->GetOutputPrefix(), IsOkAndHolds(test_case.output_prefix));
+  EXPECT_THAT(key->GetOutputPrefix(), Eq(test_case.output_prefix));
 }
 
 TEST(AesCmacKeyTest, CreateKeyWithMismatchedKeySizeFails) {
@@ -142,7 +142,7 @@ TEST_P(AesCmacKeyTest, GetAesCmacKey) {
       *params, secret, test_case.id_requirement, GetPartialKeyAccess());
   ASSERT_THAT(key.status(), IsOk());
 
-  EXPECT_THAT(key->GetAesKey(GetPartialKeyAccess()), IsOkAndHolds(secret));
+  EXPECT_THAT(key->GetKeyBytes(GetPartialKeyAccess()), Eq(secret));
 }
 
 TEST_P(AesCmacKeyTest, KeyEquals) {

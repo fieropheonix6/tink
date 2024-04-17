@@ -17,170 +17,53 @@
 package com.google.crypto.tink.streamingaead;
 
 import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
 
+import com.google.crypto.tink.InsecureSecretKeyAccess;
 import com.google.crypto.tink.KeyTemplate;
+import com.google.crypto.tink.KeyTemplates;
+import com.google.crypto.tink.KeysetHandle;
+import com.google.crypto.tink.Parameters;
 import com.google.crypto.tink.StreamingAead;
-import com.google.crypto.tink.internal.KeyTypeManager;
-import com.google.crypto.tink.proto.AesCtrHmacStreamingKey;
-import com.google.crypto.tink.proto.AesCtrHmacStreamingKeyFormat;
-import com.google.crypto.tink.proto.AesCtrHmacStreamingParams;
-import com.google.crypto.tink.proto.HashType;
-import com.google.crypto.tink.proto.HmacParams;
-import com.google.crypto.tink.proto.KeyData.KeyMaterialType;
+import com.google.crypto.tink.TinkProtoKeysetFormat;
+import com.google.crypto.tink.internal.KeyManagerRegistry;
+import com.google.crypto.tink.subtle.AesCtrHmacStreaming;
+import com.google.crypto.tink.subtle.Hex;
 import com.google.crypto.tink.testing.StreamingTestUtil;
-import com.google.crypto.tink.testing.TestUtil;
-import com.google.protobuf.ExtensionRegistryLite;
-import java.security.GeneralSecurityException;
 import java.util.Set;
 import java.util.TreeSet;
+import org.junit.Before;
 import org.junit.Test;
+import org.junit.experimental.theories.DataPoints;
+import org.junit.experimental.theories.FromDataPoints;
+import org.junit.experimental.theories.Theories;
+import org.junit.experimental.theories.Theory;
 import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
 
 /** Test for AesCtrHmacStreamingKeyManager. */
-@RunWith(JUnit4.class)
+@RunWith(Theories.class)
 public class AesCtrHmacStreamingKeyManagerTest {
-  private final AesCtrHmacStreamingKeyManager manager = new AesCtrHmacStreamingKeyManager();
-  private final KeyTypeManager.KeyFactory<AesCtrHmacStreamingKeyFormat, AesCtrHmacStreamingKey>
-      factory = manager.keyFactory();
-
-  // Returns an HmacParams.Builder with valid parameters
-  private static HmacParams.Builder createHmacParams() {
-    return HmacParams.newBuilder().setHash(HashType.SHA256).setTagSize(32);
-  }
-
-  // Returns an AesCtrHmacStreamingParams.Builder with valid parameters
-  private static AesCtrHmacStreamingParams.Builder createParams() {
-    return AesCtrHmacStreamingParams.newBuilder()
-        .setCiphertextSegmentSize(1024)
-        .setDerivedKeySize(32)
-        .setHkdfHashType(HashType.SHA256)
-        .setHmacParams(createHmacParams());
-  }
-
-  // Returns an AesCtrHmacStreamingKeyFormat.Builder with valid parameters
-  private static AesCtrHmacStreamingKeyFormat.Builder createKeyFormat() {
-    return AesCtrHmacStreamingKeyFormat.newBuilder().setKeySize(32).setParams(createParams());
+  @Before
+  public void register() throws Exception {
+    StreamingAeadConfig.register();
   }
 
   @Test
-  public void basics() throws Exception {
-    assertThat(manager.getKeyType())
-        .isEqualTo("type.googleapis.com/google.crypto.tink.AesCtrHmacStreamingKey");
-    assertThat(manager.getVersion()).isEqualTo(0);
-    assertThat(manager.keyMaterialType()).isEqualTo(KeyMaterialType.SYMMETRIC);
-  }
-
-  @Test
-  public void validateKeyFormat_empty_throws() throws Exception {
-    assertThrows(
-        GeneralSecurityException.class,
-        () -> factory.validateKeyFormat(AesCtrHmacStreamingKeyFormat.getDefaultInstance()));
-  }
-
-  @Test
-  public void validateKeyFormat_valid() throws Exception {
-    AesCtrHmacStreamingKeyFormat format = createKeyFormat().build();
-
-    factory.validateKeyFormat(format);
-  }
-
-  @Test
-  public void validateKeyFormat_derivedKeySizes() throws Exception {
-    for (int derivedKeySize = 0; derivedKeySize < 42; ++derivedKeySize) {
-      AesCtrHmacStreamingKeyFormat format =
-          createKeyFormat().setParams(createParams().setDerivedKeySize(derivedKeySize)).build();
-      if (derivedKeySize == 16 || derivedKeySize == 32) {
-        factory.validateKeyFormat(format);
-      } else {
-        assertThrows(GeneralSecurityException.class, () -> factory.validateKeyFormat(format));
-      }
-    }
-  }
-
-  @Test
-  public void validateKeyFormat_smallKey_throws() throws Exception {
-    // TODO(b/140161847): Also check for key size 16.
-    AesCtrHmacStreamingKeyFormat format = createKeyFormat().setKeySize(15).build();
-    assertThrows(GeneralSecurityException.class, () -> factory.validateKeyFormat(format));
-  }
-
-  @Test
-  public void validateKeyFormat_unkownHash_throws() throws Exception {
-    AesCtrHmacStreamingKeyFormat format =
-        createKeyFormat().setParams(createParams().setHkdfHashType(HashType.UNKNOWN_HASH)).build();
-    assertThrows(GeneralSecurityException.class, () -> factory.validateKeyFormat(format));
-  }
-
-  @Test
-  public void validateKeyFormat_unkownHmacHash_throws() throws Exception {
-    AesCtrHmacStreamingKeyFormat format =
-        createKeyFormat()
-            .setParams(
-                createParams().setHmacParams(createHmacParams().setHash(HashType.UNKNOWN_HASH)))
-            .build();
-    assertThrows(GeneralSecurityException.class, () -> factory.validateKeyFormat(format));
-  }
-
-  @Test
-  public void validateKeyFormat_smallSegment_throws() throws Exception {
-    AesCtrHmacStreamingKeyFormat format =
-        createKeyFormat().setParams(createParams().setCiphertextSegmentSize(45)).build();
-
-    assertThrows(GeneralSecurityException.class, () -> factory.validateKeyFormat(format));
-  }
-
-  @Test
-  public void validateKeyFormat_tagSizeTooBigSha1_throws() throws Exception {
-    AesCtrHmacStreamingKeyFormat format =
-        createKeyFormat()
-            .setParams(
-                createParams()
-                    .setHmacParams(createHmacParams().setHash(HashType.SHA1).setTagSize(21)))
-            .build();
-
-    assertThrows(GeneralSecurityException.class, () -> factory.validateKeyFormat(format));
-  }
-
-  @Test
-  public void validateKeyFormat_tagSizeTooBigSha256_throws() throws Exception {
-    AesCtrHmacStreamingKeyFormat format =
-        createKeyFormat()
-            .setParams(
-                createParams()
-                    .setHmacParams(createHmacParams().setHash(HashType.SHA256).setTagSize(33)))
-            .build();
-
-    assertThrows(GeneralSecurityException.class, () -> factory.validateKeyFormat(format));
-  }
-
-  @Test
-  public void validateKeyFormat_tagSizeTooBigSha512_throws() throws Exception {
-    AesCtrHmacStreamingKeyFormat format =
-        createKeyFormat()
-            .setParams(
-                createParams()
-                    .setHmacParams(createHmacParams().setHash(HashType.SHA512).setTagSize(65)))
-            .build();
-
-    assertThrows(GeneralSecurityException.class, () -> factory.validateKeyFormat(format));
-  }
-
-  @Test
-  public void createKey_values() throws Exception {
-    AesCtrHmacStreamingKeyFormat format = createKeyFormat().build();
-    AesCtrHmacStreamingKey key = factory.createKey(format);
-    assertThat(key.getVersion()).isEqualTo(0);
-    assertThat(key.getKeyValue()).hasSize(format.getKeySize());
-    assertThat(key.getParams()).isEqualTo(format.getParams());
+  public void testKeyManagerRegistered() throws Exception {
+    assertThat(
+            KeyManagerRegistry.globalInstance()
+                .getKeyManager(
+                    "type.googleapis.com/google.crypto.tink.AesCtrHmacStreamingKey",
+                    StreamingAead.class))
+        .isNotNull();
   }
 
   @Test
   public void testSkip() throws Exception {
-    AesCtrHmacStreamingKeyFormat format = createKeyFormat().build();
-    AesCtrHmacStreamingKey key = factory.createKey(format);
-    StreamingAead streamingAead = manager.getPrimitive(key, StreamingAead.class);
+    Parameters parameters =
+        AesCtrHmacStreamingKeyManager.aes128CtrHmacSha2564KBTemplate().toParameters();
+    KeysetHandle handle = KeysetHandle.generateNew(parameters);
+    StreamingAead streamingAead = handle.getPrimitive(StreamingAead.class);
+
     int offset = 0;
     int plaintextSize = 1 << 16;
     // Runs the test with different sizes for the chunks to skip.
@@ -191,90 +74,120 @@ public class AesCtrHmacStreamingKeyManagerTest {
 
   @Test
   public void createKey_multipleTimes_differentValues() throws Exception {
-    AesCtrHmacStreamingKeyFormat keyFormat = createKeyFormat().build();
+    Parameters parameters =
+        AesCtrHmacStreamingKeyManager.aes128CtrHmacSha2564KBTemplate().toParameters();
     Set<String> keys = new TreeSet<>();
     // Calls newKey multiple times and make sure that they generate different keys.
     int numTests = 100;
     for (int i = 0; i < numTests; i++) {
-      keys.add(TestUtil.hexEncode(factory.createKey(keyFormat).getKeyValue().toByteArray()));
+      KeysetHandle handle = KeysetHandle.generateNew(parameters);
+      com.google.crypto.tink.streamingaead.AesCtrHmacStreamingKey key =
+          (com.google.crypto.tink.streamingaead.AesCtrHmacStreamingKey) handle.getAt(0).getKey();
+      keys.add(Hex.encode(key.getInitialKeyMaterial().toByteArray(InsecureSecretKeyAccess.get())));
     }
     assertThat(keys).hasSize(numTests);
   }
 
   @Test
+  public void getPrimitive_works() throws Exception {
+    Parameters parameters =
+        AesCtrHmacStreamingKeyManager.aes128CtrHmacSha2564KBTemplate().toParameters();
+    KeysetHandle handle = KeysetHandle.generateNew(parameters);
+    StreamingAead streamingAead = handle.getPrimitive(StreamingAead.class);
+    StreamingAead directAead =
+        AesCtrHmacStreaming.create(
+            (com.google.crypto.tink.streamingaead.AesCtrHmacStreamingKey) handle.getAt(0).getKey());
+
+    StreamingTestUtil.testEncryptDecryptDifferentInstances(
+        streamingAead, directAead, 0, 2049, 1000);
+  }
+
+  @Test
   public void testAes128CtrHmacSha2564KBTemplate() throws Exception {
     KeyTemplate template = AesCtrHmacStreamingKeyManager.aes128CtrHmacSha2564KBTemplate();
-    assertThat(template.getTypeUrl()).isEqualTo(new AesCtrHmacStreamingKeyManager().getKeyType());
-    assertThat(template.getOutputPrefixType()).isEqualTo(KeyTemplate.OutputPrefixType.RAW);
-    AesCtrHmacStreamingKeyFormat format =
-        AesCtrHmacStreamingKeyFormat.parseFrom(
-            template.getValue(), ExtensionRegistryLite.getEmptyRegistry());
-
-    assertThat(format.getKeySize()).isEqualTo(16);
-    assertThat(format.getParams().getDerivedKeySize()).isEqualTo(16);
-    assertThat(format.getParams().getHkdfHashType()).isEqualTo(HashType.SHA256);
-    assertThat(format.getParams().getHmacParams().getHash()).isEqualTo(HashType.SHA256);
-    assertThat(format.getParams().getHmacParams().getTagSize()).isEqualTo(32);
-    assertThat(format.getParams().getCiphertextSegmentSize()).isEqualTo(4096);
+    assertThat(template.toParameters())
+        .isEqualTo(
+            AesCtrHmacStreamingParameters.builder()
+                .setKeySizeBytes(16)
+                .setDerivedKeySizeBytes(16)
+                .setHkdfHashType(AesCtrHmacStreamingParameters.HashType.SHA256)
+                .setHmacHashType(AesCtrHmacStreamingParameters.HashType.SHA256)
+                .setHmacTagSizeBytes(32)
+                .setCiphertextSegmentSizeBytes(4 * 1024)
+                .build());
   }
 
   @Test
   public void testAes128CtrHmacSha2561MBTemplate() throws Exception {
     KeyTemplate template = AesCtrHmacStreamingKeyManager.aes128CtrHmacSha2561MBTemplate();
-    assertThat(template.getTypeUrl()).isEqualTo(new AesCtrHmacStreamingKeyManager().getKeyType());
-    assertThat(template.getOutputPrefixType()).isEqualTo(KeyTemplate.OutputPrefixType.RAW);
-    AesCtrHmacStreamingKeyFormat format =
-        AesCtrHmacStreamingKeyFormat.parseFrom(
-            template.getValue(), ExtensionRegistryLite.getEmptyRegistry());
-
-    assertThat(format.getKeySize()).isEqualTo(16);
-    assertThat(format.getParams().getDerivedKeySize()).isEqualTo(16);
-    assertThat(format.getParams().getHkdfHashType()).isEqualTo(HashType.SHA256);
-    assertThat(format.getParams().getHmacParams().getHash()).isEqualTo(HashType.SHA256);
-    assertThat(format.getParams().getHmacParams().getTagSize()).isEqualTo(32);
-    assertThat(format.getParams().getCiphertextSegmentSize()).isEqualTo(1 << 20);
+    assertThat(template.toParameters())
+        .isEqualTo(
+            AesCtrHmacStreamingParameters.builder()
+                .setKeySizeBytes(16)
+                .setDerivedKeySizeBytes(16)
+                .setHkdfHashType(AesCtrHmacStreamingParameters.HashType.SHA256)
+                .setHmacHashType(AesCtrHmacStreamingParameters.HashType.SHA256)
+                .setHmacTagSizeBytes(32)
+                .setCiphertextSegmentSizeBytes(1024 * 1024)
+                .build());
   }
 
   @Test
   public void testAes256CtrHmacSha2564KBTemplate() throws Exception {
     KeyTemplate template = AesCtrHmacStreamingKeyManager.aes256CtrHmacSha2564KBTemplate();
-    assertThat(template.getTypeUrl()).isEqualTo(new AesCtrHmacStreamingKeyManager().getKeyType());
-    assertThat(template.getOutputPrefixType()).isEqualTo(KeyTemplate.OutputPrefixType.RAW);
-    AesCtrHmacStreamingKeyFormat format =
-        AesCtrHmacStreamingKeyFormat.parseFrom(
-            template.getValue(), ExtensionRegistryLite.getEmptyRegistry());
-
-    assertThat(format.getKeySize()).isEqualTo(32);
-    assertThat(format.getParams().getDerivedKeySize()).isEqualTo(32);
-    assertThat(format.getParams().getHkdfHashType()).isEqualTo(HashType.SHA256);
-    assertThat(format.getParams().getHmacParams().getHash()).isEqualTo(HashType.SHA256);
-    assertThat(format.getParams().getHmacParams().getTagSize()).isEqualTo(32);
-    assertThat(format.getParams().getCiphertextSegmentSize()).isEqualTo(4096);
+    assertThat(template.toParameters())
+        .isEqualTo(
+            AesCtrHmacStreamingParameters.builder()
+                .setKeySizeBytes(32)
+                .setDerivedKeySizeBytes(32)
+                .setHkdfHashType(AesCtrHmacStreamingParameters.HashType.SHA256)
+                .setHmacHashType(AesCtrHmacStreamingParameters.HashType.SHA256)
+                .setHmacTagSizeBytes(32)
+                .setCiphertextSegmentSizeBytes(4 * 1024)
+                .build());
   }
 
   @Test
   public void testAes256CtrHmacSha2561MBTemplate() throws Exception {
     KeyTemplate template = AesCtrHmacStreamingKeyManager.aes256CtrHmacSha2561MBTemplate();
-    assertThat(template.getTypeUrl()).isEqualTo(new AesCtrHmacStreamingKeyManager().getKeyType());
-    assertThat(template.getOutputPrefixType()).isEqualTo(KeyTemplate.OutputPrefixType.RAW);
-    AesCtrHmacStreamingKeyFormat format =
-        AesCtrHmacStreamingKeyFormat.parseFrom(
-            template.getValue(), ExtensionRegistryLite.getEmptyRegistry());
+    assertThat(template.toParameters())
+        .isEqualTo(
+            AesCtrHmacStreamingParameters.builder()
+                .setKeySizeBytes(32)
+                .setDerivedKeySizeBytes(32)
+                .setHkdfHashType(AesCtrHmacStreamingParameters.HashType.SHA256)
+                .setHmacHashType(AesCtrHmacStreamingParameters.HashType.SHA256)
+                .setHmacTagSizeBytes(32)
+                .setCiphertextSegmentSizeBytes(1024 * 1024)
+                .build());
+  }
 
-    assertThat(format.getKeySize()).isEqualTo(32);
-    assertThat(format.getParams().getDerivedKeySize()).isEqualTo(32);
-    assertThat(format.getParams().getHkdfHashType()).isEqualTo(HashType.SHA256);
-    assertThat(format.getParams().getHmacParams().getHash()).isEqualTo(HashType.SHA256);
-    assertThat(format.getParams().getHmacParams().getTagSize()).isEqualTo(32);
-    assertThat(format.getParams().getCiphertextSegmentSize()).isEqualTo(1 << 20);
+  @DataPoints("templateNames")
+  public static final String[] KEY_TEMPLATES =
+      new String[] {
+        "AES128_CTR_HMAC_SHA256_4KB",
+        "AES128_CTR_HMAC_SHA256_1MB",
+        "AES256_CTR_HMAC_SHA256_4KB",
+        "AES256_CTR_HMAC_SHA256_1MB"
+      };
+
+  @Theory
+  public void testTemplates(@FromDataPoints("templateNames") String templateName) throws Exception {
+    KeysetHandle h = KeysetHandle.generateNew(KeyTemplates.get(templateName));
+    assertThat(h.size()).isEqualTo(1);
+    assertThat(h.getAt(0).getKey().getParameters())
+        .isEqualTo(KeyTemplates.get(templateName).toParameters());
   }
 
   @Test
-  public void testKeyFormats() throws Exception {
-    factory.validateKeyFormat(factory.keyFormats().get("AES128_CTR_HMAC_SHA256_4KB").keyFormat);
-    factory.validateKeyFormat(factory.keyFormats().get("AES128_CTR_HMAC_SHA256_1MB").keyFormat);
-
-    factory.validateKeyFormat(factory.keyFormats().get("AES256_CTR_HMAC_SHA256_4KB").keyFormat);
-    factory.validateKeyFormat(factory.keyFormats().get("AES256_CTR_HMAC_SHA256_1MB").keyFormat);
+  public void serializeAndParse_works() throws Exception {
+    Parameters parameters =
+        AesCtrHmacStreamingKeyManager.aes128CtrHmacSha2561MBTemplate().toParameters();
+    KeysetHandle handle = KeysetHandle.generateNew(parameters);
+    byte[] serializedHandle =
+        TinkProtoKeysetFormat.serializeKeyset(handle, InsecureSecretKeyAccess.get());
+    KeysetHandle parsedHandle =
+        TinkProtoKeysetFormat.parseKeyset(serializedHandle, InsecureSecretKeyAccess.get());
+    assertThat(parsedHandle.equalsKeyset(handle)).isTrue();
   }
 }

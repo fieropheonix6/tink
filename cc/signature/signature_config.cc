@@ -20,29 +20,24 @@
 #include "tink/config/config_util.h"
 #include "tink/config/tink_fips.h"
 #include "tink/registry.h"
-#include "tink/signature/ecdsa_sign_key_manager.h"
+#include "tink/signature/ecdsa_proto_serialization.h"
 #include "tink/signature/ecdsa_verify_key_manager.h"
 #include "tink/signature/ed25519_sign_key_manager.h"
 #include "tink/signature/ed25519_verify_key_manager.h"
 #include "tink/signature/public_key_sign_wrapper.h"
 #include "tink/signature/public_key_verify_wrapper.h"
+#include "tink/signature/rsa_ssa_pkcs1_proto_serialization.h"
 #include "tink/signature/rsa_ssa_pkcs1_sign_key_manager.h"
 #include "tink/signature/rsa_ssa_pkcs1_verify_key_manager.h"
+#include "tink/signature/rsa_ssa_pss_proto_serialization.h"
 #include "tink/signature/rsa_ssa_pss_sign_key_manager.h"
 #include "tink/signature/rsa_ssa_pss_verify_key_manager.h"
 #include "tink/util/status.h"
+#include "tink/signature/ecdsa_sign_key_manager.h"
 #include "proto/config.pb.h"
-
-using google::crypto::tink::RegistryConfig;
 
 namespace crypto {
 namespace tink {
-
-// static
-const google::crypto::tink::RegistryConfig& SignatureConfig::Latest() {
-  static const RegistryConfig* config = new RegistryConfig();
-  return *config;
-}
 
 // static
 util::Status SignatureConfig::Register() {
@@ -62,16 +57,27 @@ util::Status SignatureConfig::Register() {
       absl::make_unique<EcdsaVerifyKeyManager>(), true);
   if (!status.ok()) return status;
 
+  status = RegisterEcdsaProtoSerialization();
+  if (!status.ok()) {
+    return status;
+  }
+
   // RSA SSA PSS
   status = Registry::RegisterAsymmetricKeyManagers(
       absl::make_unique<RsaSsaPssSignKeyManager>(),
       absl::make_unique<RsaSsaPssVerifyKeyManager>(), true);
   if (!status.ok()) return status;
 
+  status = RegisterRsaSsaPssProtoSerialization();
+  if (!status.ok()) return status;
+
   // RSA SSA PKCS1
   status = Registry::RegisterAsymmetricKeyManagers(
       absl::make_unique<RsaSsaPkcs1SignKeyManager>(),
       absl::make_unique<RsaSsaPkcs1VerifyKeyManager>(), true);
+  if (!status.ok()) return status;
+
+  status = RegisterRsaSsaPkcs1ProtoSerialization();
   if (!status.ok()) return status;
 
   if (IsFipsModeEnabled()) {

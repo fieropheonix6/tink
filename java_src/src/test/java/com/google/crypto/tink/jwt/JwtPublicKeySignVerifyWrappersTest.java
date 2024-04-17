@@ -19,11 +19,17 @@ package com.google.crypto.tink.jwt;
 import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertThrows;
 
+import com.google.crypto.tink.InsecureSecretKeyAccess;
 import com.google.crypto.tink.KeyTemplate;
 import com.google.crypto.tink.KeyTemplates;
 import com.google.crypto.tink.KeysetHandle;
 import com.google.crypto.tink.KeysetManager;
+import com.google.crypto.tink.Parameters;
+import com.google.crypto.tink.TinkProtoKeysetFormat;
+import com.google.crypto.tink.proto.Keyset;
+import com.google.crypto.tink.proto.OutputPrefixType;
 import com.google.crypto.tink.testing.TestUtil;
+import com.google.protobuf.ExtensionRegistryLite;
 import java.security.GeneralSecurityException;
 import java.time.Clock;
 import java.time.Instant;
@@ -85,21 +91,26 @@ public class JwtPublicKeySignVerifyWrappersTest {
                     .makePrimary())
             .build();
     KeysetHandle publicHandle = privateKeysetHandle.getPublicKeysetHandle();
-    publicHandle.getPrimitive(JwtPublicKeyVerify.class);
+    Object unused = publicHandle.getPrimitive(JwtPublicKeyVerify.class);
   }
 
   @Test
   public void test_wrapLegacy_throws() throws Exception {
-    KeyTemplate rawTemplate = KeyTemplates.get("JWT_ES256_RAW");
-    // Convert the normal, raw template into a template with output prefix type LEGACY
-    KeyTemplate tinkTemplate =
-        KeyTemplate.create(
-            rawTemplate.getTypeUrl(), rawTemplate.getValue(), KeyTemplate.OutputPrefixType.LEGACY);
-    KeysetHandle handle = KeysetHandle.generateNew(tinkTemplate);
+    KeysetHandle handle = KeysetHandle.generateNew(KeyTemplates.get("JWT_ES256_RAW"));
+    Keyset keyset =
+        Keyset.parseFrom(
+            TinkProtoKeysetFormat.serializeKeyset(handle, InsecureSecretKeyAccess.get()),
+            ExtensionRegistryLite.getEmptyRegistry());
+    Keyset.Builder legacyKeysetBuilder = keyset.toBuilder();
+    legacyKeysetBuilder.setKey(
+        0, legacyKeysetBuilder.getKey(0).toBuilder().setOutputPrefixType(OutputPrefixType.LEGACY));
+    KeysetHandle legacyHandle =
+        TinkProtoKeysetFormat.parseKeyset(
+            legacyKeysetBuilder.build().toByteArray(), InsecureSecretKeyAccess.get());
     assertThrows(
-        GeneralSecurityException.class, () -> handle.getPrimitive(JwtPublicKeySign.class));
+        GeneralSecurityException.class, () -> legacyHandle.getPrimitive(JwtPublicKeySign.class));
 
-    KeysetHandle publicHandle = handle.getPublicKeysetHandle();
+    KeysetHandle publicHandle = legacyHandle.getPublicKeysetHandle();
     assertThrows(
         GeneralSecurityException.class, () -> publicHandle.getPrimitive(JwtPublicKeyVerify.class));
   }
@@ -293,5 +304,33 @@ public class JwtPublicKeySignVerifyWrappersTest {
     String compact = jwtSigner.signAndEncode(rawJwt);
     JwtValidator validator = JwtValidator.newBuilder().allowMissingExpiration().build();
     assertThrows(JwtInvalidException.class, () -> jwtVerifier.verifyAndDecode(compact, validator));
+  }
+
+  /* TODO: b/252792776. All keysets without primary should be rejected in every case. */
+  @Test
+  public void test_verifyWithoutPrimary_works() throws Exception {
+    Parameters parameters = KeyTemplates.get("JWT_ES256").toParameters();
+    KeysetHandle handle =
+        KeysetHandle.newBuilder()
+            .addEntry(
+                KeysetHandle.generateEntryFromParameters(parameters).withRandomId().makePrimary())
+            .addEntry(KeysetHandle.generateEntryFromParameters(parameters).withRandomId())
+            .build();
+    KeysetHandle publicHandle = handle.getPublicKeysetHandle();
+    Keyset publicKeyset =
+        Keyset.parseFrom(TinkProtoKeysetFormat.serializeKeysetWithoutSecret(publicHandle));
+    Keyset publicKeysetWithoutPrimary = publicKeyset.toBuilder().setPrimaryKeyId(0).build();
+    // TODO(b/252792776): Optimally, this would throw.
+    KeysetHandle publicHandleWithoutPrimary =
+        TinkProtoKeysetFormat.parseKeysetWithoutSecret(publicKeysetWithoutPrimary.toByteArray());
+
+    JwtPublicKeySign signer = handle.getPrimitive(JwtPublicKeySign.class);
+    // TODO(b/252792776): At least this should throw.
+    JwtPublicKeyVerify verifier = publicHandleWithoutPrimary.getPrimitive(JwtPublicKeyVerify.class);
+    RawJwt rawToken = RawJwt.newBuilder().setJwtId("blah").withoutExpiration().build();
+    String signedCompact = signer.signAndEncode(rawToken);
+    JwtValidator validator = JwtValidator.newBuilder().allowMissingExpiration().build();
+    VerifiedJwt verifiedToken = verifier.verifyAndDecode(signedCompact, validator);
+    assertThat(verifiedToken.getJwtId()).isEqualTo("blah");
   }
 }

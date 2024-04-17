@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package hybrid
 
@@ -47,7 +45,7 @@ type hpkePrivateKeyManager struct{}
 
 var _ registry.PrivateKeyManager = (*hpkePrivateKeyManager)(nil)
 
-func (p *hpkePrivateKeyManager) Primitive(serializedKey []byte) (interface{}, error) {
+func (p *hpkePrivateKeyManager) Primitive(serializedKey []byte) (any, error) {
 	if len(serializedKey) == 0 {
 		return nil, errInvalidHPKEPrivateKey
 	}

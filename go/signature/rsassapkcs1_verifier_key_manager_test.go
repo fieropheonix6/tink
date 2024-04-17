@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package signature_test
 
@@ -157,6 +155,15 @@ func TestRSASSAPKCS1VerifierPrimitiveWithInvalidInput(t *testing.T) {
 				N:       privKey.GetPublicKey().GetN(),
 				E:       privKey.GetPublicKey().GetE(),
 				Params:  privKey.GetPublicKey().GetParams(),
+			},
+		},
+		{
+			name: "params field is unset",
+			pubKey: &rsassapkcs1pb.RsaSsaPkcs1PublicKey{
+				Version: privKey.GetPublicKey().GetVersion(),
+				N:       privKey.GetPublicKey().GetN(),
+				E:       privKey.GetPublicKey().GetE(),
+				Params:  nil,
 			},
 		},
 		{

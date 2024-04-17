@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2017 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,15 +22,13 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import com.google.crypto.tink.Aead;
-import com.google.crypto.tink.CleartextKeysetHandle;
+import com.google.crypto.tink.InsecureSecretKeyAccess;
 import com.google.crypto.tink.KeysetHandle;
-import com.google.crypto.tink.PrimitiveSet;
-import com.google.crypto.tink.Registry;
+import com.google.crypto.tink.TinkProtoKeysetFormat;
 import com.google.crypto.tink.aead.AeadConfig;
 import com.google.crypto.tink.daead.DeterministicAeadConfig;
-import com.google.crypto.tink.hybrid.HybridKeyTemplates;
+import com.google.crypto.tink.internal.KeyTemplateProtoConverter;
 import com.google.crypto.tink.mac.MacConfig;
-import com.google.crypto.tink.monitoring.MonitoringAnnotations;
 import com.google.crypto.tink.prf.PrfConfig;
 import com.google.crypto.tink.proto.AesCtrHmacAeadKey;
 import com.google.crypto.tink.proto.AesCtrHmacStreamingKey;
@@ -48,9 +46,11 @@ import com.google.crypto.tink.proto.EcdsaParams;
 import com.google.crypto.tink.proto.EcdsaPrivateKey;
 import com.google.crypto.tink.proto.EcdsaPublicKey;
 import com.google.crypto.tink.proto.EcdsaSignatureEncoding;
+import com.google.crypto.tink.proto.EciesAeadDemParams;
 import com.google.crypto.tink.proto.EciesAeadHkdfParams;
 import com.google.crypto.tink.proto.EciesAeadHkdfPrivateKey;
 import com.google.crypto.tink.proto.EciesAeadHkdfPublicKey;
+import com.google.crypto.tink.proto.EciesHkdfKemParams;
 import com.google.crypto.tink.proto.EllipticCurveType;
 import com.google.crypto.tink.proto.HashType;
 import com.google.crypto.tink.proto.HkdfPrfKey;
@@ -74,9 +74,11 @@ import com.google.crypto.tink.streamingaead.StreamingAeadConfig;
 import com.google.crypto.tink.subtle.EllipticCurves;
 import com.google.crypto.tink.subtle.Hex;
 import com.google.crypto.tink.subtle.Random;
+import com.google.errorprone.annotations.InlineMe;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.ExtensionRegistryLite;
 import com.google.protobuf.MessageLite;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.security.GeneralSecurityException;
 import java.security.KeyPair;
@@ -89,7 +91,6 @@ import java.security.spec.ECPoint;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import javax.annotation.Nullable;
 import javax.crypto.Cipher;
 
 /** Test helpers. */
@@ -104,24 +105,6 @@ public final class TestUtil {
       this.description = description;
     }
   }
-
-  // This GCP KMS CryptoKey is restricted to the service account in {@code SERVICE_ACCOUNT_FILE}.
-  public static final String RESTRICTED_CRYPTO_KEY_URI =
-      String.format(
-          "gcp-kms://projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s",
-          "tink-test-infrastructure", "global", "unit-and-integration-testing", "aead-key");
-
-  // This is a credential of a service account that is granted access to
-  // {@code RESTRICTED_CRYPTO_KEY_URI}.
-  public static final String SERVICE_ACCOUNT_FILE = "testdata/gcp/credential.json";
-
-  // This AWS KMS CryptoKey is restricted to Google use only and {@code AWS_CREDS}.
-  public static final String AWS_CRYPTO_URI =
-      "aws-kms://arn:aws:kms:us-east-2:235739564943:key/3ee50705-5a82-4f5b-9753-05c4f473922f";
-
-  // This is a credential for the AWS service account with granted access to
-  // {@code AWS_CRYPTO_URI}.
-  public static final String AWS_CREDS = "testdata/aws/credentials.cred";
 
   /** A dummy Aead-implementation that just throws exception. */
   public static class DummyAead implements Aead {
@@ -138,43 +121,25 @@ public final class TestUtil {
     }
   }
 
-  /** @return a {@code PrimitiveSet} from a {@code KeySet} */
-  public static <P> PrimitiveSet<P> createPrimitiveSet(Keyset keyset, Class<P> inputClass)
-      throws GeneralSecurityException {
-    return createPrimitiveSetWithAnnotations(keyset, null, inputClass);
-  }
-
   /**
-   * @return a {@code PrimitiveSet} from a {@code KeySet}
+   * @return a {@code Keyset} from a {@code handle}.
+   * @deprecated The return value of this function is a Keyset and typically should not be used.
+   *     Instead, operate on the KeysetHandle directly.
    */
-  public static <P> PrimitiveSet<P> createPrimitiveSetWithAnnotations(
-      Keyset keyset, @Nullable MonitoringAnnotations annotations, Class<P> inputClass)
-      throws GeneralSecurityException {
-    PrimitiveSet.Builder<P> builder = PrimitiveSet.newBuilder(inputClass);
-    if (annotations != null) {
-      builder.setAnnotations(annotations);
-    }
-    for (Keyset.Key key : keyset.getKeyList()) {
-      if (key.getStatus() == KeyStatusType.ENABLED) {
-        P primitive = Registry.getPrimitive(key.getKeyData(), inputClass);
-        if (key.getKeyId() == keyset.getPrimaryKeyId()) {
-          builder.addPrimaryPrimitive(primitive, key);
-        } else {
-          builder.addPrimitive(primitive, key);
-        }
-      }
-    }
-    return builder.build();
-  }
-
-  /** @return a {@code Keyset} from a {@code handle}. */
+  @Deprecated
   public static Keyset getKeyset(final KeysetHandle handle) {
-    return CleartextKeysetHandle.getKeyset(handle);
+    try {
+      return Keyset.parseFrom(
+          TinkProtoKeysetFormat.serializeKeyset(handle, InsecureSecretKeyAccess.get()),
+          ExtensionRegistryLite.getEmptyRegistry());
+    } catch (GeneralSecurityException | IOException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   /** @return a keyset handle from a {@code keyset}. */
   public static KeysetHandle createKeysetHandle(Keyset keyset) throws Exception {
-    return CleartextKeysetHandle.parseFrom(keyset.toByteArray());
+    return TinkProtoKeysetFormat.parseKeyset(keyset.toByteArray(), InsecureSecretKeyAccess.get());
   }
 
   /** @return a keyset from a list of keys. The first key is primary. */
@@ -215,7 +180,11 @@ public final class TestUtil {
         .build();
   }
 
-  /** @return a {@code HkdfPrfKey}. */
+  /**
+   * @return a {@code HkdfPrfKey}.
+   * @deprecated Do not use this function
+   */
+  @Deprecated
   public static HkdfPrfKey createPrfKey(byte[] keyValue) throws Exception {
     HkdfPrfParams params = HkdfPrfParams.newBuilder().setHash(HashType.SHA256).build();
 
@@ -302,7 +271,11 @@ public final class TestUtil {
         KeyData.KeyMaterialType.SYMMETRIC);
   }
 
-  /** @return a {@code KeyData} containing a {@code AesCtrHmacAeadKey}. */
+  /**
+   * @return a {@code KeyData} containing a {@code AesCtrHmacAeadKey}.
+   * @deprecated Do not use this function
+   */
+  @Deprecated
   public static KeyData createAesCtrHmacAeadKeyData(
       byte[] aesCtrKeyValue, int ivSize, byte[] hmacKeyValue, int tagSize) throws Exception {
     AesCtrKey aesCtrKey = createAesCtrKey(aesCtrKeyValue, ivSize);
@@ -328,8 +301,13 @@ public final class TestUtil {
     return createKeyData(keyProto, AeadConfig.AES_GCM_TYPE_URL, KeyData.KeyMaterialType.SYMMETRIC);
   }
 
-  /** @return a {@code KeyData} containing a {@code AesEaxKey}. */
-  public static KeyData createAesEaxKeyData(byte[] keyValue, int ivSizeInBytes) throws Exception {
+  /**
+   * @return a {@code KeyData} containing a {@code AesEaxKey}.
+   * @deprecated DO not use this function.
+   */
+  @Deprecated
+  public static KeyData createAesEaxKeyData(byte[] keyValue, int ivSizeInBytes)
+      throws Exception {
     AesEaxKey keyProto =
         AesEaxKey.newBuilder()
             .setKeyValue(ByteString.copyFrom(keyValue))
@@ -514,7 +492,9 @@ public final class TestUtil {
   /**
    * @return a {@code KeyData} containing a {@code EciesAeadHkdfPrivateKey} with the specified key
    *     material and parameters.
+   * @deprecated Do not use this function
    */
+  @Deprecated
   public static EciesAeadHkdfPrivateKey createEciesAeadHkdfPrivKey(
       EciesAeadHkdfPublicKey pubKey, byte[] privKeyValue) throws Exception {
     final int version = 0;
@@ -525,7 +505,32 @@ public final class TestUtil {
         .build();
   }
 
-  /** @return a {@code EciesAeadHkdfPublicKey} with the specified key material and parameters. */
+  private static EciesAeadHkdfParams createEciesAeadHkdfParams(
+      EllipticCurveType curve,
+      HashType hashType,
+      EcPointFormat ecPointFormat,
+      KeyTemplate demKeyTemplate,
+      byte[] salt) {
+    EciesHkdfKemParams kemParams =
+        EciesHkdfKemParams.newBuilder()
+            .setCurveType(curve)
+            .setHkdfHashType(hashType)
+            .setHkdfSalt(ByteString.copyFrom(salt))
+            .build();
+    EciesAeadDemParams demParams =
+        EciesAeadDemParams.newBuilder().setAeadDem(demKeyTemplate).build();
+    return EciesAeadHkdfParams.newBuilder()
+        .setKemParams(kemParams)
+        .setDemParams(demParams)
+        .setEcPointFormat(ecPointFormat)
+        .build();
+  }
+
+  /**
+   * @return a {@code EciesAeadHkdfPublicKey} with the specified key material and parameters.
+   * @deprecated Do not use this function.
+   */
+  @Deprecated
   public static EciesAeadHkdfPublicKey createEciesAeadHkdfPubKey(
       EllipticCurveType curve,
       HashType hashType,
@@ -537,8 +542,7 @@ public final class TestUtil {
       throws Exception {
     final int version = 0;
     EciesAeadHkdfParams params =
-        HybridKeyTemplates.createEciesAeadHkdfParams(
-            curve, hashType, ecPointFormat, demKeyTemplate, salt);
+        createEciesAeadHkdfParams(curve, hashType, ecPointFormat, demKeyTemplate, salt);
     return EciesAeadHkdfPublicKey.newBuilder()
         .setVersion(version)
         .setParams(params)
@@ -556,12 +560,28 @@ public final class TestUtil {
     assertArrayEquals(plaintext, decrypted);
   }
 
-  /** Decodes hex string. */
+  /**
+   * Decodes hex string.
+   *
+   * @deprecated Usages should be inlined.
+   */
+  @InlineMe(
+      replacement = "Hex.decode(hexData)",
+      imports = {"com.google.crypto.tink.subtle.Hex"})
+  @Deprecated
   public static byte[] hexDecode(String hexData) {
     return Hex.decode(hexData);
   }
 
-  /** Encodes bytes to hex string. */
+  /**
+   * Encodes bytes to hex string.
+   *
+   * @deprecated Usages should be inlined.
+   */
+  @InlineMe(
+      replacement = "Hex.encode(data)",
+      imports = {"com.google.crypto.tink.subtle.Hex"})
+  @Deprecated
   public static String hexEncode(byte[] data) {
     return Hex.encode(data);
   }
@@ -592,11 +612,11 @@ public final class TestUtil {
    * Check that this is running in Remote Build Execution.
    *
    * @return true if running on Remote Build Execution.
+   * @deprecated This isn't supported anymore
    */
+  @Deprecated
   public static boolean isRemoteBuildExecution() {
-    // This check depends on the system property rbe being set to 1.
-    // The property is set in kokoro/presubmit-remote.sh via bazel: --jvmopt=-Drbe=1.
-    return "1".equals(System.getProperty("rbe"));
+    return false;
   }
 
   /**
@@ -607,7 +627,13 @@ public final class TestUtil {
     return false;
   }
 
-  /** Returns whether we should skip a test with some AES key size. */
+  /**
+   * Returns whether we should skip a test with some AES key size.
+   *
+   * @deprecated Do not call this function. If you have any instance, you probably want to use
+   *     "false" instead.
+   */
+  @Deprecated
   public static boolean shouldSkipTestWithAesKeySize(int keySizeInBytes)
       throws NoSuchAlgorithmException {
     int maxKeySize = Cipher.getMaxAllowedKeyLength("AES/CTR/NoPadding");
@@ -641,30 +667,44 @@ public final class TestUtil {
     assertTrue(message, e.getMessage().contains(contains));
   }
 
-  /** Asserts that {@code key} is generated from {@code keyTemplate}. */
-  public static void assertHmacKey(com.google.crypto.tink.KeyTemplate keyTemplate, Keyset.Key key)
-      throws Exception {
+  /**
+   * Asserts that {@code key} is generated from {@code keyTemplate}.
+   *
+   * @deprecated Do not use this function.
+   */
+  @Deprecated
+  public static void assertHmacKey(
+      com.google.crypto.tink.KeyTemplate keyTemplate, Keyset.Key key) throws Exception {
+    KeyTemplate protoTemplate = KeyTemplateProtoConverter.toProto(keyTemplate);
+
     assertThat(key.getKeyId()).isGreaterThan(0);
     assertThat(key.getStatus()).isEqualTo(KeyStatusType.ENABLED);
     assertThat(key.getOutputPrefixType()).isEqualTo(OutputPrefixType.TINK);
     assertThat(key.hasKeyData()).isTrue();
-    assertThat(key.getKeyData().getTypeUrl()).isEqualTo(keyTemplate.getTypeUrl());
+    assertThat(key.getKeyData().getTypeUrl()).isEqualTo(protoTemplate.getTypeUrl());
 
     HmacKeyFormat hmacKeyFormat =
-        HmacKeyFormat.parseFrom(keyTemplate.getValue(), ExtensionRegistryLite.getEmptyRegistry());
+        HmacKeyFormat.parseFrom(protoTemplate.getValue(), ExtensionRegistryLite.getEmptyRegistry());
     HmacKey hmacKey =
         HmacKey.parseFrom(key.getKeyData().getValue(), ExtensionRegistryLite.getEmptyRegistry());
     assertThat(hmacKey.getParams()).isEqualTo(hmacKeyFormat.getParams());
     assertThat(hmacKey.getKeyValue().size()).isEqualTo(hmacKeyFormat.getKeySize());
   }
 
-  /** Asserts that {@code KeyInfo} is corresponding to a key from {@code keyTemplate}. */
+  /**
+   * Asserts that {@code KeyInfo} is corresponding to a key from {@code keyTemplate}.
+   *
+   * @deprecated Do not use this function.
+   */
+  @Deprecated
   public static void assertKeyInfo(
       com.google.crypto.tink.KeyTemplate keyTemplate, KeysetInfo.KeyInfo keyInfo) throws Exception {
     assertThat(keyInfo.getKeyId()).isGreaterThan(0);
+    com.google.crypto.tink.proto.KeyTemplate protoTemplate =
+        KeyTemplateProtoConverter.toProto(keyTemplate);
+    assertThat(keyInfo.getTypeUrl()).isEqualTo(protoTemplate.getTypeUrl());
     assertThat(keyInfo.getStatus()).isEqualTo(KeyStatusType.ENABLED);
     assertThat(keyInfo.getOutputPrefixType()).isEqualTo(OutputPrefixType.TINK);
-    assertThat(keyInfo.getTypeUrl()).isEqualTo(keyTemplate.getTypeUrl());
   }
 
   /**
@@ -702,7 +742,12 @@ public final class TestUtil {
     assertByteBufferContains("", expected, buffer);
   }
 
-  /** Verifies that the given entry has the specified contents. */
+  /**
+   * Verifies that the given entry has the specified contents.
+   *
+   * @deprecated Do not use this function.
+   */
+  @Deprecated
   public static void verifyConfigEntry(
       KeyTypeEntry entry,
       String catalogueName,

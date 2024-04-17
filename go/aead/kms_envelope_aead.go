@@ -11,64 +11,86 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package aead
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
 
-	"google.golang.org/protobuf/proto"
 	"github.com/google/tink/go/core/registry"
 	"github.com/google/tink/go/tink"
 	tinkpb "github.com/google/tink/go/proto/tink_go_proto"
 )
 
 const (
-	lenDEK = 4
+	lenDEK        = 4
+	maxUint32Size = 4294967295
 )
 
 // KMSEnvelopeAEAD represents an instance of Envelope AEAD.
 type KMSEnvelopeAEAD struct {
 	dekTemplate *tinkpb.KeyTemplate
 	remote      tink.AEAD
+	// if err != nil, then the primitive will always fail with this error.
+	// this is needed because NewKMSEnvelopeAEAD2 doesn't return an error.
+	err error
 }
 
-// NewKMSEnvelopeAEAD creates an new instance of KMSEnvelopeAEAD.
-//
-// Deprecated: Use [NewKMSEnvelopeAEAD2] which takes a pointer to a KeyTemplate proto rather than a value.
-func NewKMSEnvelopeAEAD(kt tinkpb.KeyTemplate, remote tink.AEAD) *KMSEnvelopeAEAD {
-	return &KMSEnvelopeAEAD{
-		remote:      remote,
-		dekTemplate: &kt,
-	}
+var tinkAEADKeyTypes map[string]bool = map[string]bool{
+	aesCTRHMACAEADTypeURL:    true,
+	aesGCMTypeURL:            true,
+	chaCha20Poly1305TypeURL:  true,
+	xChaCha20Poly1305TypeURL: true,
+	aesGCMSIVTypeURL:         true,
+}
+
+func isSupporedKMSEnvelopeDEK(dekKeyTypeURL string) bool {
+	_, found := tinkAEADKeyTypes[dekKeyTypeURL]
+	return found
 }
 
 // NewKMSEnvelopeAEAD2 creates an new instance of KMSEnvelopeAEAD.
-func NewKMSEnvelopeAEAD2(kt *tinkpb.KeyTemplate, remote tink.AEAD) *KMSEnvelopeAEAD {
+//
+// dekTemplate must be a KeyTemplate for any of these Tink AEAD key types (any
+// other key template will be rejected):
+//   - AesCtrHmacAeadKey
+//   - AesGcmKey
+//   - ChaCha20Poly1305Key
+//   - XChaCha20Poly1305
+//   - AesGcmSivKey
+func NewKMSEnvelopeAEAD2(dekTemplate *tinkpb.KeyTemplate, remote tink.AEAD) *KMSEnvelopeAEAD {
+	if !isSupporedKMSEnvelopeDEK(dekTemplate.GetTypeUrl()) {
+		return &KMSEnvelopeAEAD{
+			remote:      nil,
+			dekTemplate: nil,
+			err:         fmt.Errorf("unsupported DEK key type %s", dekTemplate.GetTypeUrl()),
+		}
+	}
 	return &KMSEnvelopeAEAD{
 		remote:      remote,
-		dekTemplate: kt,
+		dekTemplate: dekTemplate,
+		err:         nil,
 	}
 }
 
 // Encrypt implements the tink.AEAD interface for encryption.
 func (a *KMSEnvelopeAEAD) Encrypt(pt, aad []byte) ([]byte, error) {
-	dekM, err := registry.NewKey(a.dekTemplate)
+	if a.err != nil {
+		return nil, a.err
+	}
+	dekKeyData, err := registry.NewKeyData(a.dekTemplate)
 	if err != nil {
 		return nil, err
 	}
-	dek, err := proto.Marshal(dekM)
-	if err != nil {
-		return nil, err
-	}
+	dek := dekKeyData.GetValue()
 	encryptedDEK, err := a.remote.Encrypt(dek, []byte{})
 	if err != nil {
 		return nil, err
+	}
+	if len(encryptedDEK) == 0 {
+		return nil, errors.New("encrypted dek is empty")
 	}
 	p, err := registry.Primitive(a.dekTemplate.TypeUrl, dek)
 	if err != nil {
@@ -83,12 +105,21 @@ func (a *KMSEnvelopeAEAD) Encrypt(pt, aad []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return buildCipherText(encryptedDEK, payload)
-
+	if len(encryptedDEK) > maxUint32Size {
+		return nil, errors.New("kms_envelope_aead: encrypted dek too large")
+	}
+	res := make([]byte, 0, lenDEK+len(encryptedDEK)+len(payload))
+	res = binary.BigEndian.AppendUint32(res, uint32(len(encryptedDEK)))
+	res = append(res, encryptedDEK...)
+	res = append(res, payload...)
+	return res, nil
 }
 
 // Decrypt implements the tink.AEAD interface for decryption.
 func (a *KMSEnvelopeAEAD) Decrypt(ct, aad []byte) ([]byte, error) {
+	if a.err != nil {
+		return nil, a.err
+	}
 	// Verify we have enough bytes for the length of the encrypted DEK.
 	if len(ct) <= lenDEK {
 		return nil, errors.New("kms_envelope_aead: invalid ciphertext")
@@ -126,29 +157,4 @@ func (a *KMSEnvelopeAEAD) Decrypt(ct, aad []byte) ([]byte, error) {
 
 	// Decrypt the payload.
 	return primitive.Decrypt(payload, aad)
-}
-
-// buildCipherText builds the cipher text by appending the length DEK, encrypted DEK
-// and the encrypted payload.
-func buildCipherText(encryptedDEK, payload []byte) ([]byte, error) {
-	var b bytes.Buffer
-
-	// Write the length of the encrypted DEK.
-	lenDEKbuf := make([]byte, lenDEK)
-	binary.BigEndian.PutUint32(lenDEKbuf, uint32(len(encryptedDEK)))
-	_, err := b.Write(lenDEKbuf)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = b.Write(encryptedDEK)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = b.Write(payload)
-	if err != nil {
-		return nil, err
-	}
-	return b.Bytes(), nil
 }

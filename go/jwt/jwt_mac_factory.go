@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package jwt
 
@@ -21,14 +19,15 @@ import (
 
 	"github.com/google/tink/go/core/primitiveset"
 	"github.com/google/tink/go/keyset"
+	tinkpb "github.com/google/tink/go/proto/tink_go_proto"
 )
 
 // NewMAC generates a new instance of the JWT MAC primitive.
-func NewMAC(h *keyset.Handle) (MAC, error) {
-	if h == nil {
+func NewMAC(handle *keyset.Handle) (MAC, error) {
+	if handle == nil {
 		return nil, fmt.Errorf("keyset handle can't be nil")
 	}
-	ps, err := h.PrimitivesWithKeyManager(nil)
+	ps, err := handle.PrimitivesWithKeyManager(nil)
 	if err != nil {
 		return nil, fmt.Errorf("jwt_mac_factory: cannot obtain primitive set: %v", err)
 	}
@@ -48,6 +47,9 @@ func newWrappedJWTMAC(ps *primitiveset.PrimitiveSet) (*wrappedJWTMAC, error) {
 	}
 	for _, primitives := range ps.Entries {
 		for _, p := range primitives {
+			if p.PrefixType != tinkpb.OutputPrefixType_RAW && p.PrefixType != tinkpb.OutputPrefixType_TINK {
+				return nil, fmt.Errorf("jwt_mac_factory: invalid OutputPrefixType: %s", p.PrefixType)
+			}
 			if _, ok := (p.Primitive).(*macWithKID); !ok {
 				return nil, fmt.Errorf("jwt_mac_factory: not a JWT MAC primitive")
 			}
@@ -66,16 +68,25 @@ func (w *wrappedJWTMAC) ComputeMACAndEncode(token *RawJWT) (string, error) {
 }
 
 func (w *wrappedJWTMAC) VerifyMACAndDecode(compact string, validator *Validator) (*VerifiedJWT, error) {
+	var interestingErr error
 	for _, s := range w.ps.Entries {
 		for _, e := range s {
 			p, ok := e.Primitive.(*macWithKID)
 			if !ok {
 				return nil, fmt.Errorf("jwt_mac_factory: not a JWT MAC primitive")
 			}
-			if verifiedJWT, err := p.VerifyMACAndDecodeWithKID(compact, validator, keyID(e.KeyID, e.PrefixType)); err == nil {
+			verifiedJWT, err := p.VerifyMACAndDecodeWithKID(compact, validator, keyID(e.KeyID, e.PrefixType))
+			if err == nil {
 				return verifiedJWT, nil
+			}
+			if err != errJwtVerification {
+				// any error that is not the generic errJwtVerification is considered interesting
+				interestingErr = err
 			}
 		}
 	}
-	return nil, fmt.Errorf("verification failed")
+	if interestingErr != nil {
+		return nil, interestingErr
+	}
+	return nil, errJwtVerification
 }

@@ -11,16 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package subtle
 
 import (
+	"crypto/ed25519"
 	"errors"
 	"fmt"
-
-	"golang.org/x/crypto/ed25519"
 )
 
 var errInvalidED25519Signature = errors.New("ed25519: invalid signature")

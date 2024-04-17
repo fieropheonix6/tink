@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package aead_test
 
@@ -33,11 +31,26 @@ import (
 
 func TestChaCha20Poly1305EncryptDecrypt(t *testing.T) {
 	for i, test := range chaCha20Poly1305Tests {
-		key, _ := hex.DecodeString(test.key)
-		pt, _ := hex.DecodeString(test.plaintext)
-		aad, _ := hex.DecodeString(test.aad)
-		nonce, _ := hex.DecodeString(test.nonce)
-		ct, _ := hex.DecodeString(test.out)
+		key, err := hex.DecodeString(test.key)
+		if err != nil {
+			t.Fatalf("hex.DecodeString(test.key) err = %q, want nil", err)
+		}
+		pt, err := hex.DecodeString(test.plaintext)
+		if err != nil {
+			t.Fatalf("hex.DecodeString(test.plaintext) err = %q, want nil", err)
+		}
+		aad, err := hex.DecodeString(test.aad)
+		if err != nil {
+			t.Fatalf("hex.DecodeString(test.aad) err = %q, want nil", err)
+		}
+		nonce, err := hex.DecodeString(test.nonce)
+		if err != nil {
+			t.Fatalf("hex.DecodeString(test.nonce) err = %q, want nil", err)
+		}
+		ct, err := hex.DecodeString(test.out)
+		if err != nil {
+			t.Fatalf("hex.DecodeString(test.out) err = %q, want nil", err)
+		}
 
 		ca, err := aead.NewChaCha20Poly1305InsecureNonce(key)
 		if err != nil {
@@ -128,9 +141,18 @@ func TestChaCha20Poly1305LongMessages(t *testing.T) {
 
 func TestChaCha20Poly1305ModifyCiphertext(t *testing.T) {
 	for i, test := range chaCha20Poly1305Tests {
-		key, _ := hex.DecodeString(test.key)
-		pt, _ := hex.DecodeString(test.plaintext)
-		aad, _ := hex.DecodeString(test.aad)
+		key, err := hex.DecodeString(test.key)
+		if err != nil {
+			t.Fatalf("hex.DecodeString(test.key) err = %q, want nil", err)
+		}
+		pt, err := hex.DecodeString(test.plaintext)
+		if err != nil {
+			t.Fatalf("hex.DecodeString(test.plaintext) err = %q, want nil", err)
+		}
+		aad, err := hex.DecodeString(test.aad)
+		if err != nil {
+			t.Fatalf("hex.DecodeString(test.aad) err = %q, want nil", err)
+		}
 
 		ca, err := aead.NewChaCha20Poly1305InsecureNonce(key)
 		if err != nil {
@@ -197,7 +219,7 @@ func TestChaCha20Poly1305WycheproofCases(t *testing.T) {
 		if group.KeySize/8 != chacha20poly1305.KeySize {
 			continue
 		}
-		if group.IvSize/8 != chacha20poly1305.NonceSize {
+		if group.IVSize/8 != chacha20poly1305.NonceSize {
 			continue
 		}
 
@@ -215,13 +237,13 @@ func runChaCha20Poly1305WycheproofCase(t *testing.T, tc *AEADCase) {
 	}
 
 	nonce := random.GetRandomBytes(chacha20poly1305.NonceSize)
-	_, err = ca.Encrypt(nonce, tc.Msg, tc.Aad)
+	_, err = ca.Encrypt(nonce, tc.Message, tc.AD)
 	if err != nil {
 		t.Fatalf("unexpected encryption error: %s", err)
 	}
 
-	ct := append(tc.Ct, tc.Tag...)
-	decrypted, err := ca.Decrypt(tc.Iv, ct, tc.Aad)
+	ct := append(tc.CT, tc.Tag...)
+	decrypted, err := ca.Decrypt(tc.IV, ct, tc.AD)
 	if err != nil {
 		if tc.Result == "valid" {
 			t.Errorf("unexpected error: %s", err)
@@ -230,7 +252,7 @@ func runChaCha20Poly1305WycheproofCase(t *testing.T, tc *AEADCase) {
 		if tc.Result == "invalid" {
 			t.Error("decrypted invalid")
 		}
-		if !bytes.Equal(decrypted, tc.Msg) {
+		if !bytes.Equal(decrypted, tc.Message) {
 			t.Error("incorrect decryption")
 		}
 	}

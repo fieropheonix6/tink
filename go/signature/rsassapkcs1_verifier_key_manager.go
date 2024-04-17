@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package signature
 
@@ -42,7 +40,7 @@ type rsaSSAPKCS1VerifierKeyManager struct{}
 
 var _ registry.KeyManager = (*rsaSSAPKCS1VerifierKeyManager)(nil)
 
-func (km *rsaSSAPKCS1VerifierKeyManager) Primitive(serializedKey []byte) (interface{}, error) {
+func (km *rsaSSAPKCS1VerifierKeyManager) Primitive(serializedKey []byte) (any, error) {
 	if len(serializedKey) == 0 {
 		return nil, fmt.Errorf("rsassapkcs1_verifier_key_manager: invalid serialized public key")
 	}
@@ -57,7 +55,7 @@ func (km *rsaSSAPKCS1VerifierKeyManager) Primitive(serializedKey []byte) (interf
 		E: int(bytesToBigInt(key.GetE()).Int64()),
 		N: bytesToBigInt(key.GetN()),
 	}
-	return internal.New_RSA_SSA_PKCS1_Verifier(hashName(key.Params.HashType), keyData)
+	return internal.New_RSA_SSA_PKCS1_Verifier(hashName(key.GetParams().GetHashType()), keyData)
 }
 
 func validateRSAPKCS1PublicKey(pubKey *rsassapkcs1pb.RsaSsaPkcs1PublicKey) error {

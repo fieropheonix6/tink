@@ -11,14 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package jwt
 
 import (
 	"bytes"
 	"fmt"
+	"math/big"
 	"math/rand"
 
 	spb "google.golang.org/protobuf/types/known/structpb"
@@ -352,7 +351,6 @@ func esPublicKeyDataFromStruct(keyStruct *spb.Struct) (*tinkpb.KeyData, error) {
 	}, nil
 }
 
-// TODO(b/173082704): Support RSA Key Types once Tink has RSA key managers
 func keysetKeyFromStruct(val *spb.Value, keyID uint32) (*tinkpb.Keyset_Key, error) {
 	keyStruct := val.GetStructValue()
 	if keyStruct == nil {
@@ -498,21 +496,36 @@ func esPublicKeyToStruct(key *tinkpb.Keyset_Key) (*spb.Struct, error) {
 		Fields: map[string]*spb.Value{},
 	}
 	var algorithm, curve string
+	var encLen int
 	switch pubKey.GetAlgorithm() {
 	case jepb.JwtEcdsaAlgorithm_ES256:
-		curve, algorithm = "P-256", "ES256"
+		curve, algorithm, encLen = "P-256", "ES256", 32
 	case jepb.JwtEcdsaAlgorithm_ES384:
-		curve, algorithm = "P-384", "ES384"
+		curve, algorithm, encLen = "P-384", "ES384", 48
 	case jepb.JwtEcdsaAlgorithm_ES512:
-		curve, algorithm = "P-521", "ES512"
+		curve, algorithm, encLen = "P-521", "ES512", 66
 	default:
 		return nil, fmt.Errorf("invalid algorithm")
 	}
+
+	// RFC 7518 specifies a fixed sized encoding for the x and y coordinates from SEC 1
+	// https://datatracker.ietf.org/doc/html/rfc7518#section-6.2.1.2
+	xi := big.NewInt(0).SetBytes(pubKey.GetX())
+	if xi.BitLen() > encLen*8 {
+		return nil, fmt.Errorf("invalid x coordinate")
+	}
+	x := xi.FillBytes(make([]byte, encLen))
+	yi := big.NewInt(0).SetBytes(pubKey.GetY())
+	if yi.BitLen() > encLen*8 {
+		return nil, fmt.Errorf("invalid y coordinate")
+	}
+	y := yi.FillBytes(make([]byte, encLen))
+
 	addStringEntry(outKey, "crv", curve)
 	addStringEntry(outKey, "alg", algorithm)
 	addStringEntry(outKey, "kty", "EC")
-	addStringEntry(outKey, "x", base64Encode(pubKey.GetX()))
-	addStringEntry(outKey, "y", base64Encode(pubKey.GetY()))
+	addStringEntry(outKey, "x", base64Encode(x))
+	addStringEntry(outKey, "y", base64Encode(y))
 	addStringEntry(outKey, "use", "sig")
 	addKeyOPSVerify(outKey)
 

@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package signature_test
 
@@ -80,7 +78,7 @@ func TestRSASSAPSSSignVerifyInvalidFails(t *testing.T) {
 
 	modifiedSig := s[:]
 	// modify first byte in signature
-	modifiedSig[0] <<= 1
+	modifiedSig[0] = byte(uint8(modifiedSig[0]) + 1)
 	if err := verifier.Verify(modifiedSig, data); err == nil {
 		t.Errorf("Verify(modifiedSig, data) err = nil, want error")
 	}

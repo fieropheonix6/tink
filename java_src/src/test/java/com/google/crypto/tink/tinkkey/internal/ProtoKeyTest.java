@@ -16,14 +16,21 @@
 package com.google.crypto.tink.tinkkey.internal;
 
 import static com.google.common.truth.Truth.assertThat;
+import static com.google.crypto.tink.internal.KeyTemplateProtoConverter.getOutputPrefixType;
 import static org.junit.Assert.assertThrows;
 
+import com.google.crypto.tink.KeyManager;
 import com.google.crypto.tink.KeyTemplate;
 import com.google.crypto.tink.KeyTemplates;
-import com.google.crypto.tink.Registry;
+import com.google.crypto.tink.PrivateKeyManager;
+import com.google.crypto.tink.TinkProtoParametersFormat;
 import com.google.crypto.tink.aead.AesEaxKeyManager;
+import com.google.crypto.tink.internal.KeyManagerRegistry;
 import com.google.crypto.tink.proto.KeyData;
 import com.google.crypto.tink.signature.Ed25519PrivateKeyManager;
+import com.google.protobuf.ByteString;
+import com.google.protobuf.ExtensionRegistryLite;
+import com.google.protobuf.InvalidProtocolBufferException;
 import java.security.GeneralSecurityException;
 import org.junit.Before;
 import org.junit.Test;
@@ -33,6 +40,37 @@ import org.junit.runners.JUnit4;
 /** Tests for ProtoKey */
 @RunWith(JUnit4.class)
 public final class ProtoKeyTest {
+  private static KeyData newKeyData(com.google.crypto.tink.KeyTemplate keyTemplate)
+      throws GeneralSecurityException {
+    try {
+      byte[] serializedKeyTemplate =
+          TinkProtoParametersFormat.serialize(keyTemplate.toParameters());
+      com.google.crypto.tink.proto.KeyTemplate protoTemplate =
+          com.google.crypto.tink.proto.KeyTemplate.parseFrom(
+              serializedKeyTemplate, ExtensionRegistryLite.getEmptyRegistry());
+      KeyManager<?> manager =
+          KeyManagerRegistry.globalInstance().getUntypedKeyManager(protoTemplate.getTypeUrl());
+      if (KeyManagerRegistry.globalInstance().isNewKeyAllowed(protoTemplate.getTypeUrl())) {
+        return manager.newKeyData(protoTemplate.getValue());
+      } else {
+        throw new GeneralSecurityException(
+            "newKey-operation not permitted for key type " + protoTemplate.getTypeUrl());
+      }
+    } catch (InvalidProtocolBufferException e) {
+      throw new GeneralSecurityException("Failed to parse serialized parameters", e);
+    }
+  }
+
+  private static KeyData getPublicKeyData(String typeUrl, ByteString serializedPrivateKey)
+      throws GeneralSecurityException {
+    KeyManager<?> manager = KeyManagerRegistry.globalInstance().getUntypedKeyManager(typeUrl);
+
+    if (!(manager instanceof PrivateKeyManager)) {
+      throw new GeneralSecurityException(
+          "manager for key type " + typeUrl + " is not a PrivateKeyManager");
+    }
+    return ((PrivateKeyManager) manager).getPublicKeyData(serializedPrivateKey);
+  }
 
   @Before
   public void setUp() throws GeneralSecurityException {
@@ -43,12 +81,12 @@ public final class ProtoKeyTest {
   @Test
   public void testProtoKey_keyDataSYMMETRIC_shouldHaveSecret() throws GeneralSecurityException {
     KeyTemplate kt = KeyTemplates.get("AES128_EAX");
-    KeyData kd = Registry.newKeyData(kt);
+    KeyData kd = newKeyData(kt);
 
-    ProtoKey pk = new ProtoKey(kd, kt.getOutputPrefixType());
+    ProtoKey pk = new ProtoKey(kd, getOutputPrefixType(kt));
 
     assertThat(pk.getProtoKey()).isEqualTo(kd);
-    assertThat(pk.getOutputPrefixType()).isEqualTo(kt.getOutputPrefixType());
+    assertThat(pk.getOutputPrefixType()).isEqualTo(getOutputPrefixType(kt));
     assertThat(pk.hasSecret()).isTrue();
   }
 
@@ -56,12 +94,12 @@ public final class ProtoKeyTest {
   public void testProtoKey_keyDataASYMMETRICPRIVATE_shouldHaveSecret()
       throws GeneralSecurityException {
     KeyTemplate kt = KeyTemplates.get("ED25519");
-    KeyData kd = Registry.newKeyData(kt);
+    KeyData kd = newKeyData(kt);
 
-    ProtoKey pk = new ProtoKey(kd, kt.getOutputPrefixType());
+    ProtoKey pk = new ProtoKey(kd, getOutputPrefixType(kt));
 
     assertThat(pk.getProtoKey()).isEqualTo(kd);
-    assertThat(pk.getOutputPrefixType()).isEqualTo(kt.getOutputPrefixType());
+    assertThat(pk.getOutputPrefixType()).isEqualTo(getOutputPrefixType(kt));
     assertThat(pk.hasSecret()).isTrue();
   }
 
@@ -69,15 +107,14 @@ public final class ProtoKeyTest {
   public void testProtoKey_keyDataUNKNOWN_shouldHaveSecret() throws GeneralSecurityException {
     KeyTemplate kt = KeyTemplates.get("ED25519");
     KeyData kd =
-        KeyData.newBuilder()
-            .mergeFrom(Registry.newKeyData(kt))
+        newKeyData(kt).toBuilder()
             .setKeyMaterialType(KeyData.KeyMaterialType.UNKNOWN_KEYMATERIAL)
             .build();
 
-    ProtoKey pk = new ProtoKey(kd, kt.getOutputPrefixType());
+    ProtoKey pk = new ProtoKey(kd, getOutputPrefixType(kt));
 
     assertThat(pk.getProtoKey()).isEqualTo(kd);
-    assertThat(pk.getOutputPrefixType()).isEqualTo(kt.getOutputPrefixType());
+    assertThat(pk.getOutputPrefixType()).isEqualTo(getOutputPrefixType(kt));
     assertThat(pk.hasSecret()).isTrue();
   }
 
@@ -85,12 +122,13 @@ public final class ProtoKeyTest {
   public void testProtoKey_keyDataASYMMETRICPUBLIC_shouldNotHaveSecret()
       throws GeneralSecurityException {
     KeyTemplate kt = KeyTemplates.get("ED25519");
-    KeyData kd = Registry.getPublicKeyData(kt.getTypeUrl(), Registry.newKeyData(kt).getValue());
+    KeyData privateKeyData = newKeyData(kt);
+    KeyData kd = getPublicKeyData(privateKeyData.getTypeUrl(), privateKeyData.getValue());
 
-    ProtoKey pk = new ProtoKey(kd, kt.getOutputPrefixType());
+    ProtoKey pk = new ProtoKey(kd, getOutputPrefixType(kt));
 
     assertThat(pk.getProtoKey()).isEqualTo(kd);
-    assertThat(pk.getOutputPrefixType()).isEqualTo(kt.getOutputPrefixType());
+    assertThat(pk.getOutputPrefixType()).isEqualTo(getOutputPrefixType(kt));
     assertThat(pk.hasSecret()).isFalse();
   }
 
@@ -98,23 +136,20 @@ public final class ProtoKeyTest {
   public void testProtoKey_keyDataREMOTE_shouldNotHaveSecret() throws GeneralSecurityException {
     KeyTemplate kt = KeyTemplates.get("ED25519");
     KeyData kd =
-        KeyData.newBuilder()
-            .mergeFrom(Registry.newKeyData(kt))
-            .setKeyMaterialType(KeyData.KeyMaterialType.REMOTE)
-            .build();
+        newKeyData(kt).toBuilder().setKeyMaterialType(KeyData.KeyMaterialType.REMOTE).build();
 
-    ProtoKey pk = new ProtoKey(kd, kt.getOutputPrefixType());
+    ProtoKey pk = new ProtoKey(kd, getOutputPrefixType(kt));
 
     assertThat(pk.getProtoKey()).isEqualTo(kd);
-    assertThat(pk.getOutputPrefixType()).isEqualTo(kt.getOutputPrefixType());
+    assertThat(pk.getOutputPrefixType()).isEqualTo(getOutputPrefixType(kt));
     assertThat(pk.hasSecret()).isFalse();
   }
 
   @Test
   public void testGetKeyTemplate_shouldThrow() throws GeneralSecurityException {
     KeyTemplate kt = AesEaxKeyManager.aes128EaxTemplate();
-    KeyData kd = Registry.newKeyData(kt);
-    ProtoKey pk = new ProtoKey(kd, kt.getOutputPrefixType());
+    KeyData kd = newKeyData(kt);
+    ProtoKey pk = new ProtoKey(kd, getOutputPrefixType(kt));
 
     assertThrows(UnsupportedOperationException.class, pk::getKeyTemplate);
   }

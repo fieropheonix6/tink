@@ -22,8 +22,11 @@
 
 #include "absl/strings/string_view.h"
 #include "tink/internal/registry_impl.h"
+#include "tink/key_manager.h"
+#include "tink/primitive_set.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
+#include "proto/tink.pb.h"
 
 namespace crypto {
 namespace tink {
@@ -50,66 +53,12 @@ namespace tink {
 // and KeyManagers.
 class Registry {
  public:
-  // Returns a catalogue with the given name (if any found).
-  // Keeps the ownership of the catalogue.
-  template <class P>
-  ABSL_DEPRECATED("Catalogues are not supported anymore.")
-  static crypto::tink::util::StatusOr<const Catalogue<P>*> get_catalogue(
-      absl::string_view catalogue_name) {
-    return internal::RegistryImpl::GlobalInstance().get_catalogue<P>(
-        catalogue_name);
-  }
-
-  // Adds the given 'catalogue' under the specified 'catalogue_name',
-  // to enable custom configuration of key types and key managers.
-  //
-  // Adding a custom catalogue should be a one-time operation,
-  // and fails if the given 'catalogue' tries to override
-  // an existing, different catalogue for the specified name.
-  template <class ConcreteCatalogue>
-  ABSL_DEPRECATED("Catalogues are not supported anymore.")
-  static crypto::tink::util::Status
-      AddCatalogue(absl::string_view catalogue_name,
-                   std::unique_ptr<ConcreteCatalogue> catalogue) {
-    return internal::RegistryImpl::GlobalInstance().AddCatalogue(
-        catalogue_name, catalogue.release());
-  }
-
-  // AddCatalogue has the same functionality as the overload which uses a
-  // unique_ptr and which should be preferred.
-  //
-  // Takes ownership of 'catalogue', which must be non-nullptr (in case of
-  // failure, 'catalogue' is deleted).
-  template <class P>
-  ABSL_DEPRECATED("Use AddCatalogue with a unique_ptr input instead.")
-  static crypto::tink::util::Status
-      AddCatalogue(absl::string_view catalogue_name, Catalogue<P>* catalogue) {
-    return AddCatalogue(catalogue_name, absl::WrapUnique(catalogue));
-  }
-
   // Registers the given 'manager' for the key type 'manager->get_key_type()'.
   template <class ConcreteKeyManager>
   static crypto::tink::util::Status RegisterKeyManager(
       std::unique_ptr<ConcreteKeyManager> manager, bool new_key_allowed) {
     return internal::RegistryImpl::GlobalInstance().RegisterKeyManager(
         manager.release(), new_key_allowed);
-  }
-
-  // Same functionality as the overload which takes a unique pointer, for
-  // new_key_allowed = true.
-  template <class P>
-  ABSL_DEPRECATED(
-      "Use RegisterKeyManager with a unique_ptr manager and new_key_allowed = "
-      "true instead.")
-  static crypto::tink::util::Status RegisterKeyManager(KeyManager<P>* manager) {
-    return RegisterKeyManager(absl::WrapUnique(manager), true);
-  }
-
-  template <class P>
-  ABSL_DEPRECATED("Use RegisterKeyManager with a unique_ptr manager instead.")
-  static crypto::tink::util::Status RegisterKeyManager(KeyManager<P>* manager,
-                                                       bool new_key_allowed) {
-    return RegisterKeyManager(absl::WrapUnique(manager), new_key_allowed);
   }
 
   template <class KTManager>
@@ -160,15 +109,6 @@ class Registry {
   static crypto::tink::util::StatusOr<std::unique_ptr<P>> GetPrimitive(
       const google::crypto::tink::KeyData& key_data) {
     return internal::RegistryImpl::GlobalInstance().GetPrimitive<P>(key_data);
-  }
-  // Convenience method for creating a new primitive for the key given
-  // in 'key'.  It looks up a KeyManager identified by type_url,
-  // and calls manager's GetPrimitive(key)-method.
-  template <class P>
-  static crypto::tink::util::StatusOr<std::unique_ptr<P>> GetPrimitive(
-      absl::string_view type_url, const portable_proto::MessageLite& key) {
-    return internal::RegistryImpl::GlobalInstance().GetPrimitive<P>(type_url,
-                                                                    key);
   }
 
   // Generates a new KeyData for the specified 'key_template'.

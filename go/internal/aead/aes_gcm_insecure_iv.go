@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package aead
 
@@ -42,7 +40,7 @@ const (
 // AESGCMInsecureIV is an insecure implementation of the AEAD interface that
 // permits the user to set the IV.
 type AESGCMInsecureIV struct {
-	Key       []byte
+	key       []byte
 	prependIV bool
 }
 
@@ -57,7 +55,7 @@ func NewAESGCMInsecureIV(key []byte, prependIV bool) (*AESGCMInsecureIV, error) 
 		return nil, fmt.Errorf("invalid AES key size: %s", err)
 	}
 	return &AESGCMInsecureIV{
-		Key:       key,
+		key:       key,
 		prependIV: prependIV,
 	}, nil
 }
@@ -88,12 +86,14 @@ func (i *AESGCMInsecureIV) Encrypt(iv, plaintext, associatedData []byte) ([]byte
 	if err != nil {
 		return nil, err
 	}
-	ciphertext := cipher.Seal(nil, iv, plaintext, associatedData)
-
-	if i.prependIV {
-		return append(iv, ciphertext...), nil
+	if !i.prependIV {
+		return cipher.Seal(nil, iv, plaintext, associatedData), nil
 	}
-	return ciphertext, nil
+	// Make the capacity of dst large enough so that both the IV and the ciphertext fit inside.
+	dst := make([]byte, 0, AESGCMIVSize+len(plaintext)+cipher.Overhead())
+	dst = append(dst, iv...)
+	// Seal appends the ciphertext to dst. So the final output is: iv || ciphertext.
+	return cipher.Seal(dst, iv, plaintext, associatedData), nil
 }
 
 // Decrypt decrypts ciphertext with iv as the initialization vector and
@@ -101,10 +101,12 @@ func (i *AESGCMInsecureIV) Encrypt(iv, plaintext, associatedData []byte) ([]byte
 //
 // If prependIV is true, the iv argument and the first AESGCMIVSize bytes of
 // ciphertext must be equal. The ciphertext argument is as follows:
-//     | iv | actual ciphertext | tag |
+//
+//	| iv | actual ciphertext | tag |
 //
 // If false, the ciphertext argument is as follows:
-//     | actual ciphertext | tag |
+//
+//	| actual ciphertext | tag |
 func (i *AESGCMInsecureIV) Decrypt(iv, ciphertext, associatedData []byte) ([]byte, error) {
 	if len(iv) != AESGCMIVSize {
 		return nil, fmt.Errorf("unexpected IV size: got %d, want %d", len(iv), AESGCMIVSize)
@@ -140,7 +142,7 @@ func (i *AESGCMInsecureIV) Decrypt(iv, ciphertext, associatedData []byte) ([]byt
 // newCipher creates a new AES-GCM cipher using the given key and the crypto
 // library.
 func (i *AESGCMInsecureIV) newCipher() (cipher.AEAD, error) {
-	aesCipher, err := aes.NewCipher(i.Key)
+	aesCipher, err := aes.NewCipher(i.key)
 	if err != nil {
 		return nil, errors.New("failed to initialize cipher")
 	}

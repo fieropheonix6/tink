@@ -28,8 +28,22 @@ import com.google.crypto.tink.proto.OutputPrefixType;
 /**
  * Key templates for PRF-Keys.
  *
- * @deprecated use {@link com.google.crypto.tink.KeyTemplates#get}, e.g.,
- *     KeyTemplates.get("HKDF_SHA256")
+ * <p>We recommend to avoid this class in order to keep dependencies small.
+ *
+ * <ul>
+ *   <li>Using this class adds a dependency on protobuf. We hope that eventually it is possible to
+ *       use Tink without a dependency on protobuf.
+ *   <li>Using this class adds a dependency on classes for all involved key types.
+ * </ul>
+ *
+ * These dependencies all come from static class member variables, which are initialized when the
+ * class is loaded. This implies that static analysis and code minimization tools (such as proguard)
+ * cannot remove the usages either.
+ *
+ * <p>Instead, we recommend to use {@code KeysetHandle.generateEntryFromParametersName} or {@code
+ * KeysetHandle.generateEntryFromParameters}.
+ *
+ * @deprecated Use PredefinedPrfParameters instead.
  */
 @Deprecated
 public final class PrfKeyTemplates {
@@ -54,7 +68,7 @@ public final class PrfKeyTemplates {
     HmacPrfKeyFormat format =
         HmacPrfKeyFormat.newBuilder().setParams(params).setKeySize(keySize).build();
     return KeyTemplate.newBuilder()
-        .setTypeUrl(new HmacPrfKeyManager().getKeyType())
+        .setTypeUrl(HmacPrfKeyManager.getKeyType())
         .setValue(format.toByteString())
         .setOutputPrefixType(OutputPrefixType.RAW)
         .build();
@@ -63,7 +77,7 @@ public final class PrfKeyTemplates {
   private static KeyTemplate createAes256CmacTemplate() {
     AesCmacPrfKeyFormat format = AesCmacPrfKeyFormat.newBuilder().setKeySize(32).build();
     return KeyTemplate.newBuilder()
-        .setTypeUrl(new AesCmacPrfKeyManager().getKeyType())
+        .setTypeUrl(AesCmacPrfKeyManager.getKeyType())
         .setValue(format.toByteString())
         .setOutputPrefixType(OutputPrefixType.RAW)
         .build();

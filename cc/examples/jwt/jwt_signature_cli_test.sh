@@ -14,124 +14,169 @@
 # limitations under the License.
 ################################################################################
 
+set -euo pipefail
 
 #############################################################################
-#### Tests for digital_signatures_cli binary.
-
-SIGNATURE_CLI="$1"
-
-PRIVATE_KEYSET_FILE="$TEST_TMPDIR/private_keyset.bin"
-PUBLIC_KEYSET_FILE="$TEST_TMPDIR/public_keyset.bin"
-TOKEN_FILE="$TEST_TMPDIR/token.bin"
-RESULT_FILE="$TEST_TMPDIR/result.txt"
-
-OTHER_PRIVATE_KEYSET_FILE="$TEST_TMPDIR/other_private_keyset.bin"
-OTHER_PUBLIC_KEYSET_FILE="$TEST_TMPDIR/other_public_keyset.bin"
-INVALID_TOKEN_FILE="$TEST_TMPDIR/invalid_token.txt"
-
-echo "invalid.token.file" > $INVALID_TOKEN_FILE
-
+# Tests for Tink C++ JWT signature example.
 #############################################################################
-#### Helper function that checks if values are equal.
 
-assert_equal() {
-  if [ "$1" == "$2" ]; then
-    echo "+++ Success: values are equal."
-  else
-    echo "--- Failure: values are different. Expected: [$1], actual: [$2]."
+: "${TEST_TMPDIR:=$(mktemp -d)}"
+
+readonly CLI_SIGN="$1"
+readonly GEN_PUBLIC_JWK_SET_CLI="$2"
+readonly CLI_VERIFY="$3"
+readonly PRIVATE_KEYSET_FILE="$4"
+readonly PUBLIC_KEYSET_FILE="$5"
+readonly PUBLIC_JWK_SET_FILE="${TEST_TMPDIR}/public_jwk_set.json"
+readonly TOKEN_FILE="${TEST_TMPDIR}/token.json"
+readonly TEST_NAME="TinkCcExamplesJwtSignatureTest"
+
+readonly AUDIENCE="JWT audience"
+
+#######################################
+# A helper function for getting the return code of a command that may fail.
+# Temporarily disables error safety and stores return value in TEST_STATUS.
+#
+# Globals:
+#   TEST_STATUS
+# Arguments:
+#   Command to execute.
+#######################################
+test_command() {
+  set +e
+  "$@"
+  TEST_STATUS=$?
+  set -e
+}
+
+#######################################
+# Asserts that the outcome of the latest test command is 0.
+#
+# If not, it terminates the test execution.
+#
+# Globals:
+#   TEST_STATUS
+#   TEST_NAME
+#   TEST_CASE
+#######################################
+assert_command_succeeded() {
+  if (( TEST_STATUS != 0 )); then
+    echo "[   FAILED ] ${TEST_NAME}.${TEST_CASE}"
     exit 1
   fi
 }
 
-#############################################################################
-#### All good, everything should work.
-test_name="all_good"
-echo "+++ Starting test $test_name..."
+#######################################
+# Asserts that the outcome of the latest test command is not 0.
+#
+# If not, it terminates the test execution.
+#
+# Globals:
+#   TEST_STATUS
+#   TEST_NAME
+#   TEST_CASE
+#######################################
+assert_command_failed() {
+  if (( TEST_STATUS == 0 )); then
+      echo "[   FAILED ] ${TEST_NAME}.${TEST_CASE}"
+      exit 1
+  fi
+}
 
-#### Generate a private key and get a public key.
-$SIGNATURE_CLI gen-private-key $PRIVATE_KEYSET_FILE || exit 1
-$SIGNATURE_CLI get-public-key $PRIVATE_KEYSET_FILE $PUBLIC_KEYSET_FILE || exit 1
+#######################################
+# Starts a new test case; records the test case name to TEST_CASE.
+#
+# Globals:
+#   TEST_NAME
+#   TEST_CASE
+# Arguments:
+#   test_case: The name of the test case.
+#######################################
+start_test_case() {
+  TEST_CASE="$1"
+  echo "[ RUN      ] ${TEST_NAME}.${TEST_CASE}"
+}
 
-#### Sign the message.
-$SIGNATURE_CLI sign $PRIVATE_KEYSET_FILE audience $TOKEN_FILE || exit 1
-
-#### Verify the signature.
-$SIGNATURE_CLI verify $PUBLIC_KEYSET_FILE audience $TOKEN_FILE $RESULT_FILE || exit 1
-
-#### Check that the signature is valid.
-RESULT=$(<$RESULT_FILE)
-assert_equal "valid" "$RESULT"
-
-#############################################################################
-#### Bad private key when getting the public key.
-test_name="get_public_key_with_bad_private_key"
-echo "+++ Starting test $test_name..."
-
-echo "abcd" >> $PRIVATE_KEYSET_FILE
-$SIGNATURE_CLI get-public-key $PRIVATE_KEYSET_FILE $PUBLIC_KEYSET_FILE
-
-EXIT_VALUE="$?"
-assert_equal 1 "$EXIT_VALUE"
-
-#############################################################################
-#### Signature verification fails because the public key is wrong.
-test_name="verify_with_different_public_key"
-echo "+++ Starting test $test_name..."
-
-$SIGNATURE_CLI gen-private-key $PRIVATE_KEYSET_FILE || exit 1
-$SIGNATURE_CLI gen-private-key $OTHER_PRIVATE_KEYSET_FILE || exit 1
-$SIGNATURE_CLI get-public-key $OTHER_PRIVATE_KEYSET_FILE $OTHER_PUBLIC_KEYSET_FILE || exit 1
-$SIGNATURE_CLI sign $PRIVATE_KEYSET_FILE audience $TOKEN_FILE || exit 1
-$SIGNATURE_CLI verify $OTHER_PUBLIC_KEYSET_FILE audience $TOKEN_FILE $RESULT_FILE || exit 1
-
-RESULT=$(<$RESULT_FILE)
-assert_equal "invalid" "$RESULT"
+#######################################
+# Ends a test case printing a success message.
+#
+# Globals:
+#   TEST_NAME
+#   TEST_CASE
+#######################################
+end_test_case() {
+  echo "[       OK ] ${TEST_NAME}.${TEST_CASE}"
+}
 
 #############################################################################
-#### Verification fails because the audience is wrong.
-test_name="verify_with_different_message"
-echo "+++ Starting test $test_name..."
 
-$SIGNATURE_CLI gen-private-key $PRIVATE_KEYSET_FILE || exit 1
-$SIGNATURE_CLI get-public-key $PRIVATE_KEYSET_FILE $PUBLIC_KEYSET_FILE || exit 1
-$SIGNATURE_CLI sign $PRIVATE_KEYSET_FILE audience $TOKEN_FILE || exit 1
-$SIGNATURE_CLI verify $PUBLIC_KEYSET_FILE other_audience $TOKEN_FILE $RESULT_FILE || exit 1
+start_test_case "sign_verify_all_good"
 
-RESULT=$(<$RESULT_FILE)
-assert_equal "invalid" "$RESULT"
+# Sign.
+test_command "${CLI_SIGN}" \
+  --keyset_filename "${PRIVATE_KEYSET_FILE}" \
+  --audience "${AUDIENCE}" \
+  --token_filename "${TOKEN_FILE}"
+assert_command_succeeded
 
-#############################################################################
-#### Verification fails because the token ist invalid.
-test_name="verify_with_different_message"
-echo "+++ Starting test $test_name..."
+# Convert to JWK set.
+test_command "${GEN_PUBLIC_JWK_SET_CLI}" \
+  --public_keyset_filename "${PUBLIC_KEYSET_FILE}" \
+  --public_jwk_set_filename "${PUBLIC_JWK_SET_FILE}"
+assert_command_succeeded
 
-$SIGNATURE_CLI gen-private-key $PRIVATE_KEYSET_FILE || exit 1
-$SIGNATURE_CLI get-public-key $PRIVATE_KEYSET_FILE $PUBLIC_KEYSET_FILE || exit 1
-$SIGNATURE_CLI verify $PUBLIC_KEYSET_FILE audience $INVALID_TOKEN_FILE $RESULT_FILE || exit 1
+# Verify.
+test_command "${CLI_VERIFY}" \
+  --jwk_set_filename "${PUBLIC_JWK_SET_FILE}" \
+  --audience "${AUDIENCE}" \
+  --token_filename "${TOKEN_FILE}"
+assert_command_succeeded
 
-RESULT=$(<$RESULT_FILE)
-assert_equal "invalid" "$RESULT"
-
-#############################################################################
-#### Signing fails because we use the wrong key type.
-test_name="sign_with_wrong_key"
-echo "+++ Starting test $test_name..."
-
-$SIGNATURE_CLI gen-private-key $PRIVATE_KEYSET_FILE || exit 1
-$SIGNATURE_CLI get-public-key $PRIVATE_KEYSET_FILE $PUBLIC_KEYSET_FILE || exit 1
-$SIGNATURE_CLI sign $PUBLIC_KEYSET_FILE audience $TOKEN_FILE
-
-EXIT_VALUE="$?"
-assert_equal 1 "$EXIT_VALUE"
+end_test_case
 
 #############################################################################
-#### Verification fails because we use the wrong key type.
-test_name="verify_with_wrong_key"
-echo "+++ Starting test $test_name..."
 
-$SIGNATURE_CLI gen-private-key $PRIVATE_KEYSET_FILE || exit 1
-$SIGNATURE_CLI sign $PRIVATE_KEYSET_FILE audience $TOKEN_FILE || exit 1
-$SIGNATURE_CLI verify $PRIVATE_KEYSET_FILE audience $TOKEN_FILE $RESULT_FILE
+start_test_case "verify_fails_with_invalid_token"
 
-EXIT_VALUE="$?"
-assert_equal 1 "$EXIT_VALUE"
+# Sign.
+test_command "${CLI_SIGN}" \
+  --keyset_filename "${PRIVATE_KEYSET_FILE}" \
+  --audience "${AUDIENCE}" \
+  --token_filename "${TOKEN_FILE}"
+assert_command_succeeded
+
+# Invalid token.
+echo "modified" >> "${TOKEN_FILE}"
+
+# Verify.
+test_command "${CLI_VERIFY}" \
+  --jwk_set_filename "${PUBLIC_JWK_SET_FILE}" \
+  --audience "${AUDIENCE}" \
+  --token_filename "${TOKEN_FILE}"
+assert_command_failed
+
+end_test_case
+
+#############################################################################
+
+start_test_case "verify_fails_with_invalid_audience"
+
+# Sign.
+test_command "${CLI_SIGN}" \
+  --keyset_filename "${PRIVATE_KEYSET_FILE}" \
+  --audience "${AUDIENCE}" \
+  --token_filename "${TOKEN_FILE}"
+assert_command_succeeded
+
+# Modify audience.
+readonly INVALID_AUDIENCE="invalid audience"
+
+# Verify.
+test_command "${CLI_VERIFY}" \
+  --jwk_set_filename "${PUBLIC_JWK_SET_FILE}" \
+  --audience "${INVALID_AUDIENCE}" \
+  --token_filename "${TOKEN_FILE}"
+assert_command_failed
+
+end_test_case
+

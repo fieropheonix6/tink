@@ -16,19 +16,27 @@
 
 #include "tink/util/istream_input_stream.h"
 
-#include <unistd.h>
+#include <errno.h>
+#include <stdlib.h>
 
 #include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <istream>
+#include <memory>
+#include <ostream>
 #include <string>
 #include <utility>
 
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
+#include "absl/status/status.h"
+#include "absl/status/statusor.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "tink/internal/test_file_util.h"
 #include "tink/subtle/random.h"
+#include "tink/util/status.h"
 #include "tink/util/test_util.h"
 
 namespace crypto {
@@ -47,7 +55,7 @@ std::unique_ptr<std::istream> GetTestIstream(absl::string_view filename,
   std::ofstream output (full_filename, std::ofstream::binary);
   if (!output.write(file_contents->data(), size) || output.tellp() != size) {
     std::clog << "Failed to write " << size << " bytes to file "
-              << full_filename << " error: " << errno << std::endl;
+              << full_filename << " error: " << errno << '\n';
 
     exit(1);
   }
@@ -76,9 +84,10 @@ class IstreamInputStreamTest : public ::testing::Test {
 };
 
 TEST_F(IstreamInputStreamTest, testReadingStreams) {
-  for (int stream_size : {0, 10, 100, 1000, 10000, 100000, 1000000}) {
+    for (int stream_size : {0, 10, 100, 1000, 10000, 100000, 1000000}) {
     std::string file_contents;
-    std::string filename = absl::StrCat(stream_size, "_reading_test.bin");
+    std::string filename = absl::StrCat(
+        stream_size, "_", internal::GetTestFileNamePrefix(), "_file.bin");
     auto input = GetTestIstream(filename, stream_size, &file_contents);
     EXPECT_EQ(stream_size, file_contents.size());
     auto input_stream = absl::make_unique<util::IstreamInputStream>(
@@ -95,7 +104,8 @@ TEST_F(IstreamInputStreamTest, testCustomBufferSizes) {
   int stream_size = 100000;
   for (int buffer_size : {1, 10, 100, 1000, 10000}) {
     std::string file_contents;
-    std::string filename = absl::StrCat(buffer_size, "_buffer_size_test.bin");
+    std::string filename = absl::StrCat(
+        buffer_size, "_", internal::GetTestFileNamePrefix(), "_file.bin");
     auto input = GetTestIstream(filename, stream_size, &file_contents);
     EXPECT_EQ(stream_size, file_contents.size());
     auto input_stream = absl::make_unique<util::IstreamInputStream>(
@@ -114,7 +124,8 @@ TEST_F(IstreamInputStreamTest, testBackupAndPosition) {
   int buffer_size = 1234;
   const void* buffer;
   std::string file_contents;
-  std::string filename = absl::StrCat(buffer_size, "_backup_test.bin");
+  std::string filename =
+      absl::StrCat(buffer_size, internal::GetTestFileNamePrefix(), "_file.bin");
   auto input = GetTestIstream(filename, stream_size, &file_contents);
   EXPECT_EQ(stream_size, file_contents.size());
 

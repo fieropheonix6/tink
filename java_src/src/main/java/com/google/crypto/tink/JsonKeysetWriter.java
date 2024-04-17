@@ -16,12 +16,12 @@
 
 package com.google.crypto.tink;
 
-import androidx.annotation.RequiresApi;
 import com.google.crypto.tink.proto.EncryptedKeyset;
 import com.google.crypto.tink.proto.KeyData;
 import com.google.crypto.tink.proto.Keyset;
 import com.google.crypto.tink.proto.KeysetInfo;
 import com.google.crypto.tink.subtle.Base64;
+import com.google.errorprone.annotations.InlineMe;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
@@ -38,7 +38,10 @@ import java.nio.file.Path;
  * JSON format</a>.
  *
  * @since 1.0.0
+ * @deprecated Serialize the Keyset using {@code TinkJsonProtoKeysetFormat.serializeKeyset()}
+ *     instead.
  */
+@Deprecated
 public final class JsonKeysetWriter implements KeysetWriter {
   private static final Charset UTF_8 = Charset.forName("UTF-8");
 
@@ -57,24 +60,49 @@ public final class JsonKeysetWriter implements KeysetWriter {
     return new JsonKeysetWriter(stream);
   }
 
-  /** Static method to create a JsonKeysetWriter that writes to a file. */
+  /**
+   * Static method to create a JsonKeysetWriter that writes to a file.
+   *
+   * @deprecated Method should be inlined.
+   */
+  @InlineMe(
+      replacement = "JsonKeysetWriter.withOutputStream(new FileOutputStream(file))",
+      imports = {"com.google.crypto.tink.JsonKeysetWriter", "java.io.FileOutputStream"})
+  @Deprecated
   public static KeysetWriter withFile(File file) throws IOException {
-    return new JsonKeysetWriter(new FileOutputStream(file));
+    return withOutputStream(new FileOutputStream(file));
   }
 
-  /** Static method to create a JsonKeysetWriter that writes to a file path. */
+  /**
+   * Static method to create a JsonKeysetWriter that writes to a file path.
+   *
+   * @deprecated Method should be inlined.
+   */
+  @InlineMe(
+      replacement = "JsonKeysetWriter.withOutputStream(new FileOutputStream(new File(path)))",
+      imports = {
+        "com.google.crypto.tink.JsonKeysetWriter",
+        "java.io.File",
+        "java.io.FileOutputStream"
+      })
+  @Deprecated
   public static KeysetWriter withPath(String path) throws IOException {
-    return withFile(new File(path));
+    return withOutputStream(new FileOutputStream(new File(path)));
   }
 
   /**
    * Static method to create a JsonKeysetWriter that writes to a file path.
    *
    * <p>This method only works on Android API level 26 or newer.
+   *
+   * @deprecated Method should be inlined.
    */
-  @RequiresApi(26) // https://developer.android.com/reference/java/nio/file/Path
+  @InlineMe(
+      replacement = "JsonKeysetWriter.withOutputStream(new FileOutputStream(path.toFile()))",
+      imports = {"com.google.crypto.tink.JsonKeysetWriter", "java.io.FileOutputStream"})
+  @Deprecated
   public static KeysetWriter withPath(Path path) throws IOException {
-    return withFile(path.toFile());
+    return withOutputStream(new FileOutputStream(path.toFile()));
   }
 
   @Override

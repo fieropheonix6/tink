@@ -28,13 +28,16 @@
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/escaping.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "tink/aead/internal/ssl_aead.h"
 #include "tink/config/tink_fips.h"
 #include "tink/internal/ssl_util.h"
+#include "tink/internal/util.h"
 #include "tink/subtle/subtle_util.h"
 #include "tink/util/secret_data.h"
+#include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 
@@ -87,6 +90,9 @@ using SslOneShotAeadLargeInputsTest = TestWithParam<TestParams>;
 
 // Encrypt/decrypt with an input larger than a MAX int.
 TEST_P(SslOneShotAeadLargeInputsTest, EncryptDecryptLargeInput) {
+  if (IsWindows()) {
+    GTEST_SKIP() << "Skipping on Windows: this currently times out";
+  }
   const int64_t buff_size =
       static_cast<int64_t>(std::numeric_limits<int>::max()) + 1024;
   std::string large_input(buff_size, '0');

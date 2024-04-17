@@ -11,14 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package prf
 
 import (
 	"errors"
 	"fmt"
+	"io"
 
 	"google.golang.org/protobuf/proto"
 	"github.com/google/tink/go/keyset"
@@ -41,7 +40,7 @@ var errInvalidHMACPRFKeyFormat = errors.New("hmac_prf_key_manager: invalid key f
 type hmacprfKeyManager struct{}
 
 // Primitive constructs a HMAC instance for the given serialized HMACKey.
-func (km *hmacprfKeyManager) Primitive(serializedKey []byte) (interface{}, error) {
+func (km *hmacprfKeyManager) Primitive(serializedKey []byte) (any, error) {
 	if len(serializedKey) == 0 {
 		return nil, errInvalidHMACPRFKey
 	}
@@ -52,8 +51,8 @@ func (km *hmacprfKeyManager) Primitive(serializedKey []byte) (interface{}, error
 	if err := km.validateKey(key); err != nil {
 		return nil, err
 	}
-	hash := commonpb.HashType_name[int32(key.Params.Hash)]
-	hmac, err := subtle.NewHMACPRF(hash, key.KeyValue)
+	hash := commonpb.HashType_name[int32(key.GetParams().GetHash())]
+	hmac, err := subtle.NewHMACPRF(hash, key.GetKeyValue())
 	if err != nil {
 		return nil, err
 	}
@@ -72,11 +71,10 @@ func (km *hmacprfKeyManager) NewKey(serializedKeyFormat []byte) (proto.Message, 
 	if err := km.validateKeyFormat(keyFormat); err != nil {
 		return nil, fmt.Errorf("hmac_prf_key_manager: invalid key format: %s", err)
 	}
-	keyValue := random.GetRandomBytes(keyFormat.KeySize)
 	return &hmacpb.HmacPrfKey{
 		Version:  hmacprfKeyVersion,
-		Params:   keyFormat.Params,
-		KeyValue: keyValue,
+		Params:   keyFormat.GetParams(),
+		KeyValue: random.GetRandomBytes(keyFormat.GetKeySize()),
 	}, nil
 }
 
@@ -95,7 +93,7 @@ func (km *hmacprfKeyManager) NewKeyData(serializedKeyFormat []byte) (*tinkpb.Key
 	return &tinkpb.KeyData{
 		TypeUrl:         hmacprfTypeURL,
 		Value:           serializedKey,
-		KeyMaterialType: tinkpb.KeyData_SYMMETRIC,
+		KeyMaterialType: km.KeyMaterialType(),
 	}, nil
 }
 
@@ -112,20 +110,48 @@ func (km *hmacprfKeyManager) TypeURL() string {
 // validateKey validates the given HMACPRFKey. It only validates the version of the
 // key because other parameters will be validated in primitive construction.
 func (km *hmacprfKeyManager) validateKey(key *hmacpb.HmacPrfKey) error {
-	err := keyset.ValidateKeyVersion(key.Version, hmacprfKeyVersion)
-	if err != nil {
+	if err := keyset.ValidateKeyVersion(key.GetVersion(), hmacprfKeyVersion); err != nil {
 		return fmt.Errorf("hmac_prf_key_manager: invalid version: %s", err)
 	}
-	keySize := uint32(len(key.KeyValue))
-	hash := commonpb.HashType_name[int32(key.Params.Hash)]
+	keySize := uint32(len(key.GetKeyValue()))
+	hash := commonpb.HashType_name[int32(key.GetParams().GetHash())]
 	return subtle.ValidateHMACPRFParams(hash, keySize)
+}
+
+// KeyMaterialType returns the key material type of this key manager.
+func (km *hmacprfKeyManager) KeyMaterialType() tinkpb.KeyData_KeyMaterialType {
+	return tinkpb.KeyData_SYMMETRIC
+}
+
+// DeriveKey derives a new key from serializedKeyFormat and pseudorandomness.
+func (km *hmacprfKeyManager) DeriveKey(serializedKeyFormat []byte, pseudorandomness io.Reader) (proto.Message, error) {
+	if len(serializedKeyFormat) == 0 {
+		return nil, errInvalidHMACPRFKeyFormat
+	}
+	keyFormat := new(hmacpb.HmacPrfKeyFormat)
+	if err := proto.Unmarshal(serializedKeyFormat, keyFormat); err != nil {
+		return nil, errInvalidHMACPRFKeyFormat
+	}
+	if err := km.validateKeyFormat(keyFormat); err != nil {
+		return nil, fmt.Errorf("hmac_key_manager: invalid key format: %v", err)
+	}
+	if err := keyset.ValidateKeyVersion(keyFormat.GetVersion(), hmacprfKeyVersion); err != nil {
+		return nil, fmt.Errorf("hmac_key_manager: invalid key version: %s", err)
+	}
+
+	keyValue := make([]byte, keyFormat.GetKeySize())
+	if _, err := io.ReadFull(pseudorandomness, keyValue); err != nil {
+		return nil, fmt.Errorf("hmac_key_manager: not enough pseudorandomness given")
+	}
+	return &hmacpb.HmacPrfKey{
+		Version:  hmacprfKeyVersion,
+		Params:   keyFormat.GetParams(),
+		KeyValue: keyValue,
+	}, nil
 }
 
 // validateKeyFormat validates the given HMACKeyFormat
 func (km *hmacprfKeyManager) validateKeyFormat(format *hmacpb.HmacPrfKeyFormat) error {
-	if format.Params == nil {
-		return fmt.Errorf("null HMAC params")
-	}
-	hash := commonpb.HashType_name[int32(format.Params.Hash)]
-	return subtle.ValidateHMACPRFParams(hash, format.KeySize)
+	hash := commonpb.HashType_name[int32(format.GetParams().GetHash())]
+	return subtle.ValidateHMACPRFParams(hash, format.GetKeySize())
 }

@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package subtle_test
 
@@ -31,12 +29,30 @@ import (
 
 func TestXChaCha20Poly1305EncryptDecrypt(t *testing.T) {
 	for i, test := range xChaCha20Poly1305Tests {
-		key, _ := hex.DecodeString(test.key)
-		pt, _ := hex.DecodeString(test.plaintext)
-		aad, _ := hex.DecodeString(test.aad)
-		nonce, _ := hex.DecodeString(test.nonce)
-		out, _ := hex.DecodeString(test.out)
-		tag, _ := hex.DecodeString(test.tag)
+		key, err := hex.DecodeString(test.key)
+		if err != nil {
+			t.Fatalf("hex.DecodeString(test.key) err = %q, want nil", err)
+		}
+		pt, err := hex.DecodeString(test.plaintext)
+		if err != nil {
+			t.Fatalf("hex.DecodeString(test.plaintext) err = %q, want nil", err)
+		}
+		aad, err := hex.DecodeString(test.aad)
+		if err != nil {
+			t.Fatalf("hex.DecodeString(test.aad) err = %q, want nil", err)
+		}
+		nonce, err := hex.DecodeString(test.nonce)
+		if err != nil {
+			t.Fatalf("hex.DecodeString(test.nonce) err = %q, want nil", err)
+		}
+		out, err := hex.DecodeString(test.out)
+		if err != nil {
+			t.Fatalf("hex.DecodeString(test.out) err = %q, want nil", err)
+		}
+		tag, err := hex.DecodeString(test.tag)
+		if err != nil {
+			t.Fatalf("hex.DecodeString(test.tag) err = %q, want nil", err)
+		}
 
 		x, err := subtle.NewXChaCha20Poly1305(key)
 		if err != nil {
@@ -143,9 +159,18 @@ func TestXChaCha20Poly1305LongMessages(t *testing.T) {
 
 func TestXChaCha20Poly1305ModifyCiphertext(t *testing.T) {
 	for i, test := range xChaCha20Poly1305Tests {
-		key, _ := hex.DecodeString(test.key)
-		pt, _ := hex.DecodeString(test.plaintext)
-		aad, _ := hex.DecodeString(test.aad)
+		key, err := hex.DecodeString(test.key)
+		if err != nil {
+			t.Fatalf("hex.DecodeString(test.key) err = %q, want nil", err)
+		}
+		pt, err := hex.DecodeString(test.plaintext)
+		if err != nil {
+			t.Fatalf("hex.DecodeString(test.plaintext) err = %q, want nil", err)
+		}
+		aad, err := hex.DecodeString(test.aad)
+		if err != nil {
+			t.Fatalf("hex.DecodeString(test.aad) err = %q, want nil", err)
+		}
 
 		x, err := subtle.NewXChaCha20Poly1305(key)
 		if err != nil {
@@ -248,5 +273,27 @@ func runXChaCha20Poly1305WycheproofCase(t *testing.T, tc *AEADCase) {
 		if !bytes.Equal(decrypted, tc.Msg) {
 			t.Error("incorrect decryption")
 		}
+	}
+}
+
+func TestPreallocatedCiphertextMemoryInXChaCha20Poly1305IsExact(t *testing.T) {
+	key := random.GetRandomBytes(chacha20poly1305.KeySize)
+	a, err := subtle.NewXChaCha20Poly1305(key)
+	if err != nil {
+		t.Fatalf("aead.NewAESGCMInsecureIV() err = %v, want nil", err)
+	}
+	plaintext := random.GetRandomBytes(13)
+	associatedData := random.GetRandomBytes(17)
+
+	ciphertext, err := a.Encrypt(plaintext, associatedData)
+	if err != nil {
+		t.Fatalf("a.Encrypt() err = %v, want nil", err)
+	}
+	// Encrypt() uses cipher.Overhead() to pre-allocate the memory needed store the ciphertext.
+	// For ChaCha20Poly1305, the size of the allocated memory should always be exact. If this check
+	// fails, the pre-allocated memory was too large or too small. If it was too small, the system had
+	// to re-allocate more memory, which is expensive and should be avoided.
+	if len(ciphertext) != cap(ciphertext) {
+		t.Errorf("want len(ciphertext) == cap(ciphertext), got %d != %d", len(ciphertext), cap(ciphertext))
 	}
 }

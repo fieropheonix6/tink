@@ -16,7 +16,7 @@
 
 package com.google.crypto.tink.jwt;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+import static com.google.crypto.tink.internal.Util.UTF_8;
 
 import com.google.crypto.tink.proto.OutputPrefixType;
 import com.google.crypto.tink.subtle.Base64;
@@ -24,6 +24,7 @@ import com.google.gson.JsonObject;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CharsetDecoder;
+import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
 import java.util.Optional;
 
@@ -79,7 +80,7 @@ final class JwtFormat {
     }
   }
 
-  private static String validateAlgorithm(String algo) throws InvalidAlgorithmParameterException {
+  private static void validateAlgorithm(String algo) throws InvalidAlgorithmParameterException {
     switch (algo) {
       case "HS256":
       case "HS384":
@@ -93,7 +94,7 @@ final class JwtFormat {
       case "PS256":
       case "PS384":
       case "PS512":
-        return algo;
+        return;
       default:
         throw new InvalidAlgorithmParameterException("invalid algorithm: " + algo);
     }
@@ -117,6 +118,40 @@ final class JwtFormat {
       throws JwtInvalidException {
     String kid = getStringHeader(parsedHeader, JwtNames.HEADER_KEY_ID);
     if (!kid.equals(expectedKid)) {
+      throw new JwtInvalidException("invalid kid in header");
+    }
+  }
+
+  static void validateHeader(
+      JsonObject parsedHeader,
+      String algorithmFromKey,
+      Optional<String> kidFromKey,
+      boolean allowKidAbsent)
+      throws GeneralSecurityException {
+    String receivedAlgorithm = JwtFormat.getStringHeader(parsedHeader, JwtNames.HEADER_ALGORITHM);
+    if (!receivedAlgorithm.equals(algorithmFromKey)) {
+      throw new InvalidAlgorithmParameterException(
+          String.format(
+              "invalid algorithm; expected %s, got %s", algorithmFromKey, receivedAlgorithm));
+    }
+    if (parsedHeader.has(JwtNames.HEADER_CRITICAL)) {
+      throw new JwtInvalidException("all tokens with crit headers are rejected");
+    }
+    boolean headerHasKid = parsedHeader.has(JwtNames.HEADER_KEY_ID);
+    if (!headerHasKid && allowKidAbsent) {
+      return;
+    }
+    if (!headerHasKid && !allowKidAbsent) {
+      throw new JwtInvalidException("missing kid in header");
+    }
+    // Header is guaranteed to have a kid at this point.
+    if (!kidFromKey.isPresent()) {
+      // We allow the header to have a kid when the key does not have one (which implies that
+      // KidStrategy = IGNORED)
+      return;
+    }
+    String kid = JwtFormat.getStringHeader(parsedHeader, JwtNames.HEADER_KEY_ID);
+    if (!kid.equals(kidFromKey.get())) {
       throw new JwtInvalidException("invalid kid in header");
     }
   }
@@ -168,7 +203,7 @@ final class JwtFormat {
     return Optional.empty();
   }
 
-  private static String getStringHeader(JsonObject header, String name) throws JwtInvalidException {
+  static String getStringHeader(JsonObject header, String name) throws JwtInvalidException {
     if (!header.has(name)) {
       throw new JwtInvalidException("header " + name + " does not exist");
     }

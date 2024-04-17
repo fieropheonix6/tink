@@ -16,25 +16,32 @@
 
 #include "tink/streamingaead/decrypting_random_access_stream.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "tink/internal/test_random_access_stream.h"
 #include "tink/output_stream.h"
 #include "tink/primitive_set.h"
 #include "tink/random_access_stream.h"
 #include "tink/streaming_aead.h"
 #include "tink/subtle/random.h"
 #include "tink/subtle/test_util.h"
-#include "tink/util/file_random_access_stream.h"
+#include "tink/util/buffer.h"
 #include "tink/util/ostream_output_stream.h"
 #include "tink/util/status.h"
+#include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 #include "tink/util/test_util.h"
 #include "proto/tink.pb.h"
@@ -46,22 +53,13 @@ namespace {
 
 using crypto::tink::test::DummyStreamingAead;
 using crypto::tink::test::IsOk;
+using crypto::tink::test::IsOkAndHolds;
 using crypto::tink::test::StatusIs;
 using google::crypto::tink::KeysetInfo;
 using google::crypto::tink::KeyStatusType;
 using google::crypto::tink::OutputPrefixType;
 using subtle::test::WriteToStream;
 using testing::HasSubstr;
-
-// Creates a RandomAccessStream with the specified contents.
-std::unique_ptr<RandomAccessStream> GetRandomAccessStream(
-    absl::string_view contents) {
-  static int index = 1;
-  std::string filename = absl::StrCat("stream_data_file_", index, ".txt");
-  index++;
-  int input_fd = test::GetTestFileDescriptor(filename, contents);
-  return {absl::make_unique<util::FileRandomAccessStream>(input_fd)};
-}
 
 // Creates an RandomAccessStream that contains ciphertext resulting
 // from encryption of 'pt' with 'aad' as associated data, using 'saead'.
@@ -81,27 +79,7 @@ std::unique_ptr<RandomAccessStream> GetCiphertextSource(
   EXPECT_THAT(WriteToStream(enc_stream_result.value().get(), pt), IsOk());
 
   // Return the ciphertext as RandomAccessStream.
-  return GetRandomAccessStream(ct_buf->str());
-}
-
-// Reads the entire 'ra_stream', until no more bytes can be read,
-// and puts the read bytes into 'contents'.
-// Returns the status of the last ra_stream->PRead()-operation.
-util::Status ReadAll(RandomAccessStream* ra_stream, std::string* contents) {
-  int chunk_size = 42;
-  contents->clear();
-  auto buffer = std::move(util::Buffer::New(chunk_size).value());
-  int64_t position = 0;
-  auto status = ra_stream->PRead(position, chunk_size, buffer.get());
-  while (status.ok()) {
-    contents->append(buffer->get_mem_block(), buffer->size());
-    position = contents->size();
-    status = ra_stream->PRead(position, chunk_size, buffer.get());
-  }
-  if (status.code() == absl::StatusCode::kOutOfRange) {  // EOF
-    EXPECT_EQ(0, buffer->size());
-  }
-  return status;
+  return std::make_unique<internal::TestRandomAccessStream>(ct_buf->str());
 }
 
 // A container for specification of instances of DummyStreamingAead
@@ -172,7 +150,8 @@ TEST(DecryptingRandomAccessStreamTest, BasicDecryption) {
         EXPECT_THAT(dec_stream_result, IsOk());
         auto dec_stream = std::move(dec_stream_result.value());
         std::string decrypted;
-        auto status = ReadAll(dec_stream.get(), &decrypted);
+        auto status = internal::ReadAllFromRandomAccessStream(dec_stream.get(),
+                                                              decrypted);
         EXPECT_THAT(status, StatusIs(absl::StatusCode::kOutOfRange,
                                      HasSubstr("EOF")));
         EXPECT_EQ(pt_size, dec_stream->size().value());
@@ -224,8 +203,11 @@ TEST(DecryptingRandomAccessStreamTest, SelectiveDecryption) {
                                       ", position = ", position,
                                       ", chunk_size = ", chunk_size));
             auto buffer = std::move(util::Buffer::New(chunk_size).value());
-            auto status = dec_stream->PRead(position, chunk_size, buffer.get());
-            EXPECT_THAT(status, IsOk());
+            util::Status status =
+                dec_stream->PRead(position, chunk_size, buffer.get());
+            EXPECT_THAT(status,
+                        testing::AnyOf(
+                            IsOk(), StatusIs(absl::StatusCode::kOutOfRange)));
             EXPECT_EQ(std::min(chunk_size, pt_size - position), buffer->size());
             EXPECT_EQ(0, std::memcmp(plaintext.data() + position,
                                      buffer->get_mem_block(), buffer->size()));
@@ -320,7 +302,8 @@ TEST(DecryptingRandomAccessStreamTest, WrongAssociatedData) {
           saead_set, std::move(ct), "wrong aad");
       EXPECT_THAT(dec_stream_result, IsOk());
       std::string decrypted;
-      auto status = ReadAll(dec_stream_result.value().get(), &decrypted);
+      auto status = internal::ReadAllFromRandomAccessStream(
+          dec_stream_result.value().get(), decrypted);
       EXPECT_THAT(status, StatusIs(absl::StatusCode::kInvalidArgument));
     }
   }
@@ -344,20 +327,22 @@ TEST(DecryptingRandomAccessStreamTest, WrongCiphertext) {
       SCOPED_TRACE(absl::StrCat("pt_size = ", pt_size,
                                 ", aad = '", aad, "'"));
       // Try decrypting a wrong ciphertext.
-      auto wrong_ct =
-          GetRandomAccessStream(subtle::Random::GetRandomBytes(pt_size));
+      auto wrong_ct = std::make_unique<internal::TestRandomAccessStream>(
+          subtle::Random::GetRandomBytes(pt_size));
       auto dec_stream_result = DecryptingRandomAccessStream::New(
           saead_set, std::move(wrong_ct), aad);
       EXPECT_THAT(dec_stream_result, IsOk());
       std::string decrypted;
-      auto status = ReadAll(dec_stream_result.value().get(), &decrypted);
+      auto status = internal::ReadAllFromRandomAccessStream(
+          dec_stream_result.value().get(), decrypted);
       EXPECT_THAT(status, StatusIs(absl::StatusCode::kInvalidArgument));
     }
   }
 }
 
 TEST(DecryptingRandomAccessStreamTest, NullPrimitiveSet) {
-  auto ct_stream = GetRandomAccessStream("some ciphertext contents");
+  auto ct_stream = std::make_unique<internal::TestRandomAccessStream>(
+      "some ciphertext contents");
   auto dec_stream_result = DecryptingRandomAccessStream::New(
           nullptr, std::move(ct_stream), "some aad");
   EXPECT_THAT(dec_stream_result.status(),
@@ -375,6 +360,27 @@ TEST(DecryptingRandomAccessStreamTest, NullCiphertextSource) {
   EXPECT_THAT(dec_stream_result.status(),
               StatusIs(absl::StatusCode::kInvalidArgument,
                        HasSubstr("ciphertext_source must be non-null")));
+}
+
+TEST(DecryptingRandomAccessStreamTest, CallSizeBeforePReadWorks) {
+  uint32_t key_id = 1234543;
+  std::string saead_name = "streaming_aead";
+  auto saead_set = GetTestStreamingAeadSet({{key_id, saead_name}});
+
+  std::string associated_data = "associated_data";
+
+  for (int pt_size : {0, 1, 100}) {
+    std::string plaintext = subtle::Random::GetRandomBytes(pt_size);
+    std::unique_ptr<RandomAccessStream> ciphertext =
+        GetCiphertextSource(&(saead_set->get_primary()->get_primitive()),
+                            plaintext, associated_data);
+
+    util::StatusOr<std::unique_ptr<RandomAccessStream>> dec_stream =
+        DecryptingRandomAccessStream::New(saead_set, std::move(ciphertext),
+                                          associated_data);
+    ASSERT_THAT(dec_stream, IsOk());
+    EXPECT_THAT((*dec_stream)->size(), IsOkAndHolds(pt_size));
+  }
 }
 
 }  // namespace

@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package aead
 
@@ -21,7 +19,6 @@ import (
 
 	"github.com/google/tink/go/core/cryptofmt"
 	"github.com/google/tink/go/core/primitiveset"
-	"github.com/google/tink/go/core/registry"
 	"github.com/google/tink/go/internal/internalregistry"
 	"github.com/google/tink/go/internal/monitoringutil"
 	"github.com/google/tink/go/keyset"
@@ -30,19 +27,11 @@ import (
 )
 
 // New returns an AEAD primitive from the given keyset handle.
-func New(h *keyset.Handle) (tink.AEAD, error) {
-	return NewWithKeyManager(h, nil /*keyManager*/)
-}
-
-// NewWithKeyManager returns an AEAD primitive from the given keyset handle and custom key manager.
-//
-// Deprecated: Use [New].
-func NewWithKeyManager(h *keyset.Handle, km registry.KeyManager) (tink.AEAD, error) {
-	ps, err := h.PrimitivesWithKeyManager(km)
+func New(handle *keyset.Handle) (tink.AEAD, error) {
+	ps, err := handle.Primitives()
 	if err != nil {
 		return nil, fmt.Errorf("aead_factory: cannot obtain primitive set: %s", err)
 	}
-
 	return newWrappedAead(ps)
 }
 
@@ -66,32 +55,43 @@ func newWrappedAead(ps *primitiveset.PrimitiveSet) (*wrappedAead, error) {
 			}
 		}
 	}
-	wa := &wrappedAead{ps: ps}
-	client := internalregistry.GetMonitoringClient()
-	if client == nil {
-		return wa, nil
-	}
-	keysetInfo, err := monitoringutil.KeysetInfoFromPrimitiveSet(ps)
+	encLogger, decLogger, err := createLoggers(ps)
 	if err != nil {
 		return nil, err
 	}
-	wa.encLogger, err = client.NewLogger(&monitoring.Context{
+	return &wrappedAead{
+		ps:        ps,
+		encLogger: encLogger,
+		decLogger: decLogger,
+	}, nil
+}
+
+func createLoggers(ps *primitiveset.PrimitiveSet) (monitoring.Logger, monitoring.Logger, error) {
+	if len(ps.Annotations) == 0 {
+		return &monitoringutil.DoNothingLogger{}, &monitoringutil.DoNothingLogger{}, nil
+	}
+	client := internalregistry.GetMonitoringClient()
+	keysetInfo, err := monitoringutil.KeysetInfoFromPrimitiveSet(ps)
+	if err != nil {
+		return nil, nil, err
+	}
+	encLogger, err := client.NewLogger(&monitoring.Context{
 		Primitive:   "aead",
 		APIFunction: "encrypt",
 		KeysetInfo:  keysetInfo,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	wa.decLogger, err = client.NewLogger(&monitoring.Context{
+	decLogger, err := client.NewLogger(&monitoring.Context{
 		Primitive:   "aead",
 		APIFunction: "decrypt",
 		KeysetInfo:  keysetInfo,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return wa, nil
+	return encLogger, decLogger, nil
 }
 
 // Encrypt encrypts the given plaintext with the given associatedData.
@@ -108,7 +108,13 @@ func (a *wrappedAead) Encrypt(plaintext, associatedData []byte) ([]byte, error) 
 		return nil, err
 	}
 	a.encLogger.Log(primary.KeyID, len(plaintext))
-	return append([]byte(primary.Prefix), ct...), nil
+	if len(primary.Prefix) == 0 {
+		return ct, nil
+	}
+	output := make([]byte, 0, len(primary.Prefix)+len(ct))
+	output = append(output, primary.Prefix...)
+	output = append(output, ct...)
+	return output, nil
 }
 
 // Decrypt decrypts the given ciphertext and authenticates it with the given

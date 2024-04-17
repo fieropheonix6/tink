@@ -38,7 +38,17 @@ public final class KmsClients {
 
   private static final CopyOnWriteArrayList<KmsClient> clients = new CopyOnWriteArrayList<>();
 
-  /** Adds a client to the list of known {@link KmsClient}-objects. */
+  /**
+   * Adds a client to the list of known {@link KmsClient}-objects.
+   *
+   * <p>This function will always add the {@code client} to a global list. So this function should
+   * only be called on startup and not on every operation.
+   *
+   * <p>It is often not necessary to use this function. For example, you can call {@link
+   * KmsClient#getAead} to get a remote {@link Aead}. Use this {@link Aead} to encrypt a keyset with
+   * {@link TinkProtoKeysetFormat#serializeEncryptedKeyset}, or to create an envelope {@link Aead}
+   * using {@link com.google.crypto.tink.aead.KmsEnvelopeAead#create}.
+   */
   public static void add(KmsClient client) {
     clients.add(client);
   }
@@ -47,7 +57,7 @@ public final class KmsClients {
    * Returns the first {@link KmsClient} registered with {@link KmsClients#add} that supports {@code
    * keyUri}.
    *
-   * @throws GeneralSecurityException if cannot found any KMS clients that support {@code keyUri}
+   * @throws GeneralSecurityException if no KMS clients can be found that support {@code keyUri}
    */
   public static KmsClient get(String keyUri) throws GeneralSecurityException {
     for (KmsClient client : clients) {
@@ -65,12 +75,12 @@ public final class KmsClients {
    * <p><b>Warning</b> This method searches over the classpath for all implementations of {@link
    * KmsClient}. An attacker that can insert a class in your classpath (e.g., someone controlling a
    * library that you're using) could provide a fake {@link KmsClient} that steal your keys. For
-   * this reason Tink does not use this method. It is used by <a
-   * href="https://github.com/google/tink/tree/master/tools/tinkey">Tinkey</a> which needs to talk
-   * to custom, in-house key management systems.
+   * this reason Tink does not use this method.
    *
+   * @deprecated Don't use this.
    * @throws GeneralSecurityException if cannot found any KMS clients that support {@code keyUri}
    */
+  @Deprecated
   public static synchronized KmsClient getAutoLoaded(String keyUri)
       throws GeneralSecurityException {
     if (autoClients == null) {

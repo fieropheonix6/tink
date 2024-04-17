@@ -20,13 +20,10 @@ if [[ -n "${KOKORO_ROOT:-}" ]]; then
   cd "${KOKORO_ARTIFACTS_DIR}/git/tink"
 fi
 
-./kokoro/testutils/update_certs.sh
-# Only installing CMake; OpenSSL is installed by the example script.
+./kokoro/testutils/upgrade_gcc.sh
 source ./kokoro/testutils/install_cmake.sh
+source ./kokoro/testutils/install_openssl.sh
 
-(
-  export TEST_TMPDIR="$(mktemp -dt examples-cc-cmake-openssl.XXXXXX)"
-  export TEST_SRCDIR="$(cd ..; pwd)"
-  cd cc/examples/helloworld
-  ./cmake_build_test.sh --openssl
-)
+./kokoro/testutils/run_cmake_tests.sh "cc/examples" -DTINK_BUILD_TESTS=OFF \
+  -DTINK_USE_SYSTEM_OPENSSL=ON
+

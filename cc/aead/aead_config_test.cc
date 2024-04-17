@@ -18,44 +18,71 @@
 
 #include <list>
 #include <memory>
-#include <string>
-#include <utility>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "tink/aead.h"
 #include "tink/aead/aead_key_templates.h"
+#include "tink/aead/aes_ctr_hmac_aead_key.h"
+#include "tink/aead/aes_ctr_hmac_aead_parameters.h"
+#include "tink/aead/aes_eax_key.h"
+#include "tink/aead/aes_eax_parameters.h"
+#include "tink/aead/aes_gcm_key.h"
 #include "tink/aead/aes_gcm_key_manager.h"
+#include "tink/aead/aes_gcm_parameters.h"
+#include "tink/aead/aes_gcm_siv_key.h"
+#include "tink/aead/aes_gcm_siv_parameters.h"
+#include "tink/aead/key_gen_config_v0.h"
+#include "tink/aead/xchacha20_poly1305_key.h"
+#include "tink/aead/xchacha20_poly1305_parameters.h"
+#include "tink/config/global_registry.h"
 #include "tink/config/tink_fips.h"
+#include "tink/insecure_secret_key_access.h"
+#include "tink/internal/fips_utils.h"
+#include "tink/internal/legacy_proto_key.h"
+#include "tink/internal/mutable_serialization_registry.h"
+#include "tink/internal/proto_key_serialization.h"
+#include "tink/internal/proto_parameters_serialization.h"
+#include "tink/internal/serialization.h"
+#include "tink/key.h"
+#include "tink/key_status.h"
 #include "tink/keyset_handle.h"
-#include "tink/primitive_set.h"
+#include "tink/keyset_handle_builder.h"
+#include "tink/parameters.h"
+#include "tink/partial_key_access.h"
 #include "tink/registry.h"
-#include "tink/util/status.h"
+#include "tink/restricted_data.h"
+#include "tink/subtle/random.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
-#include "tink/util/test_util.h"
+#include "proto/aes_eax.pb.h"
+#include "proto/aes_gcm.pb.h"
+#include "proto/aes_gcm_siv.pb.h"
 #include "proto/tink.pb.h"
+#include "proto/xchacha20_poly1305.pb.h"
 
 namespace crypto {
 namespace tink {
 namespace {
 
-using ::crypto::tink::test::DummyAead;
 using ::crypto::tink::test::IsOk;
 using ::crypto::tink::test::StatusIs;
-using ::google::crypto::tink::KeysetInfo;
-using ::google::crypto::tink::KeyStatusType;
+using ::crypto::tink::util::StatusOr;
+using ::google::crypto::tink::KeyData;
 using ::google::crypto::tink::KeyTemplate;
 using ::google::crypto::tink::OutputPrefixType;
-using ::testing::Eq;
+using ::testing::HasSubstr;
+using ::testing::IsNull;
 using ::testing::Not;
 using ::testing::Test;
 
 class AeadConfigTest : public Test {
  protected:
-  void SetUp() override { Registry::Reset(); }
+  void SetUp() override {
+    Registry::Reset();
+    internal::MutableSerializationRegistry::GlobalInstance().Reset();
+  }
 };
 
 TEST_F(AeadConfigTest, RegisterWorks) {
@@ -80,35 +107,20 @@ TEST_F(AeadConfigTest, WrappersRegistered) {
 
   ASSERT_THAT(AeadConfig::Register(), IsOk());
 
-  KeysetInfo::KeyInfo key_info;
-  key_info.set_status(KeyStatusType::ENABLED);
-  key_info.set_key_id(1234);
-  key_info.set_output_prefix_type(OutputPrefixType::RAW);
-  auto primitive_set = absl::make_unique<PrimitiveSet<Aead>>();
-  ASSERT_THAT(primitive_set->set_primary(*primitive_set->AddPrimitive(
-                  absl::make_unique<DummyAead>("dummy"), key_info)),
-              IsOk());
-
-  util::StatusOr<std::unique_ptr<Aead>> primitive_result =
-      Registry::Wrap(std::move(primitive_set));
-
-  ASSERT_THAT(primitive_result, IsOk());
-  util::StatusOr<std::string> encryption_result =
-      (*primitive_result)->Encrypt("secret", "");
-  ASSERT_THAT(encryption_result, IsOk());
-
-  util::StatusOr<std::string> decryption_result =
-      DummyAead("dummy").Decrypt(*encryption_result, "");
-  ASSERT_THAT(decryption_result, IsOk());
-  EXPECT_THAT(*decryption_result, Eq("secret"));
-
-  decryption_result = DummyAead("dummy").Decrypt(*encryption_result, "wrong");
-  EXPECT_THAT(decryption_result, Not(IsOk()));
+  StatusOr<std::unique_ptr<KeysetHandle>> keyset_handle =
+      KeysetHandle::GenerateNew(AeadKeyTemplates::Aes128Gcm(),
+                                KeyGenConfigGlobalRegistry());
+  ASSERT_THAT(keyset_handle.status(), IsOk());
+  StatusOr<std::unique_ptr<Aead>> aead =
+      (*keyset_handle)
+          ->GetPrimitive<crypto::tink::Aead>(ConfigGlobalRegistry());
+  ASSERT_THAT(aead.status(), IsOk());
+  ASSERT_THAT(*aead, Not(IsNull()));
 }
 
 // FIPS-only mode tests
 TEST_F(AeadConfigTest, RegisterNonFipsTemplates) {
-  if (!IsFipsModeEnabled() || !FIPS_mode()) {
+  if (!IsFipsModeEnabled() || !internal::IsFipsEnabledInSsl()) {
     GTEST_SKIP() << "Only supported in FIPS-only mode with BoringCrypto.";
   }
 
@@ -121,14 +133,15 @@ TEST_F(AeadConfigTest, RegisterNonFipsTemplates) {
   };
 
   for (auto key_template : non_fips_key_templates) {
-    auto new_keyset_handle_result = KeysetHandle::GenerateNew(key_template);
+    auto new_keyset_handle_result =
+        KeysetHandle::GenerateNew(key_template, KeyGenConfigGlobalRegistry());
     EXPECT_THAT(new_keyset_handle_result.status(),
                 StatusIs(absl::StatusCode::kNotFound));
   }
 }
 
 TEST_F(AeadConfigTest, RegisterFipsValidTemplates) {
-  if (!IsFipsModeEnabled() || !FIPS_mode()) {
+  if (!IsFipsModeEnabled() || !internal::IsFipsEnabledInSsl()) {
     GTEST_SKIP() << "Only supported in FIPS-only mode with BoringCrypto.";
   }
 
@@ -142,13 +155,14 @@ TEST_F(AeadConfigTest, RegisterFipsValidTemplates) {
   };
 
   for (auto key_template : fips_key_templates) {
-    auto new_keyset_handle_result = KeysetHandle::GenerateNew(key_template);
+    auto new_keyset_handle_result =
+        KeysetHandle::GenerateNew(key_template, KeyGenConfigGlobalRegistry());
     EXPECT_THAT(new_keyset_handle_result, IsOk());
   }
 }
 
 TEST_F(AeadConfigTest, RegisterFailsIfBoringCryptoNotAvailable) {
-  if (!IsFipsModeEnabled() || FIPS_mode()) {
+  if (!IsFipsModeEnabled() || internal::IsFipsEnabledInSsl()) {
     GTEST_SKIP()
         << "Only supported in FIPS-only mode with BoringCrypto not available.";
   }
@@ -157,6 +171,502 @@ TEST_F(AeadConfigTest, RegisterFailsIfBoringCryptoNotAvailable) {
                   .status(),
               StatusIs(absl::StatusCode::kNotFound));
   EXPECT_THAT(AeadConfig::Register(), StatusIs(absl::StatusCode::kInternal));
+}
+
+TEST_F(AeadConfigTest, AesGcmProtoParamsSerializationRegistered) {
+  if (IsFipsModeEnabled()) {
+    GTEST_SKIP() << "Not supported in FIPS-only mode";
+  }
+
+  util::StatusOr<internal::ProtoParametersSerialization>
+      proto_params_serialization =
+          internal::ProtoParametersSerialization::Create(
+              AeadKeyTemplates::Aes256Gcm());
+  ASSERT_THAT(proto_params_serialization, IsOk());
+
+  util::StatusOr<std::unique_ptr<Parameters>> parsed_params =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
+          *proto_params_serialization);
+  ASSERT_THAT(parsed_params.status(), StatusIs(absl::StatusCode::kNotFound));
+
+  util::StatusOr<AesGcmParameters> params =
+      AesGcmParameters::Builder()
+          .SetVariant(AesGcmParameters::Variant::kTink)
+          .SetKeySizeInBytes(32)
+          .SetIvSizeInBytes(12)
+          .SetTagSizeInBytes(16)
+          .Build();
+  ASSERT_THAT(params, IsOk());
+
+  util::StatusOr<std::unique_ptr<Serialization>> serialized_params =
+      internal::MutableSerializationRegistry::GlobalInstance()
+          .SerializeParameters<internal::ProtoParametersSerialization>(*params);
+  ASSERT_THAT(serialized_params.status(),
+              StatusIs(absl::StatusCode::kNotFound));
+
+  ASSERT_THAT(AeadConfig::Register(), IsOk());
+
+  util::StatusOr<std::unique_ptr<Parameters>> parsed_params2 =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
+          *proto_params_serialization);
+  ASSERT_THAT(parsed_params2, IsOk());
+
+  util::StatusOr<std::unique_ptr<Serialization>> serialized_params2 =
+      internal::MutableSerializationRegistry::GlobalInstance()
+          .SerializeParameters<internal::ProtoParametersSerialization>(*params);
+  ASSERT_THAT(serialized_params2, IsOk());
+}
+
+TEST_F(AeadConfigTest, AesGcmProtoKeySerializationRegistered) {
+  if (IsFipsModeEnabled()) {
+    GTEST_SKIP() << "Not supported in FIPS-only mode";
+  }
+
+  google::crypto::tink::AesGcmKey key_proto;
+  key_proto.set_version(0);
+  key_proto.set_key_value(subtle::Random::GetRandomBytes(32));
+
+  util::StatusOr<internal::ProtoKeySerialization> proto_key_serialization =
+      internal::ProtoKeySerialization::Create(
+          "type.googleapis.com/google.crypto.tink.AesGcmKey",
+          RestrictedData(key_proto.SerializeAsString(),
+                         InsecureSecretKeyAccess::Get()),
+          KeyData::SYMMETRIC, OutputPrefixType::TINK, /*id_requirement=*/123);
+  ASSERT_THAT(proto_key_serialization, IsOk());
+
+  util::StatusOr<std::unique_ptr<Key>> parsed_key =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
+          *proto_key_serialization, InsecureSecretKeyAccess::Get());
+  ASSERT_THAT(parsed_key.status(), StatusIs(absl::StatusCode::kNotFound));
+
+  util::StatusOr<AesGcmParameters> params =
+      AesGcmParameters::Builder()
+          .SetVariant(AesGcmParameters::Variant::kTink)
+          .SetKeySizeInBytes(32)
+          .SetIvSizeInBytes(12)
+          .SetTagSizeInBytes(16)
+          .Build();
+  ASSERT_THAT(params, IsOk());
+
+  util::StatusOr<AesGcmKey> key =
+      AesGcmKey::Create(*params,
+                        RestrictedData(subtle::Random::GetRandomBytes(32),
+                                       InsecureSecretKeyAccess::Get()),
+                        /*id_requirement=*/123, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  util::StatusOr<std::unique_ptr<Serialization>> serialized_key =
+      internal::MutableSerializationRegistry::GlobalInstance()
+          .SerializeKey<internal::ProtoKeySerialization>(
+              *key, InsecureSecretKeyAccess::Get());
+  ASSERT_THAT(serialized_key.status(), StatusIs(absl::StatusCode::kNotFound));
+
+  ASSERT_THAT(AeadConfig::Register(), IsOk());
+
+  util::StatusOr<std::unique_ptr<Key>> parsed_key2 =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
+          *proto_key_serialization, InsecureSecretKeyAccess::Get());
+  ASSERT_THAT(parsed_key2, IsOk());
+
+  util::StatusOr<std::unique_ptr<Serialization>> serialized_key2 =
+      internal::MutableSerializationRegistry::GlobalInstance()
+          .SerializeKey<internal::ProtoKeySerialization>(
+              *key, InsecureSecretKeyAccess::Get());
+  ASSERT_THAT(serialized_key2, IsOk());
+}
+
+TEST_F(AeadConfigTest, AesGcmSivProtoParamsSerializationRegistered) {
+  if (IsFipsModeEnabled()) {
+    GTEST_SKIP() << "Not supported in FIPS-only mode";
+  }
+
+  util::StatusOr<internal::ProtoParametersSerialization>
+      proto_params_serialization =
+          internal::ProtoParametersSerialization::Create(
+              AeadKeyTemplates::Aes256GcmSiv());
+  ASSERT_THAT(proto_params_serialization, IsOk());
+
+  util::StatusOr<std::unique_ptr<Parameters>> parsed_params =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
+          *proto_params_serialization);
+  ASSERT_THAT(parsed_params.status(), StatusIs(absl::StatusCode::kNotFound));
+
+  util::StatusOr<AesGcmSivParameters> params = AesGcmSivParameters::Create(
+      /*key_size_in_bytes=*/32, AesGcmSivParameters::Variant::kTink);
+  ASSERT_THAT(params, IsOk());
+
+  util::StatusOr<std::unique_ptr<Serialization>> serialized_params =
+      internal::MutableSerializationRegistry::GlobalInstance()
+          .SerializeParameters<internal::ProtoParametersSerialization>(*params);
+  ASSERT_THAT(serialized_params.status(),
+              StatusIs(absl::StatusCode::kNotFound));
+
+  ASSERT_THAT(AeadConfig::Register(), IsOk());
+
+  util::StatusOr<std::unique_ptr<Parameters>> parsed_params2 =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
+          *proto_params_serialization);
+  ASSERT_THAT(parsed_params2, IsOk());
+
+  util::StatusOr<std::unique_ptr<Serialization>> serialized_params2 =
+      internal::MutableSerializationRegistry::GlobalInstance()
+          .SerializeParameters<internal::ProtoParametersSerialization>(*params);
+  ASSERT_THAT(serialized_params2, IsOk());
+}
+
+TEST_F(AeadConfigTest, AesGcmSivProtoKeySerializationRegistered) {
+  if (IsFipsModeEnabled()) {
+    GTEST_SKIP() << "Not supported in FIPS-only mode";
+  }
+
+  google::crypto::tink::AesGcmSivKey key_proto;
+  key_proto.set_version(0);
+  key_proto.set_key_value(subtle::Random::GetRandomBytes(32));
+
+  util::StatusOr<internal::ProtoKeySerialization> proto_key_serialization =
+      internal::ProtoKeySerialization::Create(
+          "type.googleapis.com/google.crypto.tink.AesGcmSivKey",
+          RestrictedData(key_proto.SerializeAsString(),
+                         InsecureSecretKeyAccess::Get()),
+          KeyData::SYMMETRIC, OutputPrefixType::TINK, /*id_requirement=*/123);
+  ASSERT_THAT(proto_key_serialization, IsOk());
+
+  util::StatusOr<std::unique_ptr<Key>> parsed_key =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
+          *proto_key_serialization, InsecureSecretKeyAccess::Get());
+  ASSERT_THAT(parsed_key.status(), StatusIs(absl::StatusCode::kNotFound));
+
+  util::StatusOr<AesGcmSivParameters> params = AesGcmSivParameters::Create(
+      /*key_size_in_bytes=*/32, AesGcmSivParameters::Variant::kTink);
+  ASSERT_THAT(params, IsOk());
+
+  util::StatusOr<AesGcmSivKey> key =
+      AesGcmSivKey::Create(*params,
+                           RestrictedData(subtle::Random::GetRandomBytes(32),
+                                          InsecureSecretKeyAccess::Get()),
+                           /*id_requirement=*/123, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  util::StatusOr<std::unique_ptr<Serialization>> serialized_key =
+      internal::MutableSerializationRegistry::GlobalInstance()
+          .SerializeKey<internal::ProtoKeySerialization>(
+              *key, InsecureSecretKeyAccess::Get());
+  ASSERT_THAT(serialized_key.status(), StatusIs(absl::StatusCode::kNotFound));
+
+  ASSERT_THAT(AeadConfig::Register(), IsOk());
+
+  util::StatusOr<std::unique_ptr<Key>> parsed_key2 =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
+          *proto_key_serialization, InsecureSecretKeyAccess::Get());
+  ASSERT_THAT(parsed_key2, IsOk());
+
+  util::StatusOr<std::unique_ptr<Serialization>> serialized_key2 =
+      internal::MutableSerializationRegistry::GlobalInstance()
+          .SerializeKey<internal::ProtoKeySerialization>(
+              *key, InsecureSecretKeyAccess::Get());
+  ASSERT_THAT(serialized_key2, IsOk());
+}
+
+TEST_F(AeadConfigTest, AesEaxProtoParamsSerializationRegistered) {
+  if (IsFipsModeEnabled()) {
+    GTEST_SKIP() << "Not supported in FIPS-only mode";
+  }
+
+  util::StatusOr<internal::ProtoParametersSerialization>
+      proto_params_serialization =
+          internal::ProtoParametersSerialization::Create(
+              AeadKeyTemplates::Aes256Eax());
+  ASSERT_THAT(proto_params_serialization, IsOk());
+
+  util::StatusOr<std::unique_ptr<Parameters>> parsed_params =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
+          *proto_params_serialization);
+  ASSERT_THAT(parsed_params.status(), StatusIs(absl::StatusCode::kNotFound));
+
+  util::StatusOr<AesEaxParameters> params =
+      AesEaxParameters::Builder()
+          .SetVariant(AesEaxParameters::Variant::kTink)
+          .SetKeySizeInBytes(32)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(16)
+          .Build();
+  ASSERT_THAT(params, IsOk());
+
+  util::StatusOr<std::unique_ptr<Serialization>> serialized_params =
+      internal::MutableSerializationRegistry::GlobalInstance()
+          .SerializeParameters<internal::ProtoParametersSerialization>(*params);
+  ASSERT_THAT(serialized_params.status(),
+              StatusIs(absl::StatusCode::kNotFound));
+
+  ASSERT_THAT(AeadConfig::Register(), IsOk());
+
+  util::StatusOr<std::unique_ptr<Parameters>> parsed_params2 =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
+          *proto_params_serialization);
+  ASSERT_THAT(parsed_params2, IsOk());
+
+  util::StatusOr<std::unique_ptr<Serialization>> serialized_params2 =
+      internal::MutableSerializationRegistry::GlobalInstance()
+          .SerializeParameters<internal::ProtoParametersSerialization>(*params);
+  ASSERT_THAT(serialized_params2, IsOk());
+}
+
+TEST_F(AeadConfigTest, AesEaxProtoKeySerializationRegistered) {
+  if (IsFipsModeEnabled()) {
+    GTEST_SKIP() << "Not supported in FIPS-only mode";
+  }
+
+  google::crypto::tink::AesEaxKey key_proto;
+  key_proto.set_version(0);
+  key_proto.mutable_params()->set_iv_size(16);
+  key_proto.set_key_value(subtle::Random::GetRandomBytes(32));
+
+  util::StatusOr<internal::ProtoKeySerialization> proto_key_serialization =
+      internal::ProtoKeySerialization::Create(
+          "type.googleapis.com/google.crypto.tink.AesEaxKey",
+          RestrictedData(key_proto.SerializeAsString(),
+                         InsecureSecretKeyAccess::Get()),
+          KeyData::SYMMETRIC, OutputPrefixType::TINK, /*id_requirement=*/123);
+  ASSERT_THAT(proto_key_serialization, IsOk());
+
+  util::StatusOr<std::unique_ptr<Key>> parsed_key =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
+          *proto_key_serialization, InsecureSecretKeyAccess::Get());
+  ASSERT_THAT(parsed_key.status(), StatusIs(absl::StatusCode::kNotFound));
+
+  util::StatusOr<AesEaxParameters> params =
+      AesEaxParameters::Builder()
+          .SetVariant(AesEaxParameters::Variant::kTink)
+          .SetKeySizeInBytes(32)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(16)
+          .Build();
+  ASSERT_THAT(params, IsOk());
+
+  util::StatusOr<AesEaxKey> key =
+      AesEaxKey::Create(*params,
+                        RestrictedData(subtle::Random::GetRandomBytes(32),
+                                       InsecureSecretKeyAccess::Get()),
+                        /*id_requirement=*/123, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  util::StatusOr<std::unique_ptr<Serialization>> serialized_key =
+      internal::MutableSerializationRegistry::GlobalInstance()
+          .SerializeKey<internal::ProtoKeySerialization>(
+              *key, InsecureSecretKeyAccess::Get());
+  ASSERT_THAT(serialized_key.status(), StatusIs(absl::StatusCode::kNotFound));
+
+  ASSERT_THAT(AeadConfig::Register(), IsOk());
+
+  util::StatusOr<std::unique_ptr<Key>> parsed_key2 =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseKey(
+          *proto_key_serialization, InsecureSecretKeyAccess::Get());
+  ASSERT_THAT(parsed_key2, IsOk());
+
+  util::StatusOr<std::unique_ptr<Serialization>> serialized_key2 =
+      internal::MutableSerializationRegistry::GlobalInstance()
+          .SerializeKey<internal::ProtoKeySerialization>(
+              *key, InsecureSecretKeyAccess::Get());
+  ASSERT_THAT(serialized_key2, IsOk());
+}
+
+TEST_F(AeadConfigTest, XChaCha20Poly1305ProtoParamsSerializationRegistered) {
+  if (IsFipsModeEnabled()) {
+    GTEST_SKIP() << "Not supported in FIPS-only mode";
+  }
+
+  // TODO: b/325507124 - Rewrite tests using parameters proto format API.
+  util::StatusOr<internal::ProtoParametersSerialization>
+      proto_params_serialization =
+          internal::ProtoParametersSerialization::Create(
+              AeadKeyTemplates::XChaCha20Poly1305());
+  ASSERT_THAT(proto_params_serialization, IsOk());
+
+  util::StatusOr<std::unique_ptr<Parameters>> parsed_params =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
+          *proto_params_serialization);
+  ASSERT_THAT(parsed_params.status(), StatusIs(absl::StatusCode::kNotFound));
+
+  util::StatusOr<XChaCha20Poly1305Parameters> params =
+      XChaCha20Poly1305Parameters::Create(
+          XChaCha20Poly1305Parameters::Variant::kTink);
+  ASSERT_THAT(params, IsOk());
+
+  util::StatusOr<std::unique_ptr<Serialization>> serialized_params =
+      internal::MutableSerializationRegistry::GlobalInstance()
+          .SerializeParameters<internal::ProtoParametersSerialization>(*params);
+  ASSERT_THAT(serialized_params.status(),
+              StatusIs(absl::StatusCode::kNotFound));
+
+  ASSERT_THAT(AeadConfig::Register(), IsOk());
+
+  util::StatusOr<std::unique_ptr<Parameters>> parsed_params2 =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
+          *proto_params_serialization);
+  ASSERT_THAT(parsed_params2, IsOk());
+
+  util::StatusOr<std::unique_ptr<Serialization>> serialized_params2 =
+      internal::MutableSerializationRegistry::GlobalInstance()
+          .SerializeParameters<internal::ProtoParametersSerialization>(*params);
+  ASSERT_THAT(serialized_params2, IsOk());
+}
+
+TEST_F(AeadConfigTest, XChaCha20Poly1305ProtoKeySerializationRegistered) {
+  if (IsFipsModeEnabled()) {
+    GTEST_SKIP() << "Not supported in FIPS-only mode";
+  }
+
+  util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+      KeysetHandle::GenerateNew(AeadKeyTemplates::XChaCha20Poly1305(),
+                                KeyGenConfigAeadV0());
+  ASSERT_THAT(handle, IsOk());
+
+  // Fails to parse this key type, so falls back to legacy proto key.
+  const internal::LegacyProtoKey* legacy_proto_key_from_handle =
+      reinterpret_cast<const internal::LegacyProtoKey*>(
+          (*handle)->GetPrimary().GetKey().get());
+  EXPECT_THAT(legacy_proto_key_from_handle, Not(IsNull()));
+
+  util::StatusOr<XChaCha20Poly1305Key> key = XChaCha20Poly1305Key::Create(
+      XChaCha20Poly1305Parameters::Variant::kTink,
+      RestrictedData(subtle::Random::GetRandomBytes(32),
+                     InsecureSecretKeyAccess::Get()),
+      /*id_requirement=*/123, GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  // Fails to serialize this key type.
+  EXPECT_THAT(KeysetHandleBuilder()
+                  .AddEntry(KeysetHandleBuilder::Entry::CreateFromCopyableKey(
+                      *key, KeyStatus::kEnabled, /*is_primary=*/true))
+                  .Build()
+                  .status(),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Failed to serialize")));
+
+  ASSERT_THAT(AeadConfig::Register(), IsOk());
+
+  const XChaCha20Poly1305Key* key_from_handle =
+      reinterpret_cast<const XChaCha20Poly1305Key*>(
+          (*handle)->GetPrimary().GetKey().get());
+  EXPECT_THAT(key_from_handle, Not(IsNull()));
+
+  EXPECT_THAT(KeysetHandleBuilder()
+                  .AddEntry(KeysetHandleBuilder::Entry::CreateFromCopyableKey(
+                      *key, KeyStatus::kEnabled, /*is_primary=*/true))
+                  .Build(),
+              IsOk());
+}
+
+TEST_F(AeadConfigTest, AesCtrHmacAeadProtoParamsSerializationRegistered) {
+  if (IsFipsModeEnabled()) {
+    GTEST_SKIP() << "Not supported in FIPS-only mode";
+  }
+
+  // TODO: b/325507124 - Rewrite tests using parameters proto format API.
+  util::StatusOr<internal::ProtoParametersSerialization>
+      proto_params_serialization =
+          internal::ProtoParametersSerialization::Create(
+              AeadKeyTemplates::Aes256CtrHmacSha256());
+  ASSERT_THAT(proto_params_serialization, IsOk());
+
+  util::StatusOr<std::unique_ptr<Parameters>> parsed_params =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
+          *proto_params_serialization);
+  ASSERT_THAT(parsed_params.status(), StatusIs(absl::StatusCode::kNotFound));
+
+  util::StatusOr<AesCtrHmacAeadParameters> params =
+      AesCtrHmacAeadParameters::Builder()
+          .SetAesKeySizeInBytes(32)
+          .SetHmacKeySizeInBytes(32)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(16)
+          .SetVariant(AesCtrHmacAeadParameters::Variant::kTink)
+          .SetHashType(AesCtrHmacAeadParameters::HashType::kSha256)
+          .Build();
+  ASSERT_THAT(params, IsOk());
+
+  util::StatusOr<std::unique_ptr<Serialization>> serialized_params =
+      internal::MutableSerializationRegistry::GlobalInstance()
+          .SerializeParameters<internal::ProtoParametersSerialization>(*params);
+  ASSERT_THAT(serialized_params.status(),
+              StatusIs(absl::StatusCode::kNotFound));
+
+  ASSERT_THAT(AeadConfig::Register(), IsOk());
+
+  util::StatusOr<std::unique_ptr<Parameters>> parsed_params2 =
+      internal::MutableSerializationRegistry::GlobalInstance().ParseParameters(
+          *proto_params_serialization);
+  ASSERT_THAT(parsed_params2, IsOk());
+
+  util::StatusOr<std::unique_ptr<Serialization>> serialized_params2 =
+      internal::MutableSerializationRegistry::GlobalInstance()
+          .SerializeParameters<internal::ProtoParametersSerialization>(*params);
+  ASSERT_THAT(serialized_params2, IsOk());
+}
+
+TEST_F(AeadConfigTest, AesCtrHmacAeadProtoKeySerializationRegistered) {
+  if (IsFipsModeEnabled()) {
+    GTEST_SKIP() << "Not supported in FIPS-only mode";
+  }
+
+  util::StatusOr<std::unique_ptr<KeysetHandle>> handle =
+      KeysetHandle::GenerateNew(AeadKeyTemplates::Aes256CtrHmacSha256(),
+                                KeyGenConfigAeadV0());
+  ASSERT_THAT(handle, IsOk());
+
+  // Failed to parse this key type, so fell back to legacy proto key.
+  EXPECT_THAT(dynamic_cast<const internal::LegacyProtoKey*>(
+                  (*handle)->GetPrimary().GetKey().get()),
+              Not(IsNull()));
+
+  util::StatusOr<AesCtrHmacAeadParameters> params =
+      AesCtrHmacAeadParameters::Builder()
+          .SetAesKeySizeInBytes(32)
+          .SetHmacKeySizeInBytes(32)
+          .SetIvSizeInBytes(16)
+          .SetTagSizeInBytes(16)
+          .SetVariant(AesCtrHmacAeadParameters::Variant::kTink)
+          .SetHashType(AesCtrHmacAeadParameters::HashType::kSha256)
+          .Build();
+  ASSERT_THAT(params, IsOk());
+
+  util::StatusOr<AesCtrHmacAeadKey> key =
+      AesCtrHmacAeadKey::Builder()
+          .SetParameters(*params)
+          .SetAesKeyBytes(RestrictedData(subtle::Random::GetRandomBytes(32),
+                                         InsecureSecretKeyAccess::Get()))
+          .SetHmacKeyBytes(RestrictedData(subtle::Random::GetRandomBytes(32),
+                                          InsecureSecretKeyAccess::Get()))
+          .SetIdRequirement(123)
+          .Build(GetPartialKeyAccess());
+  ASSERT_THAT(key, IsOk());
+
+  // Fails to serialize this key type.
+  EXPECT_THAT(KeysetHandleBuilder()
+                  .AddEntry(KeysetHandleBuilder::Entry::CreateFromCopyableKey(
+                      *key, KeyStatus::kEnabled, /*is_primary=*/true))
+                  .Build()
+                  .status(),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("Failed to serialize")));
+
+  ASSERT_THAT(AeadConfig::Register(), IsOk());
+
+  util::StatusOr<std::unique_ptr<KeysetHandle>> handle2 =
+      KeysetHandle::GenerateNew(AeadKeyTemplates::Aes256CtrHmacSha256(),
+                                KeyGenConfigAeadV0());
+  ASSERT_THAT(handle2, IsOk());
+
+  // Parsing now creates the right key type.
+  EXPECT_THAT(dynamic_cast<const AesCtrHmacAeadKey*>(
+                  (*handle2)->GetPrimary().GetKey().get()),
+              Not(IsNull()));
+
+  EXPECT_THAT(KeysetHandleBuilder()
+                  .AddEntry(KeysetHandleBuilder::Entry::CreateFromCopyableKey(
+                      *key, KeyStatus::kEnabled, /*is_primary=*/true))
+                  .Build(),
+              IsOk());
 }
 
 }  // namespace

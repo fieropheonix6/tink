@@ -22,7 +22,10 @@ import com.google.errorprone.annotations.Immutable;
  *
  * <p>This class can be used to keep track of places where secret keys are accessed directly in
  * code, as opposed to indirectly via a primitive.
- **/
+ *
+ * <p>Do not use this in new code. Instead, use {@link
+ * com.google.crypto.tink.InsecureSecretKeyAccess} instead.
+ */
 @Immutable
 public final class SecretKeyAccess {
 

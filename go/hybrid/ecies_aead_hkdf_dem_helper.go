@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package hybrid
 
@@ -123,7 +121,7 @@ func (r *eciesAEADHKDFDEMHelper) GetSymmetricKeySize() uint32 {
 }
 
 // GetAEADOrDAEAD returns the AEAD or deterministic AEAD primitive from the DEM
-func (r *eciesAEADHKDFDEMHelper) GetAEADOrDAEAD(symmetricKeyValue []byte) (interface{}, error) {
+func (r *eciesAEADHKDFDEMHelper) GetAEADOrDAEAD(symmetricKeyValue []byte) (any, error) {
 	var sk []byte
 	if uint32(len(symmetricKeyValue)) != r.GetSymmetricKeySize() {
 		return nil, errors.New("symmetric key has incorrect length")

@@ -15,18 +15,24 @@
 ///////////////////////////////////////////////////////////////////////////////
 #include "tink/internal/monitoring_util.h"
 
+#include <stdint.h>
+
 #include <memory>
 #include <string>
-#include <tuple>
 #include <utility>
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/container/flat_hash_map.h"
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
+#include "tink/key_status.h"
 #include "tink/monitoring/monitoring.h"
 #include "tink/primitive_set.h"
+#include "tink/util/status.h"
+#include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 #include "proto/tink.pb.h"
 
@@ -90,7 +96,8 @@ PrimitiveSetInputPrimitive<std::string> NewPrimitiveSetInputPrimitive(
 MATCHER_P(MonitoringKeySetInfoEntryEq, other, "") {
   return arg.GetStatus() == other.GetStatus() &&
          arg.GetKeyId() == other.GetKeyId() &&
-         arg.GetParametersAsString() == other.GetParametersAsString();
+         arg.GetKeyPrefix() == other.GetKeyPrefix() &&
+         arg.GetKeyType() == other.GetKeyType();
 }
 
 TEST(MonitoringUtilTest, MonitoringKeySetInfoFromPrimitiveSetValid) {
@@ -135,14 +142,15 @@ TEST(MonitoringUtilTest, MonitoringKeySetInfoFromPrimitiveSetValid) {
               UnorderedElementsAreArray(kAnnotations));
   const std::vector<MonitoringKeySetInfo::Entry> &monitoring_entries =
       monitoring_keyset_info->GetEntries();
-  EXPECT_THAT(monitoring_entries,
-              UnorderedElementsAre(
-                  MonitoringKeySetInfoEntryEq(MonitoringKeySetInfo::Entry(
-                      MonitoringKeySetInfo::Entry::KeyStatus::kEnabled,
-                      /*key_id=*/1, kPrimitive1KeyTyepUrl)),
-                  MonitoringKeySetInfoEntryEq(MonitoringKeySetInfo::Entry(
-                      MonitoringKeySetInfo::Entry::KeyStatus::kEnabled,
-                      /*key_id=*/2, kPrimitive2KeyTypeUrl))));
+  EXPECT_THAT(
+      monitoring_entries,
+      UnorderedElementsAre(
+          MonitoringKeySetInfoEntryEq(MonitoringKeySetInfo::Entry(
+              KeyStatus::kEnabled,
+              /*key_id=*/1, "tink.SomePrimitiveInstance", "TINK")),
+          MonitoringKeySetInfoEntryEq(MonitoringKeySetInfo::Entry(
+              KeyStatus::kEnabled,
+              /*key_id=*/2, "tink.SomeOtherPrimitiveInstance", "TINK"))));
 }
 
 }  // namespace

@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package signature
 
@@ -40,7 +38,7 @@ var errECDSAVerifierNotImplemented = fmt.Errorf("ecdsa_verifier_key_manager: not
 type ecdsaVerifierKeyManager struct{}
 
 // Primitive creates an ECDSAVerifier subtle for the given serialized ECDSAPublicKey proto.
-func (km *ecdsaVerifierKeyManager) Primitive(serializedKey []byte) (interface{}, error) {
+func (km *ecdsaVerifierKeyManager) Primitive(serializedKey []byte) (any, error) {
 	if len(serializedKey) == 0 {
 		return nil, errInvalidECDSAVerifierKey
 	}
@@ -51,7 +49,7 @@ func (km *ecdsaVerifierKeyManager) Primitive(serializedKey []byte) (interface{},
 	if err := km.validateKey(key); err != nil {
 		return nil, fmt.Errorf("ecdsa_verifier_key_manager: %s", err)
 	}
-	hash, curve, encoding := getECDSAParamNames(key.Params)
+	hash, curve, encoding := getECDSAParamNames(key.GetParams())
 	ret, err := subtle.NewECDSAVerifier(hash, curve, encoding, key.X, key.Y)
 	if err != nil {
 		return nil, fmt.Errorf("ecdsa_verifier_key_manager: invalid key: %s", err)
@@ -85,6 +83,6 @@ func (km *ecdsaVerifierKeyManager) validateKey(key *ecdsapb.EcdsaPublicKey) erro
 	if err := keyset.ValidateKeyVersion(key.Version, ecdsaVerifierKeyVersion); err != nil {
 		return fmt.Errorf("ecdsa_verifier_key_manager: %s", err)
 	}
-	hash, curve, encoding := getECDSAParamNames(key.Params)
+	hash, curve, encoding := getECDSAParamNames(key.GetParams())
 	return subtle.ValidateECDSAParams(hash, curve, encoding)
 }

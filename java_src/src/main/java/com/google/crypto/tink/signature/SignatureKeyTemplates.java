@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2017 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -35,22 +35,34 @@ import java.security.spec.RSAKeyGenParameterSpec;
  * Pre-generated {@link KeyTemplate} for {@link com.google.crypto.tink.PublicKeySign} and {@link
  * com.google.crypto.tink.PublicKeyVerify}.
  *
+ * <p>We recommend to avoid this class in order to keep dependencies small.
+ *
+ * <ul>
+ *   <li>Using this class adds a dependency on protobuf. We hope that eventually it is possible to
+ *       use Tink without a dependency on protobuf.
+ *   <li>Using this class adds a dependency on classes for all involved key types.
+ * </ul>
+ *
+ * These dependencies all come from static class member variables, which are initialized when the
+ * class is loaded. This implies that static analysis and code minimization tools (such as proguard)
+ * cannot remove the usages either.
+ *
+ * <p>Instead, we recommend to use {@code KeysetHandle.generateEntryFromParametersName} or {@code
+ * KeysetHandle.generateEntryFromParameters}.
+ *
  * <p>One can use these templates to generate new {@link com.google.crypto.tink.proto.Keyset} with
  * {@link com.google.crypto.tink.KeysetHandle}. To generate a new keyset that contains a single
  * {@code EcdsaPrivateKey}, one can do:
  *
  * <pre>{@code
- * Config.register(SignatureConfig.TINK_1_1_0);
+ * SignatureConfig.register();
  * KeysetHandle handle = KeysetHandle.generateNew(SignatureKeyTemplates.ECDSA_P256);
  * PublicKeySign signer = handle.getPrimitive(PublicKeySign.class);
  * PublicKeyVerify verifier = handle.getPublicKeyset().getPrimitive(PublicKeyVerify.class);
  * }</pre>
  *
  * @since 1.0.0
- * @deprecated use {@link com.google.crypto.tink.KeyTemplates#get}, e.g.,
- *     KeyTemplates.get("ECDSA_P256")
  */
-@Deprecated
 public final class SignatureKeyTemplates {
   /**
    * A {@link KeyTemplate} that generates new instances of {@link
@@ -188,7 +200,7 @@ public final class SignatureKeyTemplates {
    */
   public static final KeyTemplate ED25519 =
       KeyTemplate.newBuilder()
-          .setTypeUrl(new Ed25519PrivateKeyManager().getKeyType())
+          .setTypeUrl(Ed25519PrivateKeyManager.getKeyType())
           .setOutputPrefixType(OutputPrefixType.TINK)
           .build();
 
@@ -196,22 +208,24 @@ public final class SignatureKeyTemplates {
    * A {@link KeyTemplate} that generates new instances of {@link
    * com.google.crypto.tink.proto.ED25519PrivateKey}.
    *
-   * The difference between {@link ED25519WithRawOutput} and {@link ED25519} is the format of
-   * signatures generated. {@link ED25519WithRawOutput} generates signatures of
-   * {@link OutputPrefixType.RAW} format, which is 64 bytes long.
+   * <p>The difference between {@link ED25519WithRawOutput} and {@link ED25519} is the format of
+   * signatures generated. {@link ED25519WithRawOutput} generates signatures of {@link
+   * OutputPrefixType.RAW} format, which is 64 bytes long.
    *
    * @since 1.3.0
    */
   public static final KeyTemplate ED25519WithRawOutput =
       KeyTemplate.newBuilder()
-          .setTypeUrl(new Ed25519PrivateKeyManager().getKeyType())
+          .setTypeUrl(Ed25519PrivateKeyManager.getKeyType())
           .setOutputPrefixType(OutputPrefixType.RAW)
           .build();
 
   /**
    * @return a {@link KeyTemplate} containing a {@link EcdsaKeyFormat} with some specified
    *     parameters.
+   * @deprecated Use a corresponding {@link EcdsaParameters} object instead.
    */
+  @Deprecated
   public static KeyTemplate createEcdsaKeyTemplate(
       HashType hashType,
       EllipticCurveType curve,
@@ -226,7 +240,7 @@ public final class SignatureKeyTemplates {
     EcdsaKeyFormat format = EcdsaKeyFormat.newBuilder().setParams(params).build();
     return KeyTemplate.newBuilder()
         .setValue(format.toByteString())
-        .setTypeUrl(new EcdsaSignKeyManager().getKeyType())
+        .setTypeUrl(EcdsaSignKeyManager.getKeyType())
         .setOutputPrefixType(prefixType)
         .build();
   }
@@ -279,7 +293,9 @@ public final class SignatureKeyTemplates {
   /**
    * @return a {@link KeyTemplate} containing a {@link RsaSsaPkcs1KeyFormat} with some specified
    *     parameters.
+   * @deprecated Use a corresponding {@link RsaSsaPkcs1Parameters} object instead
    */
+  @Deprecated
   public static KeyTemplate createRsaSsaPkcs1KeyTemplate(
       HashType hashType, int modulusSize, BigInteger publicExponent, OutputPrefixType prefixType) {
     RsaSsaPkcs1Params params = RsaSsaPkcs1Params.newBuilder().setHashType(hashType).build();
@@ -291,7 +307,7 @@ public final class SignatureKeyTemplates {
             .build();
     return KeyTemplate.newBuilder()
         .setValue(format.toByteString())
-        .setTypeUrl(new RsaSsaPkcs1SignKeyManager().getKeyType())
+        .setTypeUrl(RsaSsaPkcs1SignKeyManager.getKeyType())
         .setOutputPrefixType(prefixType)
         .build();
   }
@@ -331,7 +347,9 @@ public final class SignatureKeyTemplates {
   /**
    * @return a {@link KeyTemplate} containing a {@link RsaSsaPssKeyFormat} with some specified
    *     parameters.
+   * @deprecated Use a corresponding {@link RsaSsaPssParameters} object instead.
    */
+  @Deprecated
   public static KeyTemplate createRsaSsaPssKeyTemplate(
       HashType sigHash,
       HashType mgf1Hash,
@@ -352,7 +370,7 @@ public final class SignatureKeyTemplates {
             .build();
     return KeyTemplate.newBuilder()
         .setValue(format.toByteString())
-        .setTypeUrl(new RsaSsaPssSignKeyManager().getKeyType())
+        .setTypeUrl(RsaSsaPssSignKeyManager.getKeyType())
         .setOutputPrefixType(OutputPrefixType.TINK)
         .build();
   }

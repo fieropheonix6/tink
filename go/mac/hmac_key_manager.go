@@ -11,14 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package mac
 
 import (
 	"errors"
 	"fmt"
+	"io"
 
 	"google.golang.org/protobuf/proto"
 	"github.com/google/tink/go/keyset"
@@ -41,7 +40,7 @@ var errInvalidHMACKeyFormat = errors.New("hmac_key_manager: invalid key format")
 type hmacKeyManager struct{}
 
 // Primitive constructs a HMAC instance for the given serialized HMACKey.
-func (km *hmacKeyManager) Primitive(serializedKey []byte) (interface{}, error) {
+func (km *hmacKeyManager) Primitive(serializedKey []byte) (any, error) {
 	if len(serializedKey) == 0 {
 		return nil, errInvalidHMACKey
 	}
@@ -52,8 +51,8 @@ func (km *hmacKeyManager) Primitive(serializedKey []byte) (interface{}, error) {
 	if err := km.validateKey(key); err != nil {
 		return nil, err
 	}
-	hash := commonpb.HashType_name[int32(key.Params.Hash)]
-	hmac, err := subtle.NewHMAC(hash, key.KeyValue, key.Params.TagSize)
+	hash := commonpb.HashType_name[int32(key.GetParams().GetHash())]
+	hmac, err := subtle.NewHMAC(hash, key.KeyValue, key.GetParams().GetTagSize())
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +94,7 @@ func (km *hmacKeyManager) NewKeyData(serializedKeyFormat []byte) (*tinkpb.KeyDat
 	return &tinkpb.KeyData{
 		TypeUrl:         hmacTypeURL,
 		Value:           serializedKey,
-		KeyMaterialType: tinkpb.KeyData_SYMMETRIC,
+		KeyMaterialType: km.KeyMaterialType(),
 	}, nil
 }
 
@@ -109,6 +108,38 @@ func (km *hmacKeyManager) TypeURL() string {
 	return hmacTypeURL
 }
 
+// KeyMaterialType returns the key material type of this key manager.
+func (km *hmacKeyManager) KeyMaterialType() tinkpb.KeyData_KeyMaterialType {
+	return tinkpb.KeyData_SYMMETRIC
+}
+
+// DeriveKey derives a new key from serializedKeyFormat and pseudorandomness.
+func (km *hmacKeyManager) DeriveKey(serializedKeyFormat []byte, pseudorandomness io.Reader) (proto.Message, error) {
+	if len(serializedKeyFormat) == 0 {
+		return nil, errInvalidHMACKeyFormat
+	}
+	keyFormat := new(hmacpb.HmacKeyFormat)
+	if err := proto.Unmarshal(serializedKeyFormat, keyFormat); err != nil {
+		return nil, errInvalidHMACKeyFormat
+	}
+	if err := km.validateKeyFormat(keyFormat); err != nil {
+		return nil, fmt.Errorf("hmac_key_manager: invalid key format: %v", err)
+	}
+	if err := keyset.ValidateKeyVersion(keyFormat.GetVersion(), hmacKeyVersion); err != nil {
+		return nil, fmt.Errorf("hmac_key_manager: invalid key version: %s", err)
+	}
+
+	keyValue := make([]byte, keyFormat.GetKeySize())
+	if _, err := io.ReadFull(pseudorandomness, keyValue); err != nil {
+		return nil, fmt.Errorf("hmac_key_manager: not enough pseudorandomness given")
+	}
+	return &hmacpb.HmacKey{
+		Version:  hmacKeyVersion,
+		Params:   keyFormat.Params,
+		KeyValue: keyValue,
+	}, nil
+}
+
 // validateKey validates the given HMACKey. It only validates the version of the
 // key because other parameters will be validated in primitive construction.
 func (km *hmacKeyManager) validateKey(key *hmacpb.HmacKey) error {
@@ -117,15 +148,12 @@ func (km *hmacKeyManager) validateKey(key *hmacpb.HmacKey) error {
 		return fmt.Errorf("hmac_key_manager: invalid version: %s", err)
 	}
 	keySize := uint32(len(key.KeyValue))
-	hash := commonpb.HashType_name[int32(key.Params.Hash)]
-	return subtle.ValidateHMACParams(hash, keySize, key.Params.TagSize)
+	hash := commonpb.HashType_name[int32(key.GetParams().GetHash())]
+	return subtle.ValidateHMACParams(hash, keySize, key.GetParams().GetTagSize())
 }
 
 // validateKeyFormat validates the given HMACKeyFormat
 func (km *hmacKeyManager) validateKeyFormat(format *hmacpb.HmacKeyFormat) error {
-	if format.Params == nil {
-		return fmt.Errorf("null HMAC params")
-	}
-	hash := commonpb.HashType_name[int32(format.Params.Hash)]
-	return subtle.ValidateHMACParams(hash, format.KeySize, format.Params.TagSize)
+	hash := commonpb.HashType_name[int32(format.GetParams().GetHash())]
+	return subtle.ValidateHMACParams(hash, format.KeySize, format.GetParams().GetTagSize())
 }

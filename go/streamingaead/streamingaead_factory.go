@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package streamingaead
 
@@ -21,21 +19,13 @@ import (
 	"io"
 
 	"github.com/google/tink/go/core/primitiveset"
-	"github.com/google/tink/go/core/registry"
 	"github.com/google/tink/go/keyset"
 	"github.com/google/tink/go/tink"
 )
 
 // New returns a StreamingAEAD primitive from the given keyset handle.
-func New(h *keyset.Handle) (tink.StreamingAEAD, error) {
-	return NewWithKeyManager(h, nil /*keyManager*/)
-}
-
-// NewWithKeyManager returns a StreamingAEAD primitive from the given keyset handle and custom key manager.
-//
-// Deprecated: Use [New].
-func NewWithKeyManager(h *keyset.Handle, km registry.KeyManager) (tink.StreamingAEAD, error) {
-	ps, err := h.PrimitivesWithKeyManager(km)
+func New(handle *keyset.Handle) (tink.StreamingAEAD, error) {
+	ps, err := handle.Primitives()
 	if err != nil {
 		return nil, fmt.Errorf("streamingaead_factory: cannot obtain primitive set: %s", err)
 	}

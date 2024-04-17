@@ -24,10 +24,7 @@ import static org.junit.Assert.fail;
 import com.google.common.truth.Expect;
 import com.google.crypto.tink.aead.AesGcmKeyManager;
 import com.google.crypto.tink.config.TinkConfig;
-import com.google.crypto.tink.mac.MacKeyTemplates;
-import com.google.crypto.tink.proto.AesGcmKey;
-import com.google.crypto.tink.proto.AesGcmKeyFormat;
-import com.google.crypto.tink.proto.HashType;
+import com.google.crypto.tink.mac.PredefinedMacParameters;
 import com.google.crypto.tink.proto.KeyStatusType;
 import com.google.crypto.tink.proto.Keyset;
 import com.google.crypto.tink.proto.Keyset.Key;
@@ -39,6 +36,7 @@ import com.google.crypto.tink.tinkkey.SecretKeyAccess;
 import com.google.crypto.tink.tinkkey.TinkKey;
 import com.google.crypto.tink.tinkkey.internal.ProtoKey;
 import com.google.protobuf.ExtensionRegistryLite;
+import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.List;
 import org.junit.BeforeClass;
@@ -78,6 +76,7 @@ public class KeysetManagerTest {
   public void testEnable_shouldEnableKey() throws Exception {
     int keyId = 42;
     KeysetHandle handle = KeysetHandle.fromKeyset(TestUtil.createKeyset(createDisabledKey(keyId)));
+
     Keyset keyset =
         KeysetManager.withKeysetHandle(handle).enable(keyId).getKeysetHandle().getKeyset();
 
@@ -128,9 +127,15 @@ public class KeysetManagerTest {
     int primaryKeyId = 42;
     int newPrimaryKeyId = 43;
     KeysetHandle handle =
-        KeysetHandle.fromKeyset(
-            TestUtil.createKeyset(
-                createEnabledKey(primaryKeyId), createEnabledKey(newPrimaryKeyId)));
+        KeysetHandle.newBuilder()
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(primaryKeyId)
+                    .makePrimary())
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(newPrimaryKeyId))
+            .build();
     Keyset keyset =
         KeysetManager.withKeysetHandle(handle)
             .setPrimary(newPrimaryKeyId)
@@ -146,9 +151,16 @@ public class KeysetManagerTest {
     int primaryKeyId = 42;
     int newPrimaryKeyId = 43;
     KeysetHandle handle =
-        KeysetHandle.fromKeyset(
-            TestUtil.createKeyset(
-                createEnabledKey(primaryKeyId), createEnabledKey(newPrimaryKeyId)));
+        KeysetHandle.newBuilder()
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(primaryKeyId)
+                    .makePrimary())
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(newPrimaryKeyId))
+            .build();
+
     GeneralSecurityException e =
         assertThrows(
             GeneralSecurityException.class,
@@ -161,9 +173,16 @@ public class KeysetManagerTest {
     int primaryKeyId = 42;
     int newPrimaryKeyId = 43;
     KeysetHandle handle =
-        KeysetHandle.fromKeyset(
-            TestUtil.createKeyset(
-                createEnabledKey(primaryKeyId), createDisabledKey(newPrimaryKeyId)));
+        KeysetHandle.newBuilder()
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(primaryKeyId)
+                    .makePrimary())
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(newPrimaryKeyId)
+                    .setStatus(KeyStatus.DISABLED))
+            .build();
     GeneralSecurityException e =
         assertThrows(
             GeneralSecurityException.class,
@@ -207,9 +226,15 @@ public class KeysetManagerTest {
     int primaryKeyId = 42;
     int newPrimaryKeyId = 43;
     KeysetHandle handle =
-        KeysetHandle.fromKeyset(
-            TestUtil.createKeyset(
-                createEnabledKey(primaryKeyId), createEnabledKey(newPrimaryKeyId)));
+        KeysetHandle.newBuilder()
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(primaryKeyId)
+                    .makePrimary())
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(newPrimaryKeyId))
+            .build();
     Keyset keyset =
         KeysetManager.withKeysetHandle(handle)
             .promote(newPrimaryKeyId)
@@ -225,9 +250,15 @@ public class KeysetManagerTest {
     int primaryKeyId = 42;
     int newPrimaryKeyId = 43;
     KeysetHandle handle =
-        KeysetHandle.fromKeyset(
-            TestUtil.createKeyset(
-                createEnabledKey(primaryKeyId), createEnabledKey(newPrimaryKeyId)));
+        KeysetHandle.newBuilder()
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(primaryKeyId)
+                    .makePrimary())
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(newPrimaryKeyId))
+            .build();
     GeneralSecurityException e =
         assertThrows(
             GeneralSecurityException.class,
@@ -240,9 +271,16 @@ public class KeysetManagerTest {
     int primaryKeyId = 42;
     int newPrimaryKeyId = 43;
     KeysetHandle handle =
-        KeysetHandle.fromKeyset(
-            TestUtil.createKeyset(
-                createEnabledKey(primaryKeyId), createDisabledKey(newPrimaryKeyId)));
+        KeysetHandle.newBuilder()
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(primaryKeyId)
+                    .makePrimary())
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(newPrimaryKeyId)
+                    .setStatus(KeyStatus.DISABLED))
+            .build();
     GeneralSecurityException e =
         assertThrows(
             GeneralSecurityException.class,
@@ -285,8 +323,14 @@ public class KeysetManagerTest {
     int primaryKeyId = 42;
     int otherKeyId = 43;
     KeysetHandle handle =
-        KeysetHandle.fromKeyset(
-            TestUtil.createKeyset(createEnabledKey(primaryKeyId), createEnabledKey(otherKeyId)));
+        KeysetHandle.newBuilder()
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(primaryKeyId)
+                    .makePrimary())
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM").withFixedId(otherKeyId))
+            .build();
     Keyset keyset =
         KeysetManager.withKeysetHandle(handle).disable(otherKeyId).getKeysetHandle().getKeyset();
 
@@ -302,8 +346,14 @@ public class KeysetManagerTest {
     int primaryKeyId = 42;
     int otherKeyId = 43;
     KeysetHandle handle =
-        KeysetHandle.fromKeyset(
-            TestUtil.createKeyset(createEnabledKey(primaryKeyId), createEnabledKey(otherKeyId)));
+        KeysetHandle.newBuilder()
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(primaryKeyId)
+                    .makePrimary())
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM").withFixedId(otherKeyId))
+            .build();
     GeneralSecurityException e =
         assertThrows(
             GeneralSecurityException.class,
@@ -336,7 +386,13 @@ public class KeysetManagerTest {
   @Test
   public void testDisable_keyNotFound_shouldThrowException() throws Exception {
     int keyId = 42;
-    KeysetHandle handle = KeysetHandle.fromKeyset(TestUtil.createKeyset(createDisabledKey(keyId)));
+    KeysetHandle handle =
+        KeysetHandle.newBuilder()
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(keyId)
+                    .makePrimary())
+            .build();
 
     GeneralSecurityException e =
         assertThrows(
@@ -350,8 +406,14 @@ public class KeysetManagerTest {
     int primaryKeyId = 42;
     int otherKeyId = 43;
     KeysetHandle handle =
-        KeysetHandle.fromKeyset(
-            TestUtil.createKeyset(createEnabledKey(primaryKeyId), createEnabledKey(otherKeyId)));
+        KeysetHandle.newBuilder()
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(primaryKeyId)
+                    .makePrimary())
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM").withFixedId(otherKeyId))
+            .build();
     Keyset keyset =
         KeysetManager.withKeysetHandle(handle).destroy(otherKeyId).getKeysetHandle().getKeyset();
 
@@ -368,8 +430,14 @@ public class KeysetManagerTest {
     int primaryKeyId = 42;
     int otherKeyId = 43;
     KeysetHandle handle =
-        KeysetHandle.fromKeyset(
-            TestUtil.createKeyset(createEnabledKey(primaryKeyId), createEnabledKey(otherKeyId)));
+        KeysetHandle.newBuilder()
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(primaryKeyId)
+                    .makePrimary())
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM").withFixedId(otherKeyId))
+            .build();
     GeneralSecurityException e =
         assertThrows(
             GeneralSecurityException.class,
@@ -417,8 +485,14 @@ public class KeysetManagerTest {
     int primaryKeyId = 42;
     int otherKeyId = 43;
     KeysetHandle handle =
-        KeysetHandle.fromKeyset(
-            TestUtil.createKeyset(createEnabledKey(primaryKeyId), createEnabledKey(otherKeyId)));
+        KeysetHandle.newBuilder()
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(primaryKeyId)
+                    .makePrimary())
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM").withFixedId(otherKeyId))
+            .build();
     Keyset keyset =
         KeysetManager.withKeysetHandle(handle).delete(otherKeyId).getKeysetHandle().getKeyset();
 
@@ -432,8 +506,14 @@ public class KeysetManagerTest {
     int primaryKeyId = 42;
     int otherKeyId = 43;
     KeysetHandle handle =
-        KeysetHandle.fromKeyset(
-            TestUtil.createKeyset(createEnabledKey(primaryKeyId), createEnabledKey(otherKeyId)));
+        KeysetHandle.newBuilder()
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(primaryKeyId)
+                    .makePrimary())
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM").withFixedId(otherKeyId))
+            .build();
     GeneralSecurityException e =
         assertThrows(
             GeneralSecurityException.class,
@@ -450,8 +530,14 @@ public class KeysetManagerTest {
     int keyId1 = 42;
     final int keyId2 = 43;
     KeysetHandle handle =
-        KeysetHandle.fromKeyset(
-            TestUtil.createKeyset(createEnabledKey(keyId1), createEnabledKey(keyId2)));
+        KeysetHandle.newBuilder()
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM")
+                    .withFixedId(keyId1)
+                    .makePrimary())
+            .addEntry(
+                KeysetHandle.generateEntryFromParametersName("AES128_GCM").withFixedId(keyId2))
+            .build();
 
     GeneralSecurityException e =
         assertThrows(
@@ -465,12 +551,12 @@ public class KeysetManagerTest {
     // Create a keyset that contains a single HmacKey.
     KeyTemplate template = KeyTemplates.get("HMAC_SHA256_128BITTAG");
     @SuppressWarnings("deprecation") // Need to test the deprecated function
-    Keyset keyset =
-        KeysetManager.withEmptyKeyset().rotate(template.getProto()).getKeysetHandle().getKeyset();
-
-    assertThat(keyset.getKeyCount()).isEqualTo(1);
-    assertThat(keyset.getPrimaryKeyId()).isEqualTo(keyset.getKey(0).getKeyId());
-    TestUtil.assertHmacKey(template, keyset.getKey(0));
+    KeysetHandle keyset =
+        KeysetManager.withEmptyKeyset().rotate(template.getProto()).getKeysetHandle();
+    assertThat(keyset.size()).isEqualTo(1);
+    assertThat(keyset.getAt(0).isPrimary()).isTrue();
+    assertThat(keyset.getAt(0).getKey().getParameters())
+        .isEqualTo(KeyTemplates.get("HMAC_SHA256_128BITTAG").toParameters());
   }
 
   @Test
@@ -492,49 +578,39 @@ public class KeysetManagerTest {
             .rotate(KeyTemplates.get("HMAC_SHA256_128BITTAG").getProto())
             .getKeysetHandle();
     @SuppressWarnings("deprecation") // Need to test the deprecated function
-    Keyset keyset =
+    KeysetHandle keyset =
         KeysetManager.withKeysetHandle(existing)
             .rotate(KeyTemplates.get("HMAC_SHA256_256BITTAG").getProto())
-            .getKeysetHandle()
-            .getKeyset();
-
-    assertThat(keyset.getKeyCount()).isEqualTo(2);
-    assertThat(keyset.getPrimaryKeyId()).isEqualTo(keyset.getKey(1).getKeyId());
-    TestUtil.assertHmacKey(KeyTemplates.get("HMAC_SHA256_128BITTAG"), keyset.getKey(0));
-    TestUtil.assertHmacKey(KeyTemplates.get("HMAC_SHA256_256BITTAG"), keyset.getKey(1));
+            .getKeysetHandle();
+    assertThat(keyset.size()).isEqualTo(2);
+    assertThat(keyset.getAt(1).isPrimary()).isTrue();
+    assertThat(keyset.getAt(0).getKey().getParameters())
+        .isEqualTo(KeyTemplates.get("HMAC_SHA256_128BITTAG").toParameters());
+    assertThat(keyset.getAt(1).getKey().getParameters())
+        .isEqualTo(KeyTemplates.get("HMAC_SHA256_256BITTAG").toParameters());
   }
 
   @Test
   public void testAdd_shouldAddNewKey() throws Exception {
     KeyTemplate kt = KeyTemplates.get("AES128_GCM");
-    Keyset keyset = KeysetManager.withEmptyKeyset().add(kt).getKeysetHandle().getKeyset();
+    KeysetHandle keyset = KeysetManager.withEmptyKeyset().add(kt).getKeysetHandle();
 
-    assertThat(keyset.getKeyCount()).isEqualTo(1);
+    assertThat(keyset.size()).isEqualTo(1);
     // No primary key because add doesn't automatically promote the new key to primary.
-    assertThat(keyset.getPrimaryKeyId()).isEqualTo(0);
-
-    Keyset.Key key = keyset.getKey(0);
-    assertThat(key.getStatus()).isEqualTo(KeyStatusType.ENABLED);
-    assertThat(key.getOutputPrefixType()).isEqualTo(OutputPrefixType.TINK);
-    assertThat(key.hasKeyData()).isTrue();
-    assertThat(key.getKeyData().getTypeUrl()).isEqualTo(kt.getTypeUrl());
-
-    AesGcmKeyFormat aesGcmKeyFormat =
-        AesGcmKeyFormat.parseFrom(kt.getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    AesGcmKey aesGcmKey =
-        AesGcmKey.parseFrom(key.getKeyData().getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    assertThat(aesGcmKey.getKeyValue().size()).isEqualTo(aesGcmKeyFormat.getKeySize());
+    assertThat(keyset.getAt(0).isPrimary()).isFalse();
+    assertThat(keyset.getAt(0).getKey().getParameters())
+        .isEqualTo(KeyTemplates.get("AES128_GCM").toParameters());
   }
 
   @Test
   public void testAdd_shouldAddNewKey_proto() throws Exception {
     // Create a keyset that contains a single HmacKey.
     KeyTemplate template = KeyTemplates.get("HMAC_SHA256_128BITTAG");
-    Keyset keyset = KeysetManager.withEmptyKeyset().add(template).getKeysetHandle().getKeyset();
+    KeysetHandle keyset = KeysetManager.withEmptyKeyset().add(template).getKeysetHandle();
 
-    assertThat(keyset.getKeyCount()).isEqualTo(1);
-    assertThat(keyset.getPrimaryKeyId()).isEqualTo(0);
-    TestUtil.assertHmacKey(template, keyset.getKey(0));
+    assertThat(keyset.size()).isEqualTo(1);
+    assertThat(keyset.getAt(0).getKey().getParameters())
+        .isEqualTo(KeyTemplates.get("HMAC_SHA256_128BITTAG").toParameters());
   }
 
   @Test
@@ -561,10 +637,12 @@ public class KeysetManagerTest {
 
   @Test
   public void testAdd_protoKeyTemplateWithoutPrefix_shouldThrowException() throws Exception {
+    com.google.crypto.tink.proto.KeyTemplate template =
+        com.google.crypto.tink.proto.KeyTemplate.parseFrom(
+            TinkProtoParametersFormat.serialize(PredefinedMacParameters.HMAC_SHA256_128BITTAG),
+            ExtensionRegistryLite.getEmptyRegistry());
     com.google.crypto.tink.proto.KeyTemplate templateWithoutPrefix =
-        MacKeyTemplates.createHmacKeyTemplate(32, 16, HashType.SHA256).toBuilder()
-            .setOutputPrefixType(OutputPrefixType.UNKNOWN_PREFIX)
-            .build();
+        template.toBuilder().setOutputPrefixType(OutputPrefixType.UNKNOWN_PREFIX).build();
     assertThrows(
         GeneralSecurityException.class,
         () -> KeysetManager.withEmptyKeyset().add(templateWithoutPrefix));
@@ -575,54 +653,41 @@ public class KeysetManagerTest {
     KeyTemplate kt1 = AesGcmKeyManager.aes128GcmTemplate();
     KeysetHandle existing = KeysetManager.withEmptyKeyset().add(kt1).getKeysetHandle();
     KeyTemplate kt2 = AesGcmKeyManager.aes256GcmTemplate();
-    Keyset keyset = KeysetManager.withKeysetHandle(existing).add(kt2).getKeysetHandle().getKeyset();
+    KeysetHandle keyset = KeysetManager.withKeysetHandle(existing).add(kt2).getKeysetHandle();
 
-    assertThat(keyset.getKeyCount()).isEqualTo(2);
+    assertThat(keyset.size()).isEqualTo(2);
     // None of the keys are primary.
-    assertThat(keyset.getPrimaryKeyId()).isEqualTo(0);
-
-    Keyset.Key key1 = keyset.getKey(0);
-    assertThat(key1.getStatus()).isEqualTo(KeyStatusType.ENABLED);
-    assertThat(key1.getOutputPrefixType()).isEqualTo(OutputPrefixType.TINK);
-    assertThat(key1.hasKeyData()).isTrue();
-    assertThat(key1.getKeyData().getTypeUrl()).isEqualTo(kt1.getTypeUrl());
-
-    AesGcmKeyFormat aesGcmKeyFormat1 =
-        AesGcmKeyFormat.parseFrom(kt1.getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    AesGcmKey aesGcmKey1 =
-        AesGcmKey.parseFrom(key1.getKeyData().getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    assertThat(aesGcmKey1.getKeyValue().size()).isEqualTo(aesGcmKeyFormat1.getKeySize());
-
-    Keyset.Key key2 = keyset.getKey(1);
-    assertThat(key2.getStatus()).isEqualTo(KeyStatusType.ENABLED);
-    assertThat(key2.getOutputPrefixType()).isEqualTo(OutputPrefixType.TINK);
-    assertThat(key2.hasKeyData()).isTrue();
-    assertThat(key2.getKeyData().getTypeUrl()).isEqualTo(kt2.getTypeUrl());
-
-    AesGcmKeyFormat aesGcmKeyFormat2 =
-        AesGcmKeyFormat.parseFrom(kt2.getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    AesGcmKey aesGcmKey2 =
-        AesGcmKey.parseFrom(key2.getKeyData().getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    assertThat(aesGcmKey2.getKeyValue().size()).isEqualTo(aesGcmKeyFormat2.getKeySize());
+    assertThat(keyset.getAt(0).isPrimary()).isFalse();
+    assertThat(keyset.getAt(1).isPrimary()).isFalse();
+    assertThat(keyset.getAt(0).getStatus()).isEqualTo(KeyStatus.ENABLED);
+    assertThat(keyset.getAt(1).getStatus()).isEqualTo(KeyStatus.ENABLED);
+    assertThat(keyset.getAt(0).getKey().getParameters())
+        .isEqualTo(KeyTemplates.get("AES128_GCM").toParameters());
+    assertThat(keyset.getAt(1).getKey().getParameters())
+        .isEqualTo(KeyTemplates.get("AES256_GCM").toParameters());
   }
 
   @Test
   public void testAdd_existingKeySet_shouldAddNewKey_proto() throws Exception {
-    KeysetHandle existing =
-        KeysetManager.withEmptyKeyset()
-            .rotate(MacKeyTemplates.HMAC_SHA256_128BITTAG)
-            .getKeysetHandle();
+    com.google.crypto.tink.proto.KeyTemplate template1 =
+        com.google.crypto.tink.proto.KeyTemplate.parseFrom(
+            TinkProtoParametersFormat.serialize(PredefinedMacParameters.HMAC_SHA256_128BITTAG),
+            ExtensionRegistryLite.getEmptyRegistry());
+    com.google.crypto.tink.proto.KeyTemplate template2 =
+        com.google.crypto.tink.proto.KeyTemplate.parseFrom(
+            TinkProtoParametersFormat.serialize(PredefinedMacParameters.HMAC_SHA256_256BITTAG),
+            ExtensionRegistryLite.getEmptyRegistry());
+    KeysetHandle existing = KeysetManager.withEmptyKeyset().rotate(template1).getKeysetHandle();
     int existingPrimaryKeyId = existing.getKeyset().getPrimaryKeyId();
-    Keyset keyset =
-        KeysetManager.withKeysetHandle(existing)
-            .add(MacKeyTemplates.HMAC_SHA256_256BITTAG)
-            .getKeysetHandle()
-            .getKeyset();
+    KeysetHandle keyset = KeysetManager.withKeysetHandle(existing).add(template2).getKeysetHandle();
 
-    assertThat(keyset.getKeyCount()).isEqualTo(2);
-    assertThat(keyset.getPrimaryKeyId()).isEqualTo(existingPrimaryKeyId);
-    TestUtil.assertHmacKey(KeyTemplates.get("HMAC_SHA256_128BITTAG"), keyset.getKey(0));
-    TestUtil.assertHmacKey(KeyTemplates.get("HMAC_SHA256_256BITTAG"), keyset.getKey(1));
+    assertThat(keyset.size()).isEqualTo(2);
+    assertThat(keyset.getAt(0).isPrimary()).isTrue();
+    assertThat(keyset.getAt(0).getId()).isEqualTo(existingPrimaryKeyId);
+    assertThat(keyset.getAt(0).getKey().getParameters())
+        .isEqualTo(KeyTemplates.get("HMAC_SHA256_128BITTAG").toParameters());
+    assertThat(keyset.getAt(1).getKey().getParameters())
+        .isEqualTo(KeyTemplates.get("HMAC_SHA256_256BITTAG").toParameters());
   }
 
   @Test
@@ -634,21 +699,13 @@ public class KeysetManagerTest {
     keysetManager = keysetManager.add(keyHandle);
 
     KeysetHandle keysetHandle = keysetManager.getKeysetHandle();
-    Keyset keyset = keysetHandle.getKeyset();
-    expect.that(keyset.getKeyCount()).isEqualTo(1);
-    Keyset.Key key = keyset.getKey(0);
-    expect.that(key.getKeyId()).isEqualTo(keyHandle.getId());
-    expect.that(key.getStatus()).isEqualTo(KeyStatusType.ENABLED);
-    expect.that(key.getOutputPrefixType()).isEqualTo(OutputPrefixType.TINK);
-    expect.that(key.hasKeyData()).isTrue();
-    expect.that(key.getKeyData().getTypeUrl()).isEqualTo(keyTemplate.getTypeUrl());
-    AesGcmKeyFormat aesGcmKeyFormat =
-        AesGcmKeyFormat.parseFrom(keyTemplate.getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    AesGcmKey aesGcmKey =
-        AesGcmKey.parseFrom(key.getKeyData().getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    expect.that(aesGcmKey.getKeyValue().size()).isEqualTo(aesGcmKeyFormat.getKeySize());
-    // No primary key because add doesn't automatically promote the new key to primary.
-    assertThrows(GeneralSecurityException.class, () -> keysetHandle.getPrimitive(Aead.class));
+    expect.that(keysetHandle.size()).isEqualTo(1);
+    expect.that(keysetHandle.getAt(0).getId()).isEqualTo(keyHandle.getId());
+    expect.that(keysetHandle.getAt(0).getStatus()).isEqualTo(KeyStatus.ENABLED);
+    expect.that(keysetHandle.getAt(0).isPrimary()).isFalse();
+    expect
+        .that(keysetHandle.getAt(0).getKey().getParameters())
+        .isEqualTo(keyTemplate.toParameters());
   }
 
   @Test
@@ -662,33 +719,16 @@ public class KeysetManagerTest {
 
     keysetManager = keysetManager.add(keyHandle2);
 
-    Keyset keyset = keysetManager.getKeysetHandle().getKeyset();
-    expect.that(keyset.getKeyCount()).isEqualTo(2);
-    expect.that(keyset.getPrimaryKeyId()).isEqualTo(keyHandle1.getId());
-    Keyset.Key key1 = keyset.getKey(0);
-    expect.that(key1.getKeyId()).isEqualTo(keyHandle1.getId());
-    expect.that(key1.getStatus()).isEqualTo(KeyStatusType.ENABLED);
-    expect.that(key1.getOutputPrefixType()).isEqualTo(OutputPrefixType.RAW);
-    expect.that(key1.hasKeyData()).isTrue();
-    expect.that(key1.getKeyData().getTypeUrl()).isEqualTo(keyTemplate1.getTypeUrl());
-    AesGcmKeyFormat aesGcmKeyFormat1 =
-        AesGcmKeyFormat.parseFrom(
-            keyTemplate1.getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    AesGcmKey aesGcmKey1 =
-        AesGcmKey.parseFrom(key1.getKeyData().getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    expect.that(aesGcmKey1.getKeyValue().size()).isEqualTo(aesGcmKeyFormat1.getKeySize());
-    Keyset.Key key2 = keyset.getKey(1);
-    expect.that(key2.getKeyId()).isEqualTo(keyHandle2.getId());
-    expect.that(key2.getStatus()).isEqualTo(KeyStatusType.ENABLED);
-    expect.that(key2.getOutputPrefixType()).isEqualTo(OutputPrefixType.RAW);
-    expect.that(key2.hasKeyData()).isTrue();
-    expect.that(key2.getKeyData().getTypeUrl()).isEqualTo(keyTemplate2.getTypeUrl());
-    AesGcmKeyFormat aesGcmKeyFormat2 =
-        AesGcmKeyFormat.parseFrom(
-            keyTemplate2.getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    AesGcmKey aesGcmKey2 =
-        AesGcmKey.parseFrom(key2.getKeyData().getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    expect.that(aesGcmKey2.getKeyValue().size()).isEqualTo(aesGcmKeyFormat2.getKeySize());
+    KeysetHandle result = keysetManager.getKeysetHandle();
+    expect.that(result.size()).isEqualTo(2);
+    expect.that(result.getAt(0).isPrimary()).isTrue();
+    expect.that(result.getAt(0).getKey().getParameters()).isEqualTo(keyTemplate1.toParameters());
+    expect.that(result.getAt(0).getId()).isEqualTo(keyHandle1.getId());
+    expect.that(result.getAt(0).getStatus()).isEqualTo(KeyStatus.ENABLED);
+    expect.that(result.getAt(1).isPrimary()).isFalse();
+    expect.that(result.getAt(1).getKey().getParameters()).isEqualTo(keyTemplate2.toParameters());
+    expect.that(result.getAt(1).getId()).isEqualTo(keyHandle2.getId());
+    expect.that(result.getAt(1).getStatus()).isEqualTo(KeyStatus.ENABLED);
   }
 
   @Test
@@ -763,20 +803,12 @@ public class KeysetManagerTest {
     keysetManager = keysetManager.add(keyHandle, keyAccess);
 
     KeysetHandle keysetHandle = keysetManager.getKeysetHandle();
-    Keyset keyset = keysetHandle.getKeyset();
-    expect.that(keyset.getKeyCount()).isEqualTo(1);
-    Keyset.Key key = keyset.getKey(0);
-    expect.that(key.getStatus()).isEqualTo(KeyStatusType.ENABLED);
-    expect.that(key.getOutputPrefixType()).isEqualTo(OutputPrefixType.TINK);
-    expect.that(key.hasKeyData()).isTrue();
-    expect.that(key.getKeyData().getTypeUrl()).isEqualTo(keyTemplate.getTypeUrl());
-    AesGcmKeyFormat aesGcmKeyFormat =
-        AesGcmKeyFormat.parseFrom(keyTemplate.getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    AesGcmKey aesGcmKey =
-        AesGcmKey.parseFrom(key.getKeyData().getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    expect.that(aesGcmKey.getKeyValue().size()).isEqualTo(aesGcmKeyFormat.getKeySize());
-    // No primary key because add doesn't automatically promote the new key to primary.
-    assertThrows(GeneralSecurityException.class, () -> keysetHandle.getPrimitive(Aead.class));
+    expect.that(keysetHandle.size()).isEqualTo(1);
+    expect.that(keysetHandle.getAt(0).getStatus()).isEqualTo(KeyStatus.ENABLED);
+    expect.that(keysetHandle.getAt(0).isPrimary()).isFalse();
+    expect
+        .that(keysetHandle.getAt(0).getKey().getParameters())
+        .isEqualTo(keyTemplate.toParameters());
   }
 
   @Test
@@ -793,32 +825,17 @@ public class KeysetManagerTest {
     keysetManager = keysetManager.add(keyHandle, keyAccess);
 
     KeysetHandle keysetHandle = keysetManager.getKeysetHandle();
-    Keyset keyset = keysetHandle.getKeyset();
-    expect.that(keyset.getKeyCount()).isEqualTo(2);
-    Keyset.Key key1 = keyset.getKey(0);
-    expect.that(key1.getStatus()).isEqualTo(KeyStatusType.ENABLED);
-    expect.that(key1.getOutputPrefixType()).isEqualTo(OutputPrefixType.TINK);
-    expect.that(key1.hasKeyData()).isTrue();
-    expect.that(key1.getKeyData().getTypeUrl()).isEqualTo(keyTemplate1.getTypeUrl());
-    AesGcmKeyFormat aesGcmKeyFormat1 =
-        AesGcmKeyFormat.parseFrom(
-            keyTemplate1.getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    AesGcmKey aesGcmKey1 =
-        AesGcmKey.parseFrom(key1.getKeyData().getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    expect.that(aesGcmKey1.getKeyValue().size()).isEqualTo(aesGcmKeyFormat1.getKeySize());
-    Keyset.Key key2 = keyset.getKey(1);
-    expect.that(key2.getStatus()).isEqualTo(KeyStatusType.ENABLED);
-    expect.that(key2.getOutputPrefixType()).isEqualTo(OutputPrefixType.TINK);
-    expect.that(key2.hasKeyData()).isTrue();
-    expect.that(key2.getKeyData().getTypeUrl()).isEqualTo(keyTemplate2.getTypeUrl());
-    AesGcmKeyFormat aesGcmKeyFormat2 =
-        AesGcmKeyFormat.parseFrom(
-            keyTemplate2.getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    AesGcmKey aesGcmKey2 =
-        AesGcmKey.parseFrom(key2.getKeyData().getValue(), ExtensionRegistryLite.getEmptyRegistry());
-    expect.that(aesGcmKey2.getKeyValue().size()).isEqualTo(aesGcmKeyFormat2.getKeySize());
-    // No primary key because add doesn't automatically promote the new key to primary.
-    assertThrows(GeneralSecurityException.class, () -> keysetHandle.getPrimitive(Aead.class));
+    assertThat(keysetHandle.size()).isEqualTo(2);
+    expect.that(keysetHandle.getAt(0).getStatus()).isEqualTo(KeyStatus.ENABLED);
+    expect.that(keysetHandle.getAt(0).isPrimary()).isFalse();
+    expect
+        .that(keysetHandle.getAt(0).getKey().getParameters())
+        .isEqualTo(keyTemplate1.toParameters());
+    expect.that(keysetHandle.getAt(1).getStatus()).isEqualTo(KeyStatus.ENABLED);
+    expect.that(keysetHandle.getAt(1).isPrimary()).isFalse();
+    expect
+        .that(keysetHandle.getAt(1).getKey().getParameters())
+        .isEqualTo(keyTemplate2.toParameters());
   }
 
   @Test
@@ -845,19 +862,31 @@ public class KeysetManagerTest {
 
   @Test
   public void testAddNewKey_onePrimary() throws Exception {
+    com.google.crypto.tink.proto.KeyTemplate template =
+        com.google.crypto.tink.proto.KeyTemplate.parseFrom(
+            TinkProtoParametersFormat.serialize(PredefinedMacParameters.HMAC_SHA256_128BITTAG),
+            ExtensionRegistryLite.getEmptyRegistry());
+
     KeysetManager keysetManager = KeysetManager.withEmptyKeyset();
-    int keyId = keysetManager.addNewKey(MacKeyTemplates.HMAC_SHA256_128BITTAG, true);
-    Keyset keyset = keysetManager.getKeysetHandle().getKeyset();
-    assertThat(keyset.getKeyCount()).isEqualTo(1);
-    assertThat(keyset.getPrimaryKeyId()).isEqualTo(keyId);
-    TestUtil.assertHmacKey(KeyTemplates.get("HMAC_SHA256_128BITTAG"), keyset.getKey(0));
+    int keyId = keysetManager.addNewKey(template, true);
+    KeysetHandle keyset = keysetManager.getKeysetHandle();
+    assertThat(keyset.size()).isEqualTo(1);
+    assertThat(keyset.getAt(0).isPrimary()).isTrue();
+    assertThat(keyset.getAt(0).getId()).isEqualTo(keyId);
+    assertThat(keyset.getAt(0).getKey().getParameters())
+        .isEqualTo(KeyTemplates.get("HMAC_SHA256_128BITTAG").toParameters());
   }
 
   @Test
   public void testAddNewKey_onePrimaryAnotherPrimary() throws Exception {
+    com.google.crypto.tink.proto.KeyTemplate template =
+        com.google.crypto.tink.proto.KeyTemplate.parseFrom(
+            TinkProtoParametersFormat.serialize(PredefinedMacParameters.HMAC_SHA256_128BITTAG),
+            ExtensionRegistryLite.getEmptyRegistry());
+
     KeysetManager keysetManager = KeysetManager.withEmptyKeyset();
-    keysetManager.addNewKey(MacKeyTemplates.HMAC_SHA256_128BITTAG, true);
-    int primaryKeyId = keysetManager.addNewKey(MacKeyTemplates.HMAC_SHA256_128BITTAG, true);
+    keysetManager.addNewKey(template, true);
+    int primaryKeyId = keysetManager.addNewKey(template, true);
     Keyset keyset = keysetManager.getKeysetHandle().getKeyset();
     assertThat(keyset.getKeyCount()).isEqualTo(2);
     assertThat(keyset.getPrimaryKeyId()).isEqualTo(primaryKeyId);
@@ -865,9 +894,14 @@ public class KeysetManagerTest {
 
   @Test
   public void testAddNewKey_primaryThenNonPrimary() throws Exception {
+    com.google.crypto.tink.proto.KeyTemplate template =
+        com.google.crypto.tink.proto.KeyTemplate.parseFrom(
+            TinkProtoParametersFormat.serialize(PredefinedMacParameters.HMAC_SHA256_128BITTAG),
+            ExtensionRegistryLite.getEmptyRegistry());
+
     KeysetManager keysetManager = KeysetManager.withEmptyKeyset();
-    int primaryKeyId = keysetManager.addNewKey(MacKeyTemplates.HMAC_SHA256_128BITTAG, true);
-    keysetManager.addNewKey(MacKeyTemplates.HMAC_SHA256_128BITTAG, false);
+    int primaryKeyId = keysetManager.addNewKey(template, true);
+    keysetManager.addNewKey(template, false);
     Keyset keyset = keysetManager.getKeysetHandle().getKeyset();
     assertThat(keyset.getKeyCount()).isEqualTo(2);
     assertThat(keyset.getPrimaryKeyId()).isEqualTo(primaryKeyId);
@@ -875,9 +909,14 @@ public class KeysetManagerTest {
 
   @Test
   public void testAddNewKey_addThenDestroy() throws Exception {
+    com.google.crypto.tink.proto.KeyTemplate template =
+        com.google.crypto.tink.proto.KeyTemplate.parseFrom(
+            TinkProtoParametersFormat.serialize(PredefinedMacParameters.HMAC_SHA256_128BITTAG),
+            ExtensionRegistryLite.getEmptyRegistry());
+
     KeysetManager keysetManager = KeysetManager.withEmptyKeyset();
-    keysetManager.addNewKey(MacKeyTemplates.HMAC_SHA256_128BITTAG, true);
-    int secondaryKeyId = keysetManager.addNewKey(MacKeyTemplates.HMAC_SHA256_128BITTAG, false);
+    keysetManager.addNewKey(template, true);
+    int secondaryKeyId = keysetManager.addNewKey(template, false);
     keysetManager.destroy(secondaryKeyId);
     Keyset keyset = keysetManager.getKeysetHandle().getKeyset();
     assertThat(keyset.getKeyCount()).isEqualTo(2);
@@ -887,9 +926,12 @@ public class KeysetManagerTest {
 
   private void manipulateKeyset(KeysetManager manager) {
     try {
-      com.google.crypto.tink.proto.KeyTemplate template = MacKeyTemplates.HMAC_SHA256_128BITTAG;
+      com.google.crypto.tink.proto.KeyTemplate template =
+          com.google.crypto.tink.proto.KeyTemplate.parseFrom(
+              TinkProtoParametersFormat.serialize(PredefinedMacParameters.HMAC_SHA256_128BITTAG),
+              ExtensionRegistryLite.getEmptyRegistry());
       manager.rotate(template).add(template).rotate(template).add(template);
-    } catch (GeneralSecurityException e) {
+    } catch (GeneralSecurityException | IOException e) {
       fail("should not throw exception: " + e);
     }
   }

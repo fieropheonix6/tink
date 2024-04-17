@@ -11,19 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 // Package monitoringutil implements utility functions for monitoring.
 package monitoringutil
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/google/tink/go/core/primitiveset"
 	"github.com/google/tink/go/monitoring"
 	tpb "github.com/google/tink/go/proto/tink_go_proto"
 )
+
+const keytypeURLPrefix = "type.googleapis.com/google.crypto."
+
+// DoNothingLogger is a Logger that does nothing when invoked.
+type DoNothingLogger struct{}
+
+var _ monitoring.Logger = (*DoNothingLogger)(nil)
+
+// Log drops a log call.
+func (l *DoNothingLogger) Log(uint32, int) {}
+
+// LogFailure drops a failure call.
+func (l *DoNothingLogger) LogFailure() {}
 
 func keyStatusFromProto(status tpb.KeyStatusType) (monitoring.KeyStatus, error) {
 	var keyStatus monitoring.KeyStatus = 55
@@ -39,6 +51,10 @@ func keyStatusFromProto(status tpb.KeyStatusType) (monitoring.KeyStatus, error) 
 	}
 	return keyStatus, nil
 
+}
+
+func parseKeyTypeURL(ktu string) string {
+	return strings.TrimPrefix(ktu, keytypeURLPrefix)
 }
 
 // KeysetInfoFromPrimitiveSet creates a `KeysetInfo` from a `PrimitiveSet`.
@@ -61,9 +77,10 @@ func KeysetInfoFromPrimitiveSet(ps *primitiveset.PrimitiveSet) (*monitoring.Keys
 				return nil, err
 			}
 			e := &monitoring.Entry{
-				KeyID:          pe.KeyID,
-				Status:         keyStatus,
-				FormatAsString: pe.TypeURL, // TODO(b/225071831): populate FormatAsString with key format when available.
+				KeyID:     pe.KeyID,
+				Status:    keyStatus,
+				KeyType:   parseKeyTypeURL(pe.TypeURL),
+				KeyPrefix: pe.PrefixType.String(),
 			}
 			entries = append(entries, e)
 		}

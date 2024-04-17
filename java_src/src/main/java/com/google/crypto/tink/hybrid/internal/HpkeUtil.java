@@ -16,19 +16,18 @@
 
 package com.google.crypto.tink.hybrid.internal;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+import static com.google.crypto.tink.internal.Util.UTF_8;
 
-import com.google.crypto.tink.proto.HpkeAead;
-import com.google.crypto.tink.proto.HpkeKdf;
-import com.google.crypto.tink.proto.HpkeKem;
-import com.google.crypto.tink.proto.HpkeParams;
+import com.google.crypto.tink.hybrid.HpkeParameters;
 import com.google.crypto.tink.subtle.Bytes;
+import com.google.crypto.tink.subtle.EllipticCurves;
 import java.security.GeneralSecurityException;
 
 /** Collection of helper functions for HPKE. */
 public final class HpkeUtil {
   // HPKE mode identifiers.
   public static final byte[] BASE_MODE = intToByteArray(1, 0x0);
+  public static final byte[] AUTH_MODE = intToByteArray(1, 0x2);
 
   // HPKE KEM algorithm identifiers.
   public static final byte[] X25519_HKDF_SHA256_KEM_ID = intToByteArray(2, 0x20);
@@ -65,6 +64,14 @@ public final class HpkeUtil {
    * @param value that should be represented as a byte array
    */
   public static byte[] intToByteArray(int capacity, int value) {
+    if ((capacity > 4) || (capacity < 0)) {
+      throw new IllegalArgumentException("capacity must be between 0 and 4");
+    }
+    // Check that 0 <= value < 256^capacity.
+    // For capacity == 4, all positive values are valid.
+    if (value < 0 || (capacity < 4 && (value >= 1 << (8 * capacity)))) {
+      throw new IllegalArgumentException("value too large");
+    }
     final byte[] result = new byte[capacity];
     for (int i = 0; i < capacity; i++) {
       result[i] = (byte) ((value >> (8 * (capacity - i - 1))) & 0xFF);
@@ -116,17 +123,76 @@ public final class HpkeUtil {
     return Bytes.concat(intToByteArray(2, length), HPKE_V1, suiteId, label.getBytes(UTF_8), info);
   }
 
-  static void validateParams(HpkeParams params) throws GeneralSecurityException {
-    if ((params.getKem() == HpkeKem.KEM_UNKNOWN) || (params.getKem() == HpkeKem.UNRECOGNIZED)) {
-      throw new GeneralSecurityException("Invalid KEM param: " + params.getKem().name());
+  static EllipticCurves.CurveType nistHpkeKemToCurve(HpkeParameters.KemId kemId)
+      throws GeneralSecurityException {
+    if (kemId == HpkeParameters.KemId.DHKEM_P256_HKDF_SHA256) {
+      return EllipticCurves.CurveType.NIST_P256;
     }
-    if ((params.getKdf() == HpkeKdf.KDF_UNKNOWN) || (params.getKdf() == HpkeKdf.UNRECOGNIZED)) {
-      throw new GeneralSecurityException("Invalid KDF param: " + params.getKdf().name());
+    if (kemId == HpkeParameters.KemId.DHKEM_P384_HKDF_SHA384) {
+      return EllipticCurves.CurveType.NIST_P384;
     }
-    if ((params.getAead() == HpkeAead.AEAD_UNKNOWN)
-        || (params.getAead() == HpkeAead.UNRECOGNIZED)) {
-      throw new GeneralSecurityException("Invalid AEAD param: " + params.getAead().name());
+    if (kemId == HpkeParameters.KemId.DHKEM_P521_HKDF_SHA512) {
+      return EllipticCurves.CurveType.NIST_P521;
     }
+    throw new GeneralSecurityException("Unrecognized NIST HPKE KEM identifier");
+  }
+
+  /** Lengths from 'Npk' column in https://www.rfc-editor.org/rfc/rfc9180.html#table-2. */
+  public static int getEncodedPublicKeyLength(HpkeParameters.KemId kemId)
+      throws GeneralSecurityException {
+    if (kemId == HpkeParameters.KemId.DHKEM_X25519_HKDF_SHA256) {
+      return 32;
+    }
+    if (kemId == HpkeParameters.KemId.DHKEM_P256_HKDF_SHA256) {
+      return 65;
+    }
+    if (kemId == HpkeParameters.KemId.DHKEM_P384_HKDF_SHA384) {
+      return 97;
+    }
+    if (kemId == HpkeParameters.KemId.DHKEM_P521_HKDF_SHA512) {
+      return 133;
+    }
+    throw new GeneralSecurityException("Unrecognized HPKE KEM identifier");
+  }
+
+  /**
+   * Returns the encapsulated key length (in bytes) for the specified {@code kemId}. This value
+   * corresponds to the 'Nenc' column in the following table.
+   *
+   * <p>https://www.rfc-editor.org/rfc/rfc9180.html#name-key-encapsulation-mechanism.
+   */
+  public static int encodingSizeInBytes(HpkeParameters.KemId kemId) {
+    if (kemId == HpkeParameters.KemId.DHKEM_X25519_HKDF_SHA256) {
+      return 32;
+    }
+    if (kemId == HpkeParameters.KemId.DHKEM_P256_HKDF_SHA256) {
+      return 65;
+    }
+    if (kemId == HpkeParameters.KemId.DHKEM_P384_HKDF_SHA384) {
+      return 97;
+    }
+    if (kemId == HpkeParameters.KemId.DHKEM_P521_HKDF_SHA512) {
+      return 133;
+    }
+    throw new IllegalArgumentException("Unable to determine KEM-encoding length for " + kemId);
+  }
+
+  /** Lengths from 'Nsk' column in https://www.rfc-editor.org/rfc/rfc9180.html#table-2. */
+  public static int getEncodedPrivateKeyLength(HpkeParameters.KemId kemId)
+      throws GeneralSecurityException {
+    if (kemId == HpkeParameters.KemId.DHKEM_X25519_HKDF_SHA256) {
+      return 32;
+    }
+    if (kemId == HpkeParameters.KemId.DHKEM_P256_HKDF_SHA256) {
+      return 32;
+    }
+    if (kemId == HpkeParameters.KemId.DHKEM_P384_HKDF_SHA384) {
+      return 48;
+    }
+    if (kemId == HpkeParameters.KemId.DHKEM_P521_HKDF_SHA512) {
+      return 66;
+    }
+    throw new GeneralSecurityException("Unrecognized HPKE KEM identifier");
   }
 
   private HpkeUtil() {}

@@ -20,7 +20,9 @@
 #include <string>
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
+#include "absl/strings/string_view.h"
 #include "tink/crypto_format.h"
 #include "tink/hybrid_encrypt.h"
 #include "tink/internal/monitoring_util.h"
@@ -67,7 +69,7 @@ class HybridEncryptSetWrapper : public HybridEncrypt {
       absl::string_view plaintext,
       absl::string_view context_info) const override;
 
-  ~HybridEncryptSetWrapper() override {}
+  ~HybridEncryptSetWrapper() override = default;
 
  private:
   std::unique_ptr<PrimitiveSet<HybridEncrypt>> hybrid_encrypt_set_;

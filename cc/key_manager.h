@@ -17,10 +17,13 @@
 #ifndef TINK_KEY_MANAGER_H_
 #define TINK_KEY_MANAGER_H_
 
+#include <cstdint>
+#include <memory>
 #include <string>
 
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "tink/util/errors.h"
 #include "tink/util/protobuf_helper.h"
 #include "tink/util/status.h"
@@ -56,7 +59,7 @@ class KeyFactory {
       std::unique_ptr<google::crypto::tink::KeyData>>
   NewKeyData(absl::string_view serialized_key_format) const = 0;
 
-  virtual ~KeyFactory() {}
+  virtual ~KeyFactory() = default;
 };
 
 class PrivateKeyFactory : public virtual KeyFactory {
@@ -66,7 +69,7 @@ class PrivateKeyFactory : public virtual KeyFactory {
       std::unique_ptr<google::crypto::tink::KeyData>>
   GetPublicKeyData(absl::string_view serialized_private_key) const = 0;
 
-  virtual ~PrivateKeyFactory() {}
+  ~PrivateKeyFactory() override = default;
 };
 
 /**
@@ -94,7 +97,7 @@ class KeyManagerBase {
     return (key_type == get_key_type());
   }
 
-  virtual ~KeyManagerBase() {}
+  virtual ~KeyManagerBase() = default;
 };
 
 template <class P>

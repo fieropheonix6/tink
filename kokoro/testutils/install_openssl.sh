@@ -30,15 +30,19 @@
 
 readonly DEFAULT_OPENSSL_VERSION="1.1.1l"
 readonly DEFAULT_OPENSSL_SHA256="0b7a3e5e59c34827fe0c3a74b7ec8baef302b98fa80088d7f9153aa16fa76bd1"
+readonly PLATFORM="$(uname | tr '[:upper:]' '[:lower:]')"
 
 install_openssl() {
   local openssl_version="${1:-${DEFAULT_OPENSSL_VERSION}}"
   local openssl_sha256="${2:-${DEFAULT_OPENSSL_SHA256}}"
+
   local openssl_name="openssl-${openssl_version}"
   local openssl_archive="${openssl_name}.tar.gz"
   local openssl_url="https://www.openssl.org/source/${openssl_archive}"
 
-  local openssl_tmpdir="$(mktemp -dt tink-openssl.XXXXXX)"
+  local openssl_tmpdir="$(mktemp -dt tink-openssl-${openssl_version}.XXXXXX)"
+  echo "Building and installing OpensSSL ${openssl_version} to \
+${openssl_tmpdir}..."
   (
     cd "${openssl_tmpdir}"
     curl -OLsS "${openssl_url}"
@@ -47,14 +51,19 @@ install_openssl() {
     tar xzf "${openssl_archive}"
     cd "${openssl_name}"
     ./config --prefix="${openssl_tmpdir}" --openssldir="${openssl_tmpdir}"
-    make
-    make install
+    if [[ "${PLATFORM}" == "darwin" ]]; then
+      make -j "$(sysctl -n hw.ncpu)" > /dev/null
+    else
+      make -j "$(nproc)" > /dev/null
+    fi
+    make install_sw > /dev/null
   )
+  echo "Done"
   export OPENSSL_ROOT_DIR="${openssl_tmpdir}"
   export PATH="${openssl_tmpdir}/bin:${PATH}"
 }
 
-if [[ -n "${KOKORO_ROOT:-}" ]]; then
+if [[ -n "${KOKORO_ARTIFACTS_DIR:-}" ]]; then
   # If specifying the version, users must also specify the digest.
   if (( "$#" == 1 )); then
     echo \

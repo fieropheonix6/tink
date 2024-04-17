@@ -9,8 +9,11 @@ java_library(
         ":bytes",
         ":subtle_util_cluster",
         ":validators",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util",
         "//src/main/java/com/google/crypto/tink/mac/internal:aes_util",
+        "//src/main/java/com/google/crypto/tink/prf:aes_cmac_prf_key",
         "//src/main/java/com/google/crypto/tink/prf:prf_set",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
@@ -28,7 +31,12 @@ java_library(
         ":stream_segment_encrypter",
         ":subtle_util_cluster",
         ":validators",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
+        "//src/main/java/com/google/crypto/tink:streaming_aead",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util",
+        "//src/main/java/com/google/crypto/tink/streamingaead:aes_ctr_hmac_streaming_key",
+        "//src/main/java/com/google/crypto/tink/streamingaead:aes_ctr_hmac_streaming_parameters",
     ],
 )
 
@@ -36,11 +44,16 @@ java_library(
     name = "cha_cha20_poly1305",
     srcs = ["ChaCha20Poly1305.java"],
     deps = [
+        ":bytes",
         ":cha_cha20",
         ":random",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
         "//src/main/java/com/google/crypto/tink:aead",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
+        "//src/main/java/com/google/crypto/tink/aead:cha_cha20_poly1305_key",
         "//src/main/java/com/google/crypto/tink/aead/internal:insecure_nonce_cha_cha20_poly1305",
         "//src/main/java/com/google/crypto/tink/aead/internal:poly1305",
+        "//src/main/java/com/google/crypto/tink/internal:util",
     ],
 )
 
@@ -65,10 +78,10 @@ java_library(
     name = "x25519",
     srcs = ["X25519.java"],
     deps = [
-        ":curve25519",
-        ":field25519",
         ":random",
         "//src/main/java/com/google/crypto/tink/annotations:alpha",
+        "//src/main/java/com/google/crypto/tink/internal:curve25519",
+        "//src/main/java/com/google/crypto/tink/internal:field25519",
     ],
 )
 
@@ -105,6 +118,11 @@ java_library(
         ":stream_segment_encrypter",
         ":subtle_util_cluster",
         ":validators",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
+        "//src/main/java/com/google/crypto/tink:streaming_aead",
+        "//src/main/java/com/google/crypto/tink/streamingaead:aes_gcm_hkdf_streaming_key",
+        "//src/main/java/com/google/crypto/tink/streamingaead:aes_gcm_hkdf_streaming_parameters",
     ],
 )
 
@@ -117,8 +135,12 @@ java_library(
         ":ind_cpa_cipher",
         ":prf_hmac_jce",
         ":prf_mac",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
         "//src/main/java/com/google/crypto/tink:aead",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
         "//src/main/java/com/google/crypto/tink:mac",
+        "//src/main/java/com/google/crypto/tink/aead:aes_ctr_hmac_aead_key",
+        "//src/main/java/com/google/crypto/tink/internal:util",
     ],
 )
 
@@ -130,7 +152,11 @@ java_library(
 java_library(
     name = "elliptic_curves",
     srcs = ["EllipticCurves.java"],
-    deps = [":subtle_util_cluster"],
+    deps = [
+        ":subtle_util_cluster",
+        "//src/main/java/com/google/crypto/tink/internal:big_integer_encoding",
+        "//src/main/java/com/google/crypto/tink/internal:elliptic_curves_util",
+    ],
 )
 
 java_library(
@@ -148,8 +174,13 @@ java_library(
         ":hex",
         ":subtle_util_cluster",
         ":validators",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
         "//src/main/java/com/google/crypto/tink:public_key_verify",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util",
+        "//src/main/java/com/google/crypto/tink/internal:enum_type_proto_converter",
+        "//src/main/java/com/google/crypto/tink/internal:util",
+        "//src/main/java/com/google/crypto/tink/signature:rsa_ssa_pkcs1_parameters",
+        "//src/main/java/com/google/crypto/tink/signature:rsa_ssa_pkcs1_public_key",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
@@ -158,11 +189,28 @@ java_library(
     name = "ecies_aead_hkdf_hybrid_encrypt",
     srcs = ["EciesAeadHkdfHybridEncrypt.java"],
     deps = [
+        ":aes_gcm_jce",
+        ":aes_siv",
+        ":bytes",
         ":ecies_aead_hkdf_dem_helper",
         ":ecies_hkdf_sender_kem",
         ":elliptic_curves",
+        ":encrypt_then_authenticate",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
         "//src/main/java/com/google/crypto/tink:hybrid_encrypt",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
+        "//src/main/java/com/google/crypto/tink:parameters",
+        "//src/main/java/com/google/crypto/tink/aead:aes_ctr_hmac_aead_key",
+        "//src/main/java/com/google/crypto/tink/aead:aes_ctr_hmac_aead_parameters",
+        "//src/main/java/com/google/crypto/tink/aead:aes_gcm_key",
+        "//src/main/java/com/google/crypto/tink/aead:aes_gcm_parameters",
+        "//src/main/java/com/google/crypto/tink/daead:aes_siv_key",
+        "//src/main/java/com/google/crypto/tink/daead:aes_siv_parameters",
+        "//src/main/java/com/google/crypto/tink/hybrid:ecies_parameters",
+        "//src/main/java/com/google/crypto/tink/hybrid:ecies_public_key",
         "//src/main/java/com/google/crypto/tink/hybrid/subtle:aead_or_daead",
+        "//src/main/java/com/google/crypto/tink/internal:enum_type_proto_converter",
+        "//src/main/java/com/google/crypto/tink/util:secret_bytes",
     ],
 )
 
@@ -170,11 +218,18 @@ java_library(
     name = "ecdsa_sign_jce",
     srcs = ["EcdsaSignJce.java"],
     deps = [
+        ":bytes",
+        ":ecdsa_verify_jce",
         ":elliptic_curves",
         ":enums",
         ":subtle_util_cluster",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
         "//src/main/java/com/google/crypto/tink:public_key_sign",
+        "//src/main/java/com/google/crypto/tink:public_key_verify",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util",
+        "//src/main/java/com/google/crypto/tink/signature:ecdsa_parameters",
+        "//src/main/java/com/google/crypto/tink/signature:ecdsa_private_key",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
@@ -200,7 +255,7 @@ java_library(
         ":rsa_ssa_pkcs1_verify_jce",
         ":rsa_ssa_pss_sign_jce",
         ":rsa_ssa_pss_verify_jce",
-        "@com_google_protobuf//:protobuf_javalite",
+        "@maven//:com_google_protobuf_protobuf_java",
     ],
 )
 
@@ -216,9 +271,14 @@ java_library(
         ":bytes",
         ":prf_aes_cmac",
         ":subtle_util_cluster",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
         "//src/main/java/com/google/crypto/tink:deterministic_aead",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util",
+        "//src/main/java/com/google/crypto/tink/daead:aes_siv_key",
+        "//src/main/java/com/google/crypto/tink/internal:util",
         "//src/main/java/com/google/crypto/tink/mac/internal:aes_util",
+        "//src/main/java/com/google/crypto/tink/util:bytes",
     ],
 )
 
@@ -237,7 +297,15 @@ java_library(
     srcs = ["PrfMac.java"],
     deps = [
         ":bytes",
+        ":prf_aes_cmac",
+        ":prf_hmac_jce",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
         "//src/main/java/com/google/crypto/tink:mac",
+        "//src/main/java/com/google/crypto/tink/mac:aes_cmac_key",
+        "//src/main/java/com/google/crypto/tink/mac:aes_cmac_parameters",
+        "//src/main/java/com/google/crypto/tink/mac:hmac_key",
+        "//src/main/java/com/google/crypto/tink/mac:hmac_parameters",
         "//src/main/java/com/google/crypto/tink/prf:prf_set",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
@@ -251,8 +319,13 @@ java_library(
         ":enums",
         ":subtle_util_cluster",
         ":validators",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
         "//src/main/java/com/google/crypto/tink:public_key_verify",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util",
+        "//src/main/java/com/google/crypto/tink/internal:enum_type_proto_converter",
+        "//src/main/java/com/google/crypto/tink/internal:util",
+        "//src/main/java/com/google/crypto/tink/signature:rsa_ssa_pss_parameters",
+        "//src/main/java/com/google/crypto/tink/signature:rsa_ssa_pss_public_key",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
@@ -260,22 +333,7 @@ java_library(
 java_library(
     name = "random",
     srcs = ["Random.java"],
-)
-
-java_library(
-    name = "cha_cha20_base",
-    srcs = ["ChaCha20Base.java"],
-    deps = [
-        ":bytes",
-        ":ind_cpa_cipher",
-        ":random",
-    ],
-)
-
-java_library(
-    name = "poly1305",
-    srcs = ["Poly1305.java"],
-    deps = [":bytes"],
+    deps = ["//src/main/java/com/google/crypto/tink/internal:random"],
 )
 
 java_library(
@@ -283,9 +341,16 @@ java_library(
     srcs = ["AesGcmJce.java"],
     deps = [
         ":random",
+        ":validators",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
         "//src/main/java/com/google/crypto/tink:aead",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
+        "//src/main/java/com/google/crypto/tink/aead:aes_gcm_key",
         "//src/main/java/com/google/crypto/tink/aead/internal:insecure_nonce_aes_gcm_jce",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util",
+        "//src/main/java/com/google/crypto/tink/internal:util",
+        "//src/main/java/com/google/crypto/tink/util:bytes",
+        "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
 
@@ -298,11 +363,16 @@ java_library(
     name = "ed25519_sign",
     srcs = ["Ed25519Sign.java"],
     deps = [
-        ":ed25519_cluster",
-        ":field25519",
+        ":bytes",
         ":random",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
         "//src/main/java/com/google/crypto/tink:public_key_sign",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util",
+        "//src/main/java/com/google/crypto/tink/internal:ed25519_cluster",
+        "//src/main/java/com/google/crypto/tink/internal:field25519",
+        "//src/main/java/com/google/crypto/tink/signature:ed25519_parameters",
+        "//src/main/java/com/google/crypto/tink/signature:ed25519_private_key",
     ],
 )
 
@@ -324,11 +394,16 @@ java_library(
     name = "aes_eax_jce",
     srcs = ["AesEaxJce.java"],
     deps = [
+        ":bytes",
         ":random",
         ":subtle_util_cluster",
         ":validators",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
         "//src/main/java/com/google/crypto/tink:aead",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
+        "//src/main/java/com/google/crypto/tink/aead:aes_eax_key",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util",
+        "//src/main/java/com/google/crypto/tink/internal:util",
     ],
 )
 
@@ -336,22 +411,17 @@ java_library(
     name = "ed25519_verify",
     srcs = ["Ed25519Verify.java"],
     deps = [
-        ":ed25519_cluster",
-        ":field25519",
+        ":bytes",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
         "//src/main/java/com/google/crypto/tink:public_key_verify",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util",
+        "//src/main/java/com/google/crypto/tink/internal:ed25519_cluster",
+        "//src/main/java/com/google/crypto/tink/internal:field25519",
+        "//src/main/java/com/google/crypto/tink/internal:util",
+        "//src/main/java/com/google/crypto/tink/signature:ed25519_parameters",
+        "//src/main/java/com/google/crypto/tink/signature:ed25519_public_key",
         "//src/main/java/com/google/crypto/tink/util:bytes",
-    ],
-)
-
-java_library(
-    name = "cha_cha20_poly1305_base",
-    srcs = ["ChaCha20Poly1305Base.java"],
-    deps = [
-        ":cha_cha20_base",
-        ":poly1305",
-        "//src/main/java/com/google/crypto/tink:aead",
-        "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util",
+        "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
 
@@ -369,19 +439,20 @@ java_library(
     name = "rsa_ssa_pkcs1_sign_jce",
     srcs = ["RsaSsaPkcs1SignJce.java"],
     deps = [
+        ":bytes",
         ":enums",
+        ":rsa_ssa_pkcs1_verify_jce",
         ":subtle_util_cluster",
         ":validators",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
         "//src/main/java/com/google/crypto/tink:public_key_sign",
+        "//src/main/java/com/google/crypto/tink:public_key_verify",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util",
+        "//src/main/java/com/google/crypto/tink/signature:rsa_ssa_pkcs1_parameters",
+        "//src/main/java/com/google/crypto/tink/signature:rsa_ssa_pkcs1_private_key",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
-)
-
-java_library(
-    name = "field25519",
-    srcs = ["Field25519.java"],
-    deps = ["//src/main/java/com/google/crypto/tink/annotations:alpha"],
 )
 
 java_library(
@@ -398,11 +469,17 @@ java_library(
     name = "ecdsa_verify_jce",
     srcs = ["EcdsaVerifyJce.java"],
     deps = [
+        ":bytes",
         ":elliptic_curves",
         ":enums",
         ":subtle_util_cluster",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
         "//src/main/java/com/google/crypto/tink:public_key_verify",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util",
+        "//src/main/java/com/google/crypto/tink/internal:enum_type_proto_converter",
+        "//src/main/java/com/google/crypto/tink/internal:util",
+        "//src/main/java/com/google/crypto/tink/signature:ecdsa_parameters",
+        "//src/main/java/com/google/crypto/tink/signature:ecdsa_public_key",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
@@ -426,12 +503,18 @@ java_library(
     name = "rsa_ssa_pss_sign_jce",
     srcs = ["RsaSsaPssSignJce.java"],
     deps = [
+        ":bytes",
         ":enums",
         ":random",
+        ":rsa_ssa_pss_verify_jce",
         ":subtle_util_cluster",
         ":validators",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
         "//src/main/java/com/google/crypto/tink:public_key_sign",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util",
+        "//src/main/java/com/google/crypto/tink/signature:rsa_ssa_pss_parameters",
+        "//src/main/java/com/google/crypto/tink/signature:rsa_ssa_pss_private_key",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
@@ -439,6 +522,7 @@ java_library(
 java_library(
     name = "base64",
     srcs = ["Base64.java"],
+    deps = ["@maven//:com_google_errorprone_error_prone_annotations"],
 )
 
 java_library(
@@ -446,7 +530,10 @@ java_library(
     srcs = ["PrfHmacJce.java"],
     deps = [
         ":subtle_util_cluster",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util",
+        "//src/main/java/com/google/crypto/tink/prf:hmac_prf_key",
         "//src/main/java/com/google/crypto/tink/prf:prf_set",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
@@ -465,11 +552,16 @@ java_library(
     name = "x_cha_cha20_poly1305",
     srcs = ["XChaCha20Poly1305.java"],
     deps = [
+        ":bytes",
         ":random",
         ":x_cha_cha20",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
         "//src/main/java/com/google/crypto/tink:aead",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
+        "//src/main/java/com/google/crypto/tink/aead:x_cha_cha20_poly1305_key",
         "//src/main/java/com/google/crypto/tink/aead/internal:insecure_nonce_x_cha_cha20_poly1305",
         "//src/main/java/com/google/crypto/tink/aead/internal:poly1305",
+        "//src/main/java/com/google/crypto/tink/internal:util",
     ],
 )
 
@@ -478,21 +570,16 @@ java_library(
     srcs = ["EciesAeadHkdfHybridDecrypt.java"],
     deps = [
         ":ecies_aead_hkdf_dem_helper",
+        ":ecies_aead_hkdf_hybrid_encrypt",
         ":ecies_hkdf_recipient_kem",
         ":elliptic_curves",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key",
         "//src/main/java/com/google/crypto/tink:hybrid_decrypt",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
+        "//src/main/java/com/google/crypto/tink/hybrid:ecies_private_key",
         "//src/main/java/com/google/crypto/tink/hybrid/subtle:aead_or_daead",
-    ],
-)
-
-java_library(
-    name = "curve25519",
-    srcs = ["Curve25519.java"],
-    deps = [
-        ":bytes",
-        ":field25519",
-        ":hex",
-        "//src/main/java/com/google/crypto/tink/annotations:alpha",
+        "//src/main/java/com/google/crypto/tink/internal:big_integer_encoding",
+        "//src/main/java/com/google/crypto/tink/internal:util",
     ],
 )
 
@@ -510,7 +597,7 @@ java_library(
         ":stream_segment_decrypter",
         ":stream_segment_encrypter",
         "//src/main/java/com/google/crypto/tink:streaming_aead",
-        "@maven//:androidx_annotation_annotation",
+        "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
 
@@ -525,22 +612,10 @@ java_library(
         ":enums",
         ":validators",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util",
+        "//src/main/java/com/google/crypto/tink/internal:big_integer_encoding",
         "//src/main/java/com/google/crypto/tink/internal:util",
         "@maven//:com_google_code_findbugs_jsr305",
-    ],
-)
-
-java_library(
-    name = "ed25519_cluster",
-    srcs = [
-        "Ed25519.java",
-        "Ed25519Constants.java",
-    ],
-    deps = [
-        ":bytes",
-        ":curve25519",
-        ":field25519",
-        ":subtle_util_cluster",
+        "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
 
@@ -561,7 +636,12 @@ android_library(
         ":stream_segment_encrypter-android",
         ":subtle_util_cluster-android",
         ":validators-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access-android",
+        "//src/main/java/com/google/crypto/tink:streaming_aead-android",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util-android",
+        "//src/main/java/com/google/crypto/tink/streamingaead:aes_ctr_hmac_streaming_key-android",
+        "//src/main/java/com/google/crypto/tink/streamingaead:aes_ctr_hmac_streaming_parameters-android",
     ],
 )
 
@@ -588,6 +668,11 @@ android_library(
         ":stream_segment_encrypter-android",
         ":subtle_util_cluster-android",
         ":validators-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access-android",
+        "//src/main/java/com/google/crypto/tink:streaming_aead-android",
+        "//src/main/java/com/google/crypto/tink/streamingaead:aes_gcm_hkdf_streaming_key-android",
+        "//src/main/java/com/google/crypto/tink/streamingaead:aes_gcm_hkdf_streaming_parameters-android",
     ],
 )
 
@@ -596,9 +681,16 @@ android_library(
     srcs = ["AesGcmJce.java"],
     deps = [
         ":random-android",
+        ":validators-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
         "//src/main/java/com/google/crypto/tink:aead-android",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access-android",
+        "//src/main/java/com/google/crypto/tink/aead:aes_gcm_key-android",
         "//src/main/java/com/google/crypto/tink/aead/internal:insecure_nonce_aes_gcm_jce-android",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util-android",
+        "//src/main/java/com/google/crypto/tink/internal:util-android",
+        "//src/main/java/com/google/crypto/tink/util:bytes-android",
+        "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
 
@@ -609,15 +701,21 @@ android_library(
         ":bytes-android",
         ":prf_aes_cmac-android",
         ":subtle_util_cluster-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
         "//src/main/java/com/google/crypto/tink:deterministic_aead-android",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access-android",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util-android",
+        "//src/main/java/com/google/crypto/tink/daead:aes_siv_key-android",
+        "//src/main/java/com/google/crypto/tink/internal:util-android",
         "//src/main/java/com/google/crypto/tink/mac/internal:aes_util-android",
+        "//src/main/java/com/google/crypto/tink/util:bytes-android",
     ],
 )
 
 android_library(
     name = "base64-android",
     srcs = ["Base64.java"],
+    deps = ["@maven//:com_google_errorprone_error_prone_annotations"],
 )
 
 android_library(
@@ -636,46 +734,19 @@ android_library(
 )
 
 android_library(
-    name = "cha_cha20_base-android",
-    srcs = ["ChaCha20Base.java"],
-    deps = [
-        ":bytes-android",
-        ":ind_cpa_cipher-android",
-        ":random-android",
-    ],
-)
-
-android_library(
     name = "cha_cha20_poly1305-android",
     srcs = ["ChaCha20Poly1305.java"],
     deps = [
+        ":bytes-android",
         ":cha_cha20-android",
         ":random-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
         "//src/main/java/com/google/crypto/tink:aead-android",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access-android",
+        "//src/main/java/com/google/crypto/tink/aead:cha_cha20_poly1305_key-android",
         "//src/main/java/com/google/crypto/tink/aead/internal:insecure_nonce_cha_cha20_poly1305-android",
         "//src/main/java/com/google/crypto/tink/aead/internal:poly1305-android",
-    ],
-)
-
-android_library(
-    name = "cha_cha20_poly1305_base-android",
-    srcs = ["ChaCha20Poly1305Base.java"],
-    deps = [
-        ":cha_cha20_base-android",
-        ":poly1305-android",
-        "//src/main/java/com/google/crypto/tink:aead-android",
-        "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util-android",
-    ],
-)
-
-android_library(
-    name = "curve25519-android",
-    srcs = ["Curve25519.java"],
-    deps = [
-        ":bytes-android",
-        ":field25519-android",
-        ":hex-android",
-        "//src/main/java/com/google/crypto/tink/annotations:alpha-android",
+        "//src/main/java/com/google/crypto/tink/internal:util-android",
     ],
 )
 
@@ -683,11 +754,18 @@ android_library(
     name = "ecdsa_sign_jce-android",
     srcs = ["EcdsaSignJce.java"],
     deps = [
+        ":bytes-android",
+        ":ecdsa_verify_jce-android",
         ":elliptic_curves-android",
         ":enums-android",
         ":subtle_util_cluster-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access-android",
         "//src/main/java/com/google/crypto/tink:public_key_sign-android",
+        "//src/main/java/com/google/crypto/tink:public_key_verify-android",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util-android",
+        "//src/main/java/com/google/crypto/tink/signature:ecdsa_parameters-android",
+        "//src/main/java/com/google/crypto/tink/signature:ecdsa_private_key-android",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
@@ -696,11 +774,17 @@ android_library(
     name = "ecdsa_verify_jce-android",
     srcs = ["EcdsaVerifyJce.java"],
     deps = [
+        ":bytes-android",
         ":elliptic_curves-android",
         ":enums-android",
         ":subtle_util_cluster-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
         "//src/main/java/com/google/crypto/tink:public_key_verify-android",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util-android",
+        "//src/main/java/com/google/crypto/tink/internal:enum_type_proto_converter-android",
+        "//src/main/java/com/google/crypto/tink/internal:util-android",
+        "//src/main/java/com/google/crypto/tink/signature:ecdsa_parameters-android",
+        "//src/main/java/com/google/crypto/tink/signature:ecdsa_public_key-android",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
@@ -716,10 +800,16 @@ android_library(
     srcs = ["EciesAeadHkdfHybridDecrypt.java"],
     deps = [
         ":ecies_aead_hkdf_dem_helper-android",
+        ":ecies_aead_hkdf_hybrid_encrypt-android",
         ":ecies_hkdf_recipient_kem-android",
         ":elliptic_curves-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
         "//src/main/java/com/google/crypto/tink:hybrid_decrypt-android",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access-android",
+        "//src/main/java/com/google/crypto/tink/hybrid:ecies_private_key-android",
         "//src/main/java/com/google/crypto/tink/hybrid/subtle:aead_or_daead-android",
+        "//src/main/java/com/google/crypto/tink/internal:big_integer_encoding-android",
+        "//src/main/java/com/google/crypto/tink/internal:util-android",
     ],
 )
 
@@ -727,11 +817,28 @@ android_library(
     name = "ecies_aead_hkdf_hybrid_encrypt-android",
     srcs = ["EciesAeadHkdfHybridEncrypt.java"],
     deps = [
+        ":aes_gcm_jce-android",
+        ":aes_siv-android",
+        ":bytes-android",
         ":ecies_aead_hkdf_dem_helper-android",
         ":ecies_hkdf_sender_kem-android",
         ":elliptic_curves-android",
+        ":encrypt_then_authenticate-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
         "//src/main/java/com/google/crypto/tink:hybrid_encrypt-android",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access-android",
+        "//src/main/java/com/google/crypto/tink:parameters-android",
+        "//src/main/java/com/google/crypto/tink/aead:aes_ctr_hmac_aead_key-android",
+        "//src/main/java/com/google/crypto/tink/aead:aes_ctr_hmac_aead_parameters-android",
+        "//src/main/java/com/google/crypto/tink/aead:aes_gcm_key-android",
+        "//src/main/java/com/google/crypto/tink/aead:aes_gcm_parameters-android",
+        "//src/main/java/com/google/crypto/tink/daead:aes_siv_key-android",
+        "//src/main/java/com/google/crypto/tink/daead:aes_siv_parameters-android",
+        "//src/main/java/com/google/crypto/tink/hybrid:ecies_parameters-android",
+        "//src/main/java/com/google/crypto/tink/hybrid:ecies_public_key-android",
         "//src/main/java/com/google/crypto/tink/hybrid/subtle:aead_or_daead-android",
+        "//src/main/java/com/google/crypto/tink/internal:enum_type_proto_converter-android",
+        "//src/main/java/com/google/crypto/tink/util:secret_bytes-android",
     ],
 )
 
@@ -755,28 +862,19 @@ android_library(
 )
 
 android_library(
-    name = "ed25519_cluster-android",
-    srcs = [
-        "Ed25519.java",
-        "Ed25519Constants.java",
-    ],
-    deps = [
-        ":bytes-android",
-        ":curve25519-android",
-        ":field25519-android",
-        ":subtle_util_cluster-android",
-    ],
-)
-
-android_library(
     name = "ed25519_sign-android",
     srcs = ["Ed25519Sign.java"],
     deps = [
-        ":ed25519_cluster-android",
-        ":field25519-android",
+        ":bytes-android",
         ":random-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access-android",
         "//src/main/java/com/google/crypto/tink:public_key_sign-android",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util-android",
+        "//src/main/java/com/google/crypto/tink/internal:ed25519_cluster-android",
+        "//src/main/java/com/google/crypto/tink/internal:field25519-android",
+        "//src/main/java/com/google/crypto/tink/signature:ed25519_parameters-android",
+        "//src/main/java/com/google/crypto/tink/signature:ed25519_private_key-android",
     ],
 )
 
@@ -784,11 +882,16 @@ android_library(
     name = "aes_eax_jce-android",
     srcs = ["AesEaxJce.java"],
     deps = [
+        ":bytes-android",
         ":random-android",
         ":subtle_util_cluster-android",
         ":validators-android",
-        "//src/main/java/com/google/crypto/tink:aead",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
+        "//src/main/java/com/google/crypto/tink:aead-android",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access-android",
+        "//src/main/java/com/google/crypto/tink/aead:aes_eax_key-android",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util-android",
+        "//src/main/java/com/google/crypto/tink/internal:util-android",
     ],
 )
 
@@ -796,18 +899,28 @@ android_library(
     name = "ed25519_verify-android",
     srcs = ["Ed25519Verify.java"],
     deps = [
-        ":ed25519_cluster-android",
-        ":field25519-android",
+        ":bytes-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
         "//src/main/java/com/google/crypto/tink:public_key_verify-android",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util-android",
+        "//src/main/java/com/google/crypto/tink/internal:ed25519_cluster-android",
+        "//src/main/java/com/google/crypto/tink/internal:field25519-android",
+        "//src/main/java/com/google/crypto/tink/internal:util-android",
+        "//src/main/java/com/google/crypto/tink/signature:ed25519_parameters-android",
+        "//src/main/java/com/google/crypto/tink/signature:ed25519_public_key-android",
         "//src/main/java/com/google/crypto/tink/util:bytes-android",
+        "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
 
 android_library(
     name = "elliptic_curves-android",
     srcs = ["EllipticCurves.java"],
-    deps = [":subtle_util_cluster-android"],
+    deps = [
+        ":subtle_util_cluster-android",
+        "//src/main/java/com/google/crypto/tink/internal:big_integer_encoding-android",
+        "//src/main/java/com/google/crypto/tink/internal:elliptic_curves_util-android",
+    ],
 )
 
 android_library(
@@ -819,20 +932,18 @@ android_library(
         ":ind_cpa_cipher-android",
         ":prf_hmac_jce-android",
         ":prf_mac-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
         "//src/main/java/com/google/crypto/tink:aead-android",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access-android",
         "//src/main/java/com/google/crypto/tink:mac-android",
+        "//src/main/java/com/google/crypto/tink/aead:aes_ctr_hmac_aead_key-android",
+        "//src/main/java/com/google/crypto/tink/internal:util-android",
     ],
 )
 
 android_library(
     name = "enums-android",
     srcs = ["Enums.java"],
-)
-
-android_library(
-    name = "field25519-android",
-    srcs = ["Field25519.java"],
-    deps = ["//src/main/java/com/google/crypto/tink/annotations:alpha-android"],
 )
 
 android_library(
@@ -877,7 +988,7 @@ android_library(
         ":stream_segment_decrypter-android",
         ":stream_segment_encrypter-android",
         "//src/main/java/com/google/crypto/tink:streaming_aead-android",
-        "@maven//:androidx_annotation_annotation",
+        "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
 
@@ -894,20 +1005,17 @@ android_library(
 )
 
 android_library(
-    name = "poly1305-android",
-    srcs = ["Poly1305.java"],
-    deps = [":bytes-android"],
-)
-
-android_library(
     name = "prf_aes_cmac-android",
     srcs = ["PrfAesCmac.java"],
     deps = [
         ":bytes-android",
         ":subtle_util_cluster-android",
         ":validators-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access-android",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util-android",
         "//src/main/java/com/google/crypto/tink/mac/internal:aes_util-android",
+        "//src/main/java/com/google/crypto/tink/prf:aes_cmac_prf_key-android",
         "//src/main/java/com/google/crypto/tink/prf:prf_set-android",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
@@ -918,7 +1026,10 @@ android_library(
     srcs = ["PrfHmacJce.java"],
     deps = [
         ":subtle_util_cluster-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access-android",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util-android",
+        "//src/main/java/com/google/crypto/tink/prf:hmac_prf_key-android",
         "//src/main/java/com/google/crypto/tink/prf:prf_set-android",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
@@ -929,7 +1040,15 @@ android_library(
     srcs = ["PrfMac.java"],
     deps = [
         ":bytes-android",
+        ":prf_aes_cmac-android",
+        ":prf_hmac_jce-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access-android",
         "//src/main/java/com/google/crypto/tink:mac-android",
+        "//src/main/java/com/google/crypto/tink/mac:aes_cmac_key-android",
+        "//src/main/java/com/google/crypto/tink/mac:aes_cmac_parameters-android",
+        "//src/main/java/com/google/crypto/tink/mac:hmac_key-android",
+        "//src/main/java/com/google/crypto/tink/mac:hmac_parameters-android",
         "//src/main/java/com/google/crypto/tink/prf:prf_set-android",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
@@ -938,6 +1057,7 @@ android_library(
 android_library(
     name = "random-android",
     srcs = ["Random.java"],
+    deps = ["//src/main/java/com/google/crypto/tink/internal:random-android"],
 )
 
 android_library(
@@ -950,11 +1070,18 @@ android_library(
     name = "rsa_ssa_pkcs1_sign_jce-android",
     srcs = ["RsaSsaPkcs1SignJce.java"],
     deps = [
+        ":bytes-android",
         ":enums-android",
+        ":rsa_ssa_pkcs1_verify_jce-android",
         ":subtle_util_cluster-android",
         ":validators-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access-android",
         "//src/main/java/com/google/crypto/tink:public_key_sign-android",
+        "//src/main/java/com/google/crypto/tink:public_key_verify-android",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util-android",
+        "//src/main/java/com/google/crypto/tink/signature:rsa_ssa_pkcs1_parameters-android",
+        "//src/main/java/com/google/crypto/tink/signature:rsa_ssa_pkcs1_private_key-android",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
@@ -968,8 +1095,13 @@ android_library(
         ":hex-android",
         ":subtle_util_cluster-android",
         ":validators-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
         "//src/main/java/com/google/crypto/tink:public_key_verify-android",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util-android",
+        "//src/main/java/com/google/crypto/tink/internal:enum_type_proto_converter-android",
+        "//src/main/java/com/google/crypto/tink/internal:util-android",
+        "//src/main/java/com/google/crypto/tink/signature:rsa_ssa_pkcs1_parameters-android",
+        "//src/main/java/com/google/crypto/tink/signature:rsa_ssa_pkcs1_public_key-android",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
@@ -978,12 +1110,18 @@ android_library(
     name = "rsa_ssa_pss_sign_jce-android",
     srcs = ["RsaSsaPssSignJce.java"],
     deps = [
+        ":bytes-android",
         ":enums-android",
         ":random-android",
+        ":rsa_ssa_pss_verify_jce-android",
         ":subtle_util_cluster-android",
         ":validators-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access-android",
         "//src/main/java/com/google/crypto/tink:public_key_sign-android",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util-android",
+        "//src/main/java/com/google/crypto/tink/signature:rsa_ssa_pss_parameters-android",
+        "//src/main/java/com/google/crypto/tink/signature:rsa_ssa_pss_private_key-android",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
@@ -996,8 +1134,13 @@ android_library(
         ":enums-android",
         ":subtle_util_cluster-android",
         ":validators-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
         "//src/main/java/com/google/crypto/tink:public_key_verify-android",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util-android",
+        "//src/main/java/com/google/crypto/tink/internal:enum_type_proto_converter-android",
+        "//src/main/java/com/google/crypto/tink/internal:util-android",
+        "//src/main/java/com/google/crypto/tink/signature:rsa_ssa_pss_parameters-android",
+        "//src/main/java/com/google/crypto/tink/signature:rsa_ssa_pss_public_key-android",
         "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
@@ -1014,7 +1157,7 @@ android_library(
         ":rsa_ssa_pkcs1_verify_jce-android",
         ":rsa_ssa_pss_sign_jce-android",
         ":rsa_ssa_pss_verify_jce-android",
-        "@com_google_protobuf//:protobuf_javalite",
+        "@maven//:com_google_protobuf_protobuf_javalite",
     ],
 )
 
@@ -1039,8 +1182,10 @@ android_library(
         ":enums-android",
         ":validators-android",
         "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util-android",
+        "//src/main/java/com/google/crypto/tink/internal:big_integer_encoding-android",
         "//src/main/java/com/google/crypto/tink/internal:util-android",
         "@maven//:com_google_code_findbugs_jsr305",
+        "@maven//:com_google_errorprone_error_prone_annotations",
     ],
 )
 
@@ -1057,10 +1202,10 @@ android_library(
     name = "x25519-android",
     srcs = ["X25519.java"],
     deps = [
-        ":curve25519-android",
-        ":field25519-android",
         ":random-android",
         "//src/main/java/com/google/crypto/tink/annotations:alpha-android",
+        "//src/main/java/com/google/crypto/tink/internal:curve25519-android",
+        "//src/main/java/com/google/crypto/tink/internal:field25519-android",
     ],
 )
 
@@ -1078,10 +1223,15 @@ android_library(
     name = "x_cha_cha20_poly1305-android",
     srcs = ["XChaCha20Poly1305.java"],
     deps = [
+        ":bytes-android",
         ":random-android",
         ":x_cha_cha20-android",
+        "//src/main/java/com/google/crypto/tink:accesses_partial_key-android",
         "//src/main/java/com/google/crypto/tink:aead-android",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access-android",
+        "//src/main/java/com/google/crypto/tink/aead:x_cha_cha20_poly1305_key-android",
         "//src/main/java/com/google/crypto/tink/aead/internal:insecure_nonce_x_cha_cha20_poly1305-android",
         "//src/main/java/com/google/crypto/tink/aead/internal:poly1305-android",
+        "//src/main/java/com/google/crypto/tink/internal:util-android",
     ],
 )

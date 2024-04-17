@@ -16,15 +16,25 @@
 
 set -euo pipefail
 
-# If we are running on Kokoro cd into the repository.
-if [[ -n "${KOKORO_ROOT:-}" ]]; then
-  cd "${KOKORO_ARTIFACTS_DIR}/git/tink"
-  use_bazel.sh "$(cat python/.bazelversion)"
+if [[ -n "${KOKORO_ARTIFACTS_DIR:-}" ]]; then
+  cd "$(echo "${KOKORO_ARTIFACTS_DIR}"/git*/tink)"
 fi
 
 ./kokoro/testutils/copy_credentials.sh "python/testdata" "all"
+
+# Use the latest Python 3.8.
+eval "$(pyenv init -)"
+pyenv install "3.8"
+pyenv global "3.8"
+
 source ./kokoro/testutils/install_protoc.sh
-source ./kokoro/testutils/install_tink_via_pip.sh "${PWD}/python"
+source ./kokoro/testutils/install_vault.sh
+source ./kokoro/testutils/run_hcvault_test_server.sh
+
+# Install a test transit key.
+vault write -f transit/keys/key-1
+
+./kokoro/testutils/install_tink_via_pip.sh -a "${PWD}/python"
 
 # Get root certificates for gRPC
 curl -OLsS https://raw.githubusercontent.com/grpc/grpc/master/etc/roots.pem

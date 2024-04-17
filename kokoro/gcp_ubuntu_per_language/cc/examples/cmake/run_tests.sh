@@ -20,7 +20,11 @@ if [[ -n "${KOKORO_ROOT:-}" ]]; then
   cd "${KOKORO_ARTIFACTS_DIR}/git/tink"
 fi
 
-export TEST_TMPDIR="$(mktemp -dt examples-cc-cmake.XXXXXX)"
-export TEST_SRCDIR="$(cd ..; pwd)"
-cd cc/examples/helloworld
-./cmake_build_test.sh
+./kokoro/testutils/upgrade_gcc.sh
+# Sourcing is needed to update the caller environment.
+# Install CMake 3.13 which is the minimum required.
+source ./kokoro/testutils/install_cmake.sh "3.13.5" \
+  "e2fd0080a6f0fc1ec84647acdcd8e0b4019770f48d83509e6a5b0b6ea27e5864"
+
+./kokoro/testutils/run_cmake_tests.sh "cc/examples" -DTINK_BUILD_TESTS=OFF
+

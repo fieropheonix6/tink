@@ -15,20 +15,29 @@
 ///////////////////////////////////////////////////////////////////////////////
 #include "tink/internal/ec_util.h"
 
+#include <stdint.h>
+
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/status/status.h"
 #include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
+#ifdef OPENSSL_IS_BORINGSSL
+#include "openssl/base.h"
+#include "openssl/ec_key.h"
+#endif
+#include "openssl/bn.h"
 #include "openssl/ec.h"
 #include "openssl/ecdsa.h"
 #include "openssl/evp.h"
+#include "include/rapidjson/document.h"
 #include "tink/internal/bn_util.h"
 #include "tink/internal/fips_utils.h"
 #include "tink/internal/ssl_unique_ptr.h"
@@ -425,7 +434,7 @@ struct EncodingTestVector {
   EllipticCurveType curve;
 };
 
-const std::vector<EncodingTestVector> GetEncodingTestVectors() {
+std::vector<EncodingTestVector> GetEncodingTestVectors() {
   return {
       {EcPointFormat::UNCOMPRESSED,
        "00093057fb862f2ad2e82e581baeb3324e7b32946f2ba845a9beeed87d6995f54918ec6"
@@ -601,15 +610,15 @@ TEST(EcUtilTest, EcGroupFromCurveTypeSuccess) {
   SslUniquePtr<EC_GROUP> ssl_p521_group(
       EC_GROUP_new_by_curve_name(NID_secp521r1));
 
-  EXPECT_EQ(
-      EC_GROUP_cmp(p256_curve->get(), ssl_p256_group.get(), /*ctx=*/nullptr),
-      0);
-  EXPECT_EQ(
-      EC_GROUP_cmp(p384_curve->get(), ssl_p384_group.get(), /*ctx=*/nullptr),
-      0);
-  EXPECT_EQ(
-      EC_GROUP_cmp(p521_curve->get(), ssl_p521_group.get(), /*ctx=*/nullptr),
-      0);
+  EXPECT_EQ(EC_GROUP_cmp(p256_curve->get(), ssl_p256_group.get(),
+                         /*ignored=*/nullptr),
+            0);
+  EXPECT_EQ(EC_GROUP_cmp(p384_curve->get(), ssl_p384_group.get(),
+                         /*ignored=*/nullptr),
+            0);
+  EXPECT_EQ(EC_GROUP_cmp(p521_curve->get(), ssl_p521_group.get(),
+                         /*ignored=*/nullptr),
+            0);
 }
 
 TEST(EcUtilTest, EcGroupFromCurveTypeUnimplemented) {
@@ -700,6 +709,45 @@ TEST(EcUtilTest, EcSignatureIeeeToDer) {
     }
   }
 }
+
+using EcKeyFromSslEcKeyTestWithParam =
+    testing::TestWithParam<EllipticCurveType>;
+
+TEST_P(EcKeyFromSslEcKeyTestWithParam, EcKeyFromSslEcKeySucceeds) {
+  EllipticCurveType curve_type = GetParam();
+  util::StatusOr<SslUniquePtr<EC_GROUP>> group =
+      EcGroupFromCurveType(curve_type);
+  SslUniquePtr<EC_KEY> key(EC_KEY_new());
+  EC_KEY_set_group(key.get(), group->get());
+  EC_KEY_generate_key(key.get());
+
+  util::StatusOr<EcKey> ec_key = EcKeyFromSslEcKey(curve_type, *key);
+
+  EXPECT_THAT(ec_key, IsOk());
+  EXPECT_THAT(ec_key->curve, Eq(curve_type));
+  EXPECT_THAT(ec_key->priv, Not(IsEmpty()));
+  EXPECT_THAT(ec_key->pub_x, Not(IsEmpty()));
+  EXPECT_THAT(ec_key->pub_y, Not(IsEmpty()));
+}
+
+TEST(EcKeyFromSSLEcKeyTest, EcKeyFromSslKeyFailsWrongCurveType) {
+  util::StatusOr<SslUniquePtr<EC_GROUP>> group =
+      EcGroupFromCurveType(EllipticCurveType::NIST_P256);
+  SslUniquePtr<EC_KEY> key(EC_KEY_new());
+  EC_KEY_set_group(key.get(), group->get());
+  EC_KEY_generate_key(key.get());
+
+  util::StatusOr<EcKey> ec_key =
+      EcKeyFromSslEcKey(EllipticCurveType::NIST_P384, *key);
+
+  EXPECT_THAT(ec_key.status(), StatusIs(absl::StatusCode::kInternal));
+}
+
+INSTANTIATE_TEST_SUITE_P(EcKeyFromSslEcKeyTestWithParams,
+                         EcKeyFromSslEcKeyTestWithParam,
+                         testing::ValuesIn({EllipticCurveType::NIST_P256,
+                                            EllipticCurveType::NIST_P384,
+                                            EllipticCurveType::NIST_P521}));
 
 // ECDH test vector.
 struct EcdhWycheproofTestVector {
@@ -826,7 +874,6 @@ std::vector<EcdhWycheproofTestVector> GetEcUtilComputeEcdhSharedSecretParams() {
   others = ReadEcdhWycheproofTestVectors(
       /*file_name=*/"ecdh_secp521r1_test.json");
   test_vectors.insert(test_vectors.end(), others.begin(), others.end());
-// placeholder_disabled_subtle_test, please ignore
   others = ReadEcdhWycheproofTestVectors(
       /*file_name=*/"ecdh_test.json");
   test_vectors.insert(test_vectors.end(), others.begin(), others.end());

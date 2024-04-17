@@ -19,6 +19,7 @@
 
 #include <string>
 
+#include "absl/strings/string_view.h"
 #include "tink/key.h"
 #include "tink/mac/mac_parameters.h"
 #include "tink/util/statusor.h"
@@ -35,12 +36,9 @@ class MacKey : public Key {
   // have an associated tag output prefix.  When verifying a tag, only keys with
   // a matching prefix have to be tried.
   //
-  // Note that a priori, the output prefix may not be unique in a keyset
-  // (i.e., different keys in a keyset may have the same prefix or one prefix
-  // may be a prefix of another). To avoid this, built-in Tink keys use the
-  // convention that the prefix is either '0x00<big endian key id>' or
-  // '0x01<big endian key id>'.
-  virtual util::StatusOr<std::string> GetOutputPrefix() const = 0;
+  // See https://developers.google.com/tink/wire-format#tink_output_prefix for
+  // more background information on Tink output prefixes.
+  virtual absl::string_view GetOutputPrefix() const = 0;
 
   const MacParameters& GetParameters() const override = 0;
 

@@ -26,12 +26,18 @@ import com.google.crypto.tink.tinkkey.KeyAccess;
 import com.google.crypto.tink.tinkkey.KeyHandle;
 import com.google.crypto.tink.tinkkey.SecretKeyAccess;
 import com.google.crypto.tink.tinkkey.internal.ProtoKey;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import com.google.errorprone.annotations.InlineMe;
 import java.security.GeneralSecurityException;
 import javax.annotation.concurrent.GuardedBy;
 
 /**
  * Manages a {@link Keyset} proto, with convenience methods that rotate, disable, enable or destroy
  * keys.
+ *
+ * <p>We do not recommend usage of this class. Instead, we recommend you to use a {@link
+ * Keyset.Builder} which has an improved API (in that it e.g. returns the just added objects,
+ * allowing you to manipulate them further).
  *
  * @since 1.0.0
  */
@@ -64,11 +70,8 @@ public final class KeysetManager {
    *
    * @throws GeneralSecurityException if cannot find any {@link KeyManager} that can handle {@code
    *     keyTemplate}
-   * @deprecated Please use {@link #add}. This method adds a new key and immediately promotes it to
-   *     primary. However, when you do keyset rotation, you almost never want to make the new key
-   *     primary, because old binaries don't know the new key yet.
    */
-  @Deprecated
+  @CanIgnoreReturnValue
   public synchronized KeysetManager rotate(com.google.crypto.tink.proto.KeyTemplate keyTemplate)
       throws GeneralSecurityException {
     addNewKey(keyTemplate, true);
@@ -80,10 +83,8 @@ public final class KeysetManager {
    *
    * @throws GeneralSecurityException if cannot find any {@link KeyManager} that can handle {@code
    *     keyTemplate}
-   * @deprecated This method takes a KeyTemplate proto, which is an internal implementation detail.
-   *     Please use the add method that takes a {@link KeyTemplate} POJO.
    */
-  @Deprecated
+  @CanIgnoreReturnValue
   public synchronized KeysetManager add(com.google.crypto.tink.proto.KeyTemplate keyTemplate)
       throws GeneralSecurityException {
     addNewKey(keyTemplate, false);
@@ -96,8 +97,9 @@ public final class KeysetManager {
    * @throws GeneralSecurityException if cannot find any {@link KeyManager} that can handle {@code
    *     keyTemplate}
    */
+  @CanIgnoreReturnValue
   public synchronized KeysetManager add(KeyTemplate keyTemplate) throws GeneralSecurityException {
-    addNewKey(keyTemplate.getProto(), false);
+    addNewKey(keyTemplate.getProtoMaybeThrow(), false);
     return this;
   }
 
@@ -109,8 +111,12 @@ public final class KeysetManager {
    *     is not a {@link ProtoKey}.
    * @throws GeneralSecurityException if the {@link KeyHandle}'s key ID collides with another key ID
    *     in the keyset.
+   * @deprecated We recommend to use the {@code KeysetHandle.Builder} API.
    */
-  public synchronized KeysetManager add(KeyHandle keyHandle) throws GeneralSecurityException {
+  @CanIgnoreReturnValue
+  @Deprecated
+  public synchronized KeysetManager add(KeyHandle keyHandle)
+      throws GeneralSecurityException {
     ProtoKey pkey;
     try {
       pkey = (ProtoKey) keyHandle.getKey(SecretKeyAccess.insecureSecretAccess());
@@ -141,32 +147,20 @@ public final class KeysetManager {
    *     key contained in the {@code KeyHandle}.
    * @throws UnsupportedOperationException if the {@code KeyHandle} contains a {@code TinkKey} which
    *     is not a {@code ProtoKey}.
-   * @deprecated Use KeysetManager.add(KeyHandle) instead.
+   * @deprecated We recommend to use the {@code KeysetHandle.Builder} API.
    */
+  @CanIgnoreReturnValue
   @Deprecated
   public synchronized KeysetManager add(KeyHandle keyHandle, KeyAccess access)
       throws GeneralSecurityException {
-    ProtoKey pkey;
-    try {
-      pkey = (ProtoKey) keyHandle.getKey(access);
-    } catch (ClassCastException e) {
-      throw new UnsupportedOperationException(
-          "KeyHandles which contain TinkKeys that are not ProtoKeys are not yet supported.", e);
-    }
-    keysetBuilder.addKey(
-        createKeysetKey(pkey.getProtoKey(), KeyTemplate.toProto(pkey.getOutputPrefixType())));
-    return this;
+    return add(keyHandle);
   }
 
   /**
    * Generates a fresh key using {@code keyTemplate} and returns the {@code keyId} of it. In case
    * {@code asPrimary} is true the generated key will be the new primary.
-   *
-   * @deprecated Please use {@link #add}. This method adds a new key and when {@code asPrimary} is
-   *     true immediately promotes it to primary. However, when you do keyset rotation, you almost
-   *     never want to make the new key primary, because old binaries don't know the new key yet.
    */
-  @Deprecated
+  @CanIgnoreReturnValue
   public synchronized int addNewKey(
       com.google.crypto.tink.proto.KeyTemplate keyTemplate, boolean asPrimary)
       throws GeneralSecurityException {
@@ -183,6 +177,7 @@ public final class KeysetManager {
    *
    * @throws GeneralSecurityException if the key is not found or not enabled
    */
+  @CanIgnoreReturnValue
   public synchronized KeysetManager setPrimary(int keyId) throws GeneralSecurityException {
     for (int i = 0; i < keysetBuilder.getKeyCount(); i++) {
       Keyset.Key key = keysetBuilder.getKey(i);
@@ -202,9 +197,9 @@ public final class KeysetManager {
    * Sets the key with {@code keyId} as primary.
    *
    * @throws GeneralSecurityException if the key is not found or not enabled
-   * @deprecated use {@link setPrimary}
    */
-  @Deprecated
+  @InlineMe(replacement = "this.setPrimary(keyId)")
+  @CanIgnoreReturnValue
   public synchronized KeysetManager promote(int keyId) throws GeneralSecurityException {
     return setPrimary(keyId);
   }
@@ -214,6 +209,7 @@ public final class KeysetManager {
    *
    * @throws GeneralSecurityException if the key is not found
    */
+  @CanIgnoreReturnValue
   public synchronized KeysetManager enable(int keyId) throws GeneralSecurityException {
     for (int i = 0; i < keysetBuilder.getKeyCount(); i++) {
       Keyset.Key key = keysetBuilder.getKey(i);
@@ -233,6 +229,7 @@ public final class KeysetManager {
    *
    * @throws GeneralSecurityException if the key is not found or it is the primary key
    */
+  @CanIgnoreReturnValue
   public synchronized KeysetManager disable(int keyId) throws GeneralSecurityException {
     if (keyId == keysetBuilder.getPrimaryKeyId()) {
       throw new GeneralSecurityException("cannot disable the primary key");
@@ -256,6 +253,7 @@ public final class KeysetManager {
    *
    * @throws GeneralSecurityException if the key is not found or it is the primary key
    */
+  @CanIgnoreReturnValue
   public synchronized KeysetManager delete(int keyId) throws GeneralSecurityException {
     if (keyId == keysetBuilder.getPrimaryKeyId()) {
       throw new GeneralSecurityException("cannot delete the primary key");
@@ -276,6 +274,7 @@ public final class KeysetManager {
    *
    * @throws GeneralSecurityException if the key is not found or it is the primary key
    */
+  @CanIgnoreReturnValue
   public synchronized KeysetManager destroy(int keyId) throws GeneralSecurityException {
     if (keyId == keysetBuilder.getPrimaryKeyId()) {
       throw new GeneralSecurityException("cannot destroy the primary key");

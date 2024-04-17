@@ -1,7 +1,7 @@
 load("@rules_python//python:defs.bzl", "py_binary")
 load("@pip_deps//:requirements.bzl", "requirement")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//visibility:private"])
 
 licenses(["notice"])
 
@@ -11,12 +11,12 @@ exports_files([
 ])
 
 py_binary(
-    name = "signature",
-    srcs = ["signature.py"],
+    name = "signature_cli",
+    srcs = ["signature_cli.py"],
     python_version = "PY3",
     deps = [
         requirement("absl-py"),
-        "@tink_py//tink:cleartext_keyset_handle",
+        "@tink_py//tink:secret_key_access",
         "@tink_py//tink:tink_python",
         "@tink_py//tink/signature",
     ],
@@ -26,7 +26,7 @@ py_library(
     name = "signature_basic",
     srcs = ["signature_basic.py"],
     deps = [
-        "@tink_py//tink:cleartext_keyset_handle",
+        "@tink_py//tink:secret_key_access",
         "@tink_py//tink:tink_python",
         "@tink_py//tink/signature",
     ],
@@ -38,21 +38,21 @@ py_test(
     python_version = "PY3",
     deps = [
         requirement("absl-py"),
-        ":signature_basic"
+        ":signature_basic",
     ],
 )
 
 sh_test(
     name = "signature_test",
     size = "small",
-    srcs = ["signature_test.sh"],
+    srcs = ["signature_cli_test.sh"],
     args = [
-        "$(rootpath :signature)",
+        "$(rootpath :signature_cli)",
         "$(rootpath :signature_test_private_keyset.json)",
         "$(rootpath :signature_test_public_keyset.json)",
     ],
     data = [
-        ":signature",
+        ":signature_cli",
         ":signature_test_private_keyset.json",
         ":signature_test_public_keyset.json",
     ],
@@ -63,14 +63,14 @@ sh_test(
 sh_test(
     name = "signature_test_package",
     size = "small",
-    srcs = ["signature_test.sh"],
+    srcs = ["signature_cli_test.sh"],
     args = [
-        "'python3 $(rootpath :signature.py)'",
+        "'python3 $(rootpath :signature_cli.py)'",
         "$(rootpath :signature_test_private_keyset.json)",
         "$(rootpath :signature_test_public_keyset.json)",
     ],
     data = [
-        ":signature.py",
+        ":signature_cli.py",
         ":signature_test_private_keyset.json",
         ":signature_test_public_keyset.json",
     ],

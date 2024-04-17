@@ -11,13 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package subtle
 
 import (
-	"golang.org/x/crypto/ed25519"
+	"crypto/ed25519"
 )
 
 // ED25519Signer is an implementation of Signer for ED25519.

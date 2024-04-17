@@ -32,6 +32,7 @@
 #include "tink/aead/aes_gcm_siv_key_manager.h"
 #include "tink/aead/kms_envelope_aead_key_manager.h"
 #include "tink/aead/xchacha20_poly1305_key_manager.h"
+#include "tink/config/global_registry.h"
 #include "tink/core/key_manager_impl.h"
 #include "tink/key_manager.h"
 #include "tink/keyset_handle.h"
@@ -411,19 +412,23 @@ TEST(AeadKeyTemplatesTest, testKmsEnvelopeAeadMultipleKeysSameKek) {
 
   const KeyTemplate& key_template1 =
       AeadKeyTemplates::KmsEnvelopeAead(kek_uri, dek_template);
-  auto handle_result1 = KeysetHandle::GenerateNew(key_template1);
+  auto handle_result1 =
+      KeysetHandle::GenerateNew(key_template1, KeyGenConfigGlobalRegistry());
   EXPECT_TRUE(handle_result1.ok());
   auto handle1 = std::move(handle_result1.value());
-  auto aead_result1 = handle1->GetPrimitive<Aead>();
+  auto aead_result1 =
+      handle1->GetPrimitive<crypto::tink::Aead>(ConfigGlobalRegistry());
   EXPECT_TRUE(aead_result1.ok());
   auto aead1 = std::move(aead_result1.value());
 
   const KeyTemplate& key_template2 =
       AeadKeyTemplates::KmsEnvelopeAead(kek_uri, dek_template);
-  auto handle_result2 = KeysetHandle::GenerateNew(key_template2);
+  auto handle_result2 =
+      KeysetHandle::GenerateNew(key_template2, KeyGenConfigGlobalRegistry());
   EXPECT_TRUE(handle_result2.ok());
   auto handle2 = std::move(handle_result2.value());
-  auto aead_result2 = handle2->GetPrimitive<Aead>();
+  auto aead_result2 =
+      handle2->GetPrimitive<crypto::tink::Aead>(ConfigGlobalRegistry());
   EXPECT_TRUE(aead_result2.ok());
   auto aead2 = std::move(aead_result2.value());
 

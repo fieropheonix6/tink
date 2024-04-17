@@ -16,7 +16,6 @@
 
 package com.google.crypto.tink;
 
-import com.google.crypto.tink.annotations.Alpha;
 import com.google.errorprone.annotations.Immutable;
 import javax.annotation.Nullable;
 
@@ -35,7 +34,6 @@ import javax.annotation.Nullable;
  * dependencies need to be kept at a minimum.
  */
 @Immutable
-@Alpha
 public abstract class Key {
   /**
    * Returns a {@link Parameters} object containing all the information about the key which is not
@@ -58,9 +56,14 @@ public abstract class Key {
   public abstract Integer getIdRequirementOrNull();
 
   /**
-   * Returns true if the key is equal to the passed in key.
+   * Returns true if the key is guaranteed to be equal to {@code other}.
    *
    * <p>Implementations are required to do this in constant time.
+   *
+   * <p>Note: this is allowed to return false even if two keys are guaranteed to represent the same
+   * function, but are represented differently. For example, a key is allowed to internally store
+   * the number of zero-bytes used as padding when a large number is represented as a byte array,
+   * and use this in the comparison.
    *
    * <p>Note: Tink {@code Key} objects should typically not override {@code hashCode} (because it
    * could risk leaking key material). Hence, they typically also should not override {@code

@@ -17,8 +17,12 @@
 #ifndef TINK_CORE_KEY_TYPE_MANAGER_H_
 #define TINK_CORE_KEY_TYPE_MANAGER_H_
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <typeinfo>
 
 #include "absl/status/status.h"
@@ -42,7 +46,7 @@ namespace internal {
 template <typename KeyProto, typename KeyFormatProto>
 class InternalKeyFactory {
  public:
-  virtual ~InternalKeyFactory() {}
+  virtual ~InternalKeyFactory() = default;
 
   // Validates a key format proto.  KeyFormatProtos
   // on which this function returns a non-ok status will not be passed to
@@ -69,7 +73,7 @@ class InternalKeyFactory {
 template <typename KeyProto>
 class InternalKeyFactory<KeyProto, void> {
  public:
-  virtual ~InternalKeyFactory() {}
+  virtual ~InternalKeyFactory() = default;
 };
 
 }  // namespace internal
@@ -112,7 +116,7 @@ class KeyTypeManager<KeyProtoParam, KeyFormatProtoParam, List<Primitives...>>
   template <typename Primitive>
   class PrimitiveFactory {
    public:
-    virtual ~PrimitiveFactory() {}
+    virtual ~PrimitiveFactory() = default;
     virtual crypto::tink::util::StatusOr<std::unique_ptr<Primitive>> Create(
         const KeyProto& key) const = 0;
   };

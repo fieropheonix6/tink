@@ -12,17 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-///////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
 #ifndef TINK_INTERNAL_KEYSET_WRAPPER_IMPL_H_
 #define TINK_INTERNAL_KEYSET_WRAPPER_IMPL_H_
 
+#include <memory>
 #include <string>
+#include <utility>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/functional/any_invocable.h"
 #include "tink/internal/key_info.h"
 #include "tink/internal/keyset_wrapper.h"
 #include "tink/primitive_set.h"
 #include "tink/primitive_wrapper.h"
+#include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/validation.h"
 #include "proto/tink.pb.h"
@@ -38,10 +43,10 @@ class KeysetWrapperImpl : public KeysetWrapper<Q> {
   // testing -- later, this function will just be Registry::GetPrimitive().
   explicit KeysetWrapperImpl(
       const PrimitiveWrapper<P, Q>* transforming_wrapper,
-      std::function<crypto::tink::util::StatusOr<std::unique_ptr<P>>(
-          const google::crypto::tink::KeyData& key_data)>
+      absl::AnyInvocable<crypto::tink::util::StatusOr<std::unique_ptr<P>>(
+          const google::crypto::tink::KeyData& key_data) const>
           primitive_getter)
-      : primitive_getter_(primitive_getter),
+      : primitive_getter_(std::move(primitive_getter)),
         transforming_wrapper_(*transforming_wrapper) {}
 
   crypto::tink::util::StatusOr<std::unique_ptr<Q>> Wrap(
@@ -50,27 +55,32 @@ class KeysetWrapperImpl : public KeysetWrapper<Q> {
       const override {
     crypto::tink::util::Status status = ValidateKeyset(keyset);
     if (!status.ok()) return status;
-    auto primitives = absl::make_unique<PrimitiveSet<P>>(annotations);
+    typename PrimitiveSet<P>::Builder primitives_builder;
+    primitives_builder.AddAnnotations(annotations);
     for (const google::crypto::tink::Keyset::Key& key : keyset.key()) {
       if (key.status() != google::crypto::tink::KeyStatusType::ENABLED) {
         continue;
       }
       auto primitive = primitive_getter_(key.key_data());
       if (!primitive.ok()) return primitive.status();
-      auto entry = primitives->AddPrimitive(std::move(primitive.value()),
-                                            KeyInfoFromKey(key));
-      if (!entry.ok()) return entry.status();
       if (key.key_id() == keyset.primary_key_id()) {
-        auto primary_result = primitives->set_primary(entry.value());
-        if (!primary_result.ok()) return primary_result;
+        primitives_builder.AddPrimaryPrimitive(std::move(primitive.value()),
+                                               KeyInfoFromKey(key));
+      } else {
+        primitives_builder.AddPrimitive(std::move(primitive.value()),
+                                        KeyInfoFromKey(key));
       }
     }
-    return transforming_wrapper_.Wrap(std::move(primitives));
+    crypto::tink::util::StatusOr<PrimitiveSet<P>> primitives =
+        std::move(primitives_builder).Build();
+    if (!primitives.ok()) return primitives.status();
+    return transforming_wrapper_.Wrap(
+        absl::make_unique<PrimitiveSet<P>>(*std::move(primitives)));
   }
 
  private:
-  const std::function<crypto::tink::util::StatusOr<std::unique_ptr<P>>(
-      const google::crypto::tink::KeyData& key_data)>
+  absl::AnyInvocable<crypto::tink::util::StatusOr<std::unique_ptr<P>>(
+      const google::crypto::tink::KeyData& key_data) const>
       primitive_getter_;
   const PrimitiveWrapper<P, Q>& transforming_wrapper_;
 };

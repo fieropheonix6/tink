@@ -17,10 +17,13 @@
 
 #include <fstream>
 #include <iostream>
+#include <memory>
+#include <ostream>
 #include <sstream>
 #include <string>
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/escaping.h"
@@ -28,14 +31,19 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
+#include "tink/aead.h"
 #include "tink/aead/aead_key_templates.h"
 #include "tink/binary_keyset_reader.h"
 #include "tink/binary_keyset_writer.h"
 #include "tink/cleartext_keyset_handle.h"
+#include "tink/config/global_registry.h"
+#include "tink/keyset_handle.h"
 #include "tink/kms_client.h"
+#include "tink/kms_clients.h"
 #include "tink/util/errors.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
+#include "proto/tink.pb.h"
 
 namespace crypto {
 namespace tink {
@@ -108,7 +116,8 @@ StatusOr<std::unique_ptr<Aead>> FakeKmsClient::GetAead(
   if (!handle_result.ok()) {
     return handle_result.status();
   }
-  return handle_result.value()->GetPrimitive<crypto::tink::Aead>();
+  return handle_result.value()->GetPrimitive<crypto::tink::Aead>(
+      ConfigGlobalRegistry());
 }
 
 Status FakeKmsClient::RegisterNewClient(absl::string_view key_uri,
@@ -124,7 +133,8 @@ Status FakeKmsClient::RegisterNewClient(absl::string_view key_uri,
 StatusOr<std::string> FakeKmsClient::CreateFakeKeyUri() {
   // The key_uri contains an encoded keyset with a new Aes128Gcm key.
   const KeyTemplate& key_template = AeadKeyTemplates::Aes128Gcm();
-  auto handle_result = KeysetHandle::GenerateNew(key_template);
+  auto handle_result =
+      KeysetHandle::GenerateNew(key_template, KeyGenConfigGlobalRegistry());
   if (!handle_result.ok()) {
     return handle_result.status();
   }

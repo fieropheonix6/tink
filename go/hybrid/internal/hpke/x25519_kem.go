@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package hpke
 
@@ -87,8 +85,8 @@ func (x *x25519KEM) encapsulatedKeyLength() int {
 
 // deriveKEMSharedSecret returns a pseudorandom key obtained via HKDF SHA256.
 func (x *x25519KEM) deriveKEMSharedSecret(dh, senderPubKey, recipientPubKey []byte) ([]byte, error) {
-	ctx := make([]byte, len(senderPubKey))
-	copy(ctx, senderPubKey)
+	ctx := make([]byte, 0, len(senderPubKey)+len(recipientPubKey))
+	ctx = append(ctx, senderPubKey...)
 	ctx = append(ctx, recipientPubKey...)
 
 	suiteID := kemSuiteID(x25519HKDFSHA256)
@@ -101,7 +99,7 @@ func (x *x25519KEM) deriveKEMSharedSecret(dh, senderPubKey, recipientPubKey []by
 		return nil, err
 	}
 	return hkdfKDF.extractAndExpand(
-		/*salt=*/ nil,
+		nil, /*=salt*/
 		dh,
 		"eae_prk",
 		ctx,

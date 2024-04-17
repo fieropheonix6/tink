@@ -20,7 +20,9 @@
 #include <string>
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
+#include "absl/strings/string_view.h"
 #include "tink/crypto_format.h"
 #include "tink/deterministic_aead.h"
 #include "tink/internal/monitoring_util.h"
@@ -71,7 +73,7 @@ class  DeterministicAeadSetWrapper : public DeterministicAead {
       absl::string_view ciphertext,
       absl::string_view associated_data) const override;
 
-  ~DeterministicAeadSetWrapper() override {}
+  ~DeterministicAeadSetWrapper() override = default;
 
  private:
   std::unique_ptr<PrimitiveSet<DeterministicAead>> daead_set_;

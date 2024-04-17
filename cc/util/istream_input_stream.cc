@@ -16,16 +16,17 @@
 
 #include "tink/util/istream_input_stream.h"
 
-#include <unistd.h>
+#include <errno.h>
+#include <stdint.h>
 
 #include <algorithm>
 #include <cstring>
 #include <istream>
+#include <memory>
 #include <utility>
 
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
-#include "tink/input_stream.h"
 #include "tink/util/errors.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
@@ -85,8 +86,7 @@ void IstreamInputStream::BackUp(int count) {
   position_ = position_ - actual_count;
 }
 
-IstreamInputStream::~IstreamInputStream() {
-}
+IstreamInputStream::~IstreamInputStream() = default;
 
 int64_t IstreamInputStream::Position() const {
   return position_;

@@ -16,14 +16,19 @@
 
 #include "tink/subtle/ed25519_verify_boringssl.h"
 
+#include <iostream>
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
 #include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
+#include "include/rapidjson/document.h"
 #include "tink/config/tink_fips.h"
 #include "tink/internal/ec_util.h"
 #include "tink/public_key_verify.h"

@@ -59,17 +59,18 @@ main() {
   process_args "$@"
   local -r cmake_parameters=(
     -DTINK_BUILD_TESTS=ON
-    -DCMAKE_CXX_STANDARD=11
+    -DCMAKE_CXX_STANDARD=14
+    -DCMAKE_CXX_STANDARD_REQUIRED=ON
     "${ADDITIONAL_CMAKE_PARAMETERS[@]}"
   )
   # We need an absolute path to the CMake project directory.
-  local -r tink_cmake_project_dir="$(pwd)/$(basename ${CMAKE_PROJECT_DIR})"
+  local -r tink_cmake_project_dir="$(cd "${CMAKE_PROJECT_DIR}" && pwd)"
   local -r cmake_build_dir="$(mktemp -dt cmake-build.XXXXXX)"
   cd "${cmake_build_dir}"
   cmake --version
   cmake "${tink_cmake_project_dir}" "${cmake_parameters[@]}"
-  make -j"$(nproc)" all
-  CTEST_OUTPUT_ON_FAILURE=1 make test
+  cmake --build . --parallel "$(nproc)"
+  CTEST_OUTPUT_ON_FAILURE=1 ctest --parallel "$(nproc)"
 }
 
 main "$@"

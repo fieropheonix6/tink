@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package jwt
 
@@ -210,7 +208,7 @@ func TestJWTPSSignerKeyManagerPritimiveSignVerify(t *testing.T) {
 			if tc.tinkKID != nil {
 				// The tc.tinkKID value was written into the JWT header in SignAndEncodeWithKID.
 				// It is now ignored if the Tink KID is not set.
-				if _, err := verifier.VerifyAndDecodeWithKID(signed, validator /*tinkKID=*/, nil); err != nil {
+				if _, err := verifier.VerifyAndDecodeWithKID(signed, validator /*=tinkKID*/, nil); err != nil {
 					t.Errorf("VerifyAndDecodeWithKID(kid = nil) err = %v, want nil", err)
 				}
 			}
@@ -228,7 +226,7 @@ func TestJWTPSSignerKeyManagerPrimitiveFailsWithCorruptedKey(t *testing.T) {
 		t.Fatalf("makeValidJWTPSPrivateKey() err = %v, want nil", err)
 	}
 	invalidQ := validPrivKey.GetQ()
-	invalidQ[50] <<= 1
+	invalidQ[50] = byte(uint8(invalidQ[50] + 1))
 	corruptedPrivKey := &jrsppb.JwtRsaSsaPssPrivateKey{
 		Version:   validPrivKey.GetVersion(),
 		PublicKey: validPrivKey.GetPublicKey(),

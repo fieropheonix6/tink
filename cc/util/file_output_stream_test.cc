@@ -16,19 +16,46 @@
 
 #include "tink/util/file_output_stream.h"
 
+#include <fcntl.h>
+
 #include <algorithm>
+#include <cerrno>
+#include <cstring>
+#include <iostream>
+#include <ostream>
 #include <string>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
+#include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "tink/internal/test_file_util.h"
 #include "tink/subtle/random.h"
+#include "tink/util/status.h"
+#include "tink/util/statusor.h"
+#include "tink/util/test_matchers.h"
 #include "tink/util/test_util.h"
 
 namespace crypto {
 namespace tink {
 namespace {
+
+using ::crypto::tink::test::IsOk;
+
+// Opens test file `filename` and returns a file descriptor to it.
+util::StatusOr<int> OpenTestFileToWrite(absl::string_view filename) {
+  std::string full_filename = absl::StrCat(test::TmpDir(), "/", filename);
+  mode_t mode = S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH;
+  int fd = open(full_filename.c_str(), O_WRONLY | O_CREAT | O_TRUNC, mode);
+  if (fd == -1) {
+    return util::Status(absl::StatusCode::kInternal,
+                        absl::StrCat("Cannot open file ", full_filename,
+                                     " error: ", std::strerror(errno)));
+  }
+  return fd;
+}
 
 // Writes 'contents' the specified 'output_stream', and closes the stream.
 // Returns the status of output_stream->Close()-operation, or a non-OK status
@@ -62,9 +89,12 @@ TEST_F(FileOutputStreamTest, WritingStreams) {
   for (auto stream_size : {0, 10, 100, 1000, 10000, 100000, 1000000}) {
     SCOPED_TRACE(absl::StrCat("stream_size = ", stream_size));
     std::string stream_contents = subtle::Random::GetRandomBytes(stream_size);
-    std::string filename = absl::StrCat(stream_size, "_writing_test.bin");
-    int output_fd = test::GetTestFileDescriptor(filename);
-    auto output_stream = absl::make_unique<util::FileOutputStream>(output_fd);
+    std::string filename = absl::StrCat(
+        stream_size, internal::GetTestFileNamePrefix(), "_test.bin");
+    ASSERT_THAT(internal::CreateTestFile(filename, stream_contents), IsOk());
+    util::StatusOr<int> output_fd = OpenTestFileToWrite(filename);
+    ASSERT_THAT(output_fd.status(), IsOk());
+    auto output_stream = absl::make_unique<util::FileOutputStream>(*output_fd);
     auto status = WriteToStream(output_stream.get(), stream_contents);
     EXPECT_TRUE(status.ok()) << status;
     std::string file_contents = test::ReadTestFile(filename);
@@ -78,10 +108,13 @@ TEST_F(FileOutputStreamTest, CustomBufferSizes) {
   std::string stream_contents = subtle::Random::GetRandomBytes(stream_size);
   for (auto buffer_size : {1, 10, 100, 1000, 10000, 100000, 1000000}) {
     SCOPED_TRACE(absl::StrCat("buffer_size = ", buffer_size));
-    std::string filename = absl::StrCat(buffer_size, "_buffer_size_test.bin");
-    int output_fd = test::GetTestFileDescriptor(filename);
+    std::string filename = absl::StrCat(
+        buffer_size, internal::GetTestFileNamePrefix(), "_test.bin");
+    ASSERT_THAT(internal::CreateTestFile(filename, stream_contents), IsOk());
+    util::StatusOr<int> output_fd = OpenTestFileToWrite(filename);
+    ASSERT_THAT(output_fd.status(), IsOk());
     auto output_stream =
-        absl::make_unique<util::FileOutputStream>(output_fd, buffer_size);
+        absl::make_unique<util::FileOutputStream>(*output_fd, buffer_size);
     void* buffer;
     auto next_result = output_stream->Next(&buffer);
     EXPECT_TRUE(next_result.ok()) << next_result.status();
@@ -101,12 +134,15 @@ TEST_F(FileOutputStreamTest, BackupAndPosition) {
   int buffer_size = 1234;
   void* buffer;
   std::string stream_contents = subtle::Random::GetRandomBytes(stream_size);
-  std::string filename = absl::StrCat(buffer_size, "_backup_test.bin");
-  int output_fd = test::GetTestFileDescriptor(filename);
+  std::string filename =
+      absl::StrCat(buffer_size, internal::GetTestFileNamePrefix(), "_test.bin");
+  ASSERT_THAT(internal::CreateTestFile(filename, stream_contents), IsOk());
+  util::StatusOr<int> output_fd = OpenTestFileToWrite(filename);
+  ASSERT_THAT(output_fd.status(), IsOk());
 
   // Prepare the stream and do the first call to Next().
   auto output_stream =
-      absl::make_unique<util::FileOutputStream>(output_fd, buffer_size);
+      absl::make_unique<util::FileOutputStream>(*output_fd, buffer_size);
   EXPECT_EQ(0, output_stream->Position());
   auto next_result = output_stream->Next(&buffer);
   EXPECT_TRUE(next_result.ok()) << next_result.status();

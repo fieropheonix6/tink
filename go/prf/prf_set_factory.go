@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package prf
 
@@ -20,24 +18,18 @@ import (
 	"fmt"
 
 	"github.com/google/tink/go/core/primitiveset"
-	"github.com/google/tink/go/core/registry"
+	"github.com/google/tink/go/internal/internalregistry"
+	"github.com/google/tink/go/internal/monitoringutil"
 	"github.com/google/tink/go/keyset"
+	"github.com/google/tink/go/monitoring"
 )
 
 // NewPRFSet creates a prf.Set primitive from the given keyset handle.
-func NewPRFSet(h *keyset.Handle) (*Set, error) {
-	return NewPRFSetWithKeyManager(h, nil /*keyManager*/)
-}
-
-// NewPRFSetWithKeyManager creates a prf.Set primitive from the given keyset handle and a custom key manager.
-//
-// Deprecated: Use [New].
-func NewPRFSetWithKeyManager(h *keyset.Handle, km registry.KeyManager) (*Set, error) {
-	ps, err := h.PrimitivesWithKeyManager(km)
+func NewPRFSet(handle *keyset.Handle) (*Set, error) {
+	ps, err := handle.Primitives()
 	if err != nil {
 		return nil, fmt.Errorf("prf_set_factory: cannot obtain primitive set: %s", err)
 	}
-
 	return wrapPRFset(ps)
 }
 
@@ -48,7 +40,10 @@ func wrapPRFset(ps *primitiveset.PrimitiveSet) (*Set, error) {
 	}
 	set.PrimaryID = ps.Primary.KeyID
 	set.PRFs = make(map[uint32]PRF)
-
+	logger, err := createLogger(ps)
+	if err != nil {
+		return nil, err
+	}
 	entries, err := ps.RawEntries()
 	if err != nil {
 		return nil, fmt.Errorf("Could not get raw entries: %v", err)
@@ -64,8 +59,26 @@ func wrapPRFset(ps *primitiveset.PrimitiveSet) (*Set, error) {
 		if !ok {
 			return nil, fmt.Errorf("prf_set_factory: not a PRF primitive")
 		}
-		set.PRFs[entry.KeyID] = prf
+		set.PRFs[entry.KeyID] = &monitoredPRF{
+			prf:    prf,
+			keyID:  entry.KeyID,
+			logger: logger,
+		}
 	}
-
 	return set, nil
+}
+
+func createLogger(ps *primitiveset.PrimitiveSet) (monitoring.Logger, error) {
+	if len(ps.Annotations) == 0 {
+		return &monitoringutil.DoNothingLogger{}, nil
+	}
+	keysetInfo, err := monitoringutil.KeysetInfoFromPrimitiveSet(ps)
+	if err != nil {
+		return nil, err
+	}
+	return internalregistry.GetMonitoringClient().NewLogger(&monitoring.Context{
+		KeysetInfo:  keysetInfo,
+		Primitive:   "prf",
+		APIFunction: "compute",
+	})
 }

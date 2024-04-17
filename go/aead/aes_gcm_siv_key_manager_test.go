@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package aead_test
 
@@ -64,7 +62,10 @@ func TestAESGCMSIVGetPrimitiveWithInvalidInput(t *testing.T) {
 	// invalid AESGCMSIVKey
 	testKeys := genInvalidAESGCMSIVKeys()
 	for i := 0; i < len(testKeys); i++ {
-		serializedKey, _ := proto.Marshal(testKeys[i])
+		serializedKey, err := proto.Marshal(testKeys[i])
+		if err != nil {
+			t.Fatalf("proto.Marshal() err = %q, want nil", err)
+		}
 		if _, err := keyManager.Primitive(serializedKey); err == nil {
 			t.Errorf("Primitive(serializedKey=%v): Key %d, got err = nil, want err != nil.", serializedKey, i)
 		}
@@ -146,7 +147,10 @@ func TestAESGCMSIVNewKeyWithInvalidInput(t *testing.T) {
 	// bad format
 	badFormats := genInvalidAESGCMSIVKeyFormats()
 	for i := 0; i < len(badFormats); i++ {
-		serializedFormat, _ := proto.Marshal(badFormats[i])
+		serializedFormat, err := proto.Marshal(badFormats[i])
+		if err != nil {
+			t.Fatalf("proto.Marshal() err = %q, want nil", err)
+		}
 		if _, err := keyManager.NewKey(serializedFormat); err == nil {
 			t.Errorf("NewKey(serializedKeyFormat=%v): Key %d, got err = nil, want err != nil", serializedFormat, i)
 		}
@@ -191,6 +195,14 @@ func TestAESGCMSIVNewKeyDataBasic(t *testing.T) {
 		}
 		if err := validateAESGCMSIVKey(key, format); err != nil {
 			t.Errorf("validateAESGCMSIVKey(key=%v): Failed to validate key for keySize=%d; err=%v", key, keySize, err)
+		}
+		p, err := registry.PrimitiveFromKeyData(keyData)
+		if err != nil {
+			t.Errorf("registry.PrimitiveFromKeyData(keyData) err = %v, want nil", err)
+		}
+		_, ok := p.(*subtle.AESGCMSIV)
+		if !ok {
+			t.Error("registry.PrimitiveFromKeyData(keyData) did not return a AESGCMSIV primitive")
 		}
 	}
 }
@@ -283,11 +295,8 @@ func validateAESGCMSIVKey(key *gcmsivpb.AesGcmSivKey, format *gcmsivpb.AesGcmSiv
 	return validateAESGCMSIVPrimitive(p, key)
 }
 
-func validateAESGCMSIVPrimitive(p interface{}, key *gcmsivpb.AesGcmSivKey) error {
+func validateAESGCMSIVPrimitive(p any, key *gcmsivpb.AesGcmSivKey) error {
 	cipher := p.(*subtle.AESGCMSIV)
-	if !bytes.Equal(cipher.Key, key.KeyValue) {
-		return fmt.Errorf("Inputted key and primitive key don't match; input=%v, primitive=%v", key.KeyValue, cipher.Key)
-	}
 	// Try to encrypt and decrypt random data.
 	pt := random.GetRandomBytes(32)
 	aad := random.GetRandomBytes(32)

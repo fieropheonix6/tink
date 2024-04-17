@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package hybrid
 
@@ -61,21 +59,30 @@ func TestPrivateKeyManagerPrimitiveRejectsInvalidParams(t *testing.T) {
 		name   string
 		params *hpkepb.HpkeParams
 	}{
-		{"kem", &hpkepb.HpkeParams{
-			Kem:  hpkepb.HpkeKem_KEM_UNKNOWN,
-			Kdf:  hpkepb.HpkeKdf_HKDF_SHA256,
-			Aead: hpkepb.HpkeAead_AES_256_GCM,
-		}},
-		{"kdf", &hpkepb.HpkeParams{
-			Kem:  hpkepb.HpkeKem_DHKEM_X25519_HKDF_SHA256,
-			Kdf:  hpkepb.HpkeKdf_KDF_UNKNOWN,
-			Aead: hpkepb.HpkeAead_AES_256_GCM,
-		}},
-		{"aead", &hpkepb.HpkeParams{
-			Kem:  hpkepb.HpkeKem_DHKEM_X25519_HKDF_SHA256,
-			Kdf:  hpkepb.HpkeKdf_HKDF_SHA256,
-			Aead: hpkepb.HpkeAead_AEAD_UNKNOWN,
-		}},
+		{
+			name: "invalid_kem",
+			params: &hpkepb.HpkeParams{
+				Kem:  hpkepb.HpkeKem_KEM_UNKNOWN,
+				Kdf:  hpkepb.HpkeKdf_HKDF_SHA256,
+				Aead: hpkepb.HpkeAead_AES_256_GCM,
+			},
+		},
+		{
+			name: "invalid_kdf",
+			params: &hpkepb.HpkeParams{
+				Kem:  hpkepb.HpkeKem_DHKEM_X25519_HKDF_SHA256,
+				Kdf:  hpkepb.HpkeKdf_KDF_UNKNOWN,
+				Aead: hpkepb.HpkeAead_AES_256_GCM,
+			},
+		},
+		{
+			name: "invalid_aead",
+			params: &hpkepb.HpkeParams{
+				Kem:  hpkepb.HpkeKem_DHKEM_X25519_HKDF_SHA256,
+				Kdf:  hpkepb.HpkeKdf_HKDF_SHA256,
+				Aead: hpkepb.HpkeAead_AEAD_UNKNOWN,
+			},
+		},
 	}
 
 	for _, test := range tests {

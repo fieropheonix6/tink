@@ -18,8 +18,11 @@ package com.google.crypto.tink.tinkey;
 
 import com.google.crypto.tink.daead.DeterministicAeadConfig;
 import com.google.crypto.tink.hybrid.HybridConfig;
+import com.google.crypto.tink.integration.awskms.AwsKmsClient;
+import com.google.crypto.tink.integration.gcpkms.GcpKmsClient;
 import com.google.crypto.tink.jwt.JwtMacConfig;
 import com.google.crypto.tink.jwt.JwtSignatureConfig;
+import com.google.crypto.tink.keyderivation.KeyDerivationConfig;
 import com.google.crypto.tink.prf.PrfConfig;
 import com.google.crypto.tink.signature.SignatureConfig;
 import com.google.crypto.tink.streamingaead.StreamingAeadConfig;
@@ -38,8 +41,12 @@ public final class Tinkey {
     StreamingAeadConfig.register();
     JwtSignatureConfig.register();
     JwtMacConfig.register();
-    // place holder for KeyderivationConfig. DO NOT EDIT.
+    KeyDerivationConfig.register();
     // place holder for Internal Prps. DO NOT EDIT.
+
+    KmsClientsFactory.globalInstance().addFactory(AwsKmsClient::new);
+    KmsClientsFactory.globalInstance().addFactory(GcpKmsClient::new);
+
     TinkeyCommands commands = new TinkeyCommands();
     CmdLineParser parser = new CmdLineParser(commands);
 

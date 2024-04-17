@@ -16,9 +16,12 @@
 #ifndef TINK_INTERNAL_EC_UTIL_H_
 #define TINK_INTERNAL_EC_UTIL_H_
 
+#include <stdint.h>
+
 #include <memory>
 #include <string>
 
+#include "absl/strings/string_view.h"
 #include "openssl/ec.h"
 #include "tink/internal/ssl_unique_ptr.h"
 #include "tink/subtle/common_enums.h"
@@ -78,6 +81,11 @@ crypto::tink::util::StatusOr<std::unique_ptr<X25519Key>> X25519KeyFromEcKey(
 
 // Returns an EcKey matching the specified X25519Key.
 EcKey EcKeyFromX25519Key(const X25519Key *x25519_key);
+
+// Given an OpenSSL/BoringSSL key EC_KEY `key` and curve type `curve` return an
+// EcKey.
+util::StatusOr<EcKey> EcKeyFromSslEcKey(
+    crypto::tink::subtle::EllipticCurveType curve, const EC_KEY &key);
 
 // Generates a shared secret using `private_key` and `peer_public_key`; keys
 // must be X25519 keys otherwise an error is returned.

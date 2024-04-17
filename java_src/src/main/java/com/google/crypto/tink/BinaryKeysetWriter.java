@@ -18,6 +18,7 @@ package com.google.crypto.tink;
 
 import com.google.crypto.tink.proto.EncryptedKeyset;
 import com.google.crypto.tink.proto.Keyset;
+import com.google.errorprone.annotations.InlineMe;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -45,9 +46,17 @@ public final class BinaryKeysetWriter implements KeysetWriter {
     return new BinaryKeysetWriter(stream);
   }
 
-  /** Static method to create a BinaryKeysetWriter that writes to a file. */
+  /**
+   * Static method to create a BinaryKeysetWriter that writes to a file.
+   *
+   * @deprecated Inline the function.
+   */
+  @InlineMe(
+      replacement = "BinaryKeysetWriter.withOutputStream(new FileOutputStream(file))",
+      imports = {"com.google.crypto.tink.BinaryKeysetWriter", "java.io.FileOutputStream"})
+  @Deprecated
   public static KeysetWriter withFile(File file) throws IOException {
-    return new BinaryKeysetWriter(new FileOutputStream(file));
+    return withOutputStream(new FileOutputStream(file));
   }
 
   @Override
@@ -62,7 +71,7 @@ public final class BinaryKeysetWriter implements KeysetWriter {
   @Override
   public void write(EncryptedKeyset keyset) throws IOException {
     try {
-      keyset.writeTo(outputStream);
+      keyset.toBuilder().clearKeysetInfo().build().writeTo(outputStream);
     } finally {
       outputStream.close();
     }

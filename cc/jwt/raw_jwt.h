@@ -18,11 +18,13 @@
 #define TINK_JWT_RAW_JWT_H_
 
 #include <string>
+#include <vector>
 
 #include "google/protobuf/struct.pb.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "absl/types/optional.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 

@@ -14,8 +14,8 @@
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef THIRD_PARTY_TINK_KEY_ACCESS_H_
-#define THIRD_PARTY_TINK_KEY_ACCESS_H_
+#ifndef TINK_KEY_ACCESS_H_
+#define TINK_KEY_ACCESS_H_
 
 namespace crypto {
 namespace tink {
@@ -27,7 +27,7 @@ class KeyAccess {
     return token;
   }
 
-  const bool CanAccessSecret() { return can_access_secret_; }
+  bool CanAccessSecret() { return can_access_secret_; }
 
   // KeyAccess objects are copiable and movable.
   KeyAccess(const KeyAccess&) = default;
@@ -46,4 +46,4 @@ class KeyAccess {
 }  // namespace tink
 }  // namespace crypto
 
-#endif  // THIRD_PARTY_TINK_KEY_ACCESS_H_
+#endif  // TINK_KEY_ACCESS_H_

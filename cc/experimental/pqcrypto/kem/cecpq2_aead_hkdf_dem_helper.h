@@ -17,6 +17,7 @@
 #ifndef TINK_EXPERIMENTAL_PQCRYPTO_KEM_CECPQ2_AEAD_HKDF_DEM_HELPER_H_
 #define TINK_EXPERIMENTAL_PQCRYPTO_KEM_CECPQ2_AEAD_HKDF_DEM_HELPER_H_
 
+#include <cstdint>
 #include <memory>
 
 #include "tink/aead.h"
@@ -37,7 +38,7 @@ class Cecpq2AeadHkdfDemHelper {
       std::unique_ptr<const Cecpq2AeadHkdfDemHelper>>
   New(const google::crypto::tink::KeyTemplate& dem_key_template);
 
-  virtual ~Cecpq2AeadHkdfDemHelper() {}
+  virtual ~Cecpq2AeadHkdfDemHelper() = default;
 
   // Creates and returns a new AeadOrDaead object that uses
   // a 32-bytes or greater high-entropy seed to generate a key.

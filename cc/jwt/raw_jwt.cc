@@ -16,15 +16,21 @@
 
 #include "tink/jwt/raw_jwt.h"
 
+#include <cstdint>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/status/status.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_format.h"
+#include "absl/strings/string_view.h"
 #include "absl/strings/substitute.h"
 #include "absl/time/time.h"
+#include "absl/types/optional.h"
 #include "tink/jwt/internal/json_util.h"
+#include "tink/util/status.h"
+#include "tink/util/statusor.h"
 
 namespace crypto {
 namespace tink {
@@ -185,7 +191,7 @@ util::StatusOr<std::string> RawJwt::GetJsonPayload() const {
   return jwt_internal::ProtoStructToJsonString(json_proto_);
 }
 
-RawJwt::RawJwt() {}
+RawJwt::RawJwt() = default;
 
 RawJwt::RawJwt(absl::optional<std::string> type_header,
                google::protobuf::Struct json_proto) {

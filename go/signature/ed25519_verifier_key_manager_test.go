@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package signature_test
 
@@ -29,7 +27,10 @@ func TestED25519VerifyGetPrimitiveBasic(t *testing.T) {
 	if err != nil {
 		t.Errorf("cannot obtain ED25519Verifier key manager: %s", err)
 	}
-	serializedKey, _ := proto.Marshal(testutil.NewED25519PublicKey())
+	serializedKey, err := proto.Marshal(testutil.NewED25519PublicKey())
+	if err != nil {
+		t.Fatalf("proto.Marshal() err = %q, want nil", err)
+	}
 	_, err = km.Primitive(serializedKey)
 	if err != nil {
 		t.Errorf("unexpect error in test case: %s ", err)
@@ -45,7 +46,10 @@ func TestED25519VerifyGetPrimitiveWithInvalidInput(t *testing.T) {
 	// invalid version
 	key := testutil.NewED25519PublicKey()
 	key.Version = testutil.ED25519VerifierKeyVersion + 1
-	serializedKey, _ := proto.Marshal(key)
+	serializedKey, err := proto.Marshal(key)
+	if err != nil {
+		t.Fatalf("proto.Marshal() err = %q, want nil", err)
+	}
 	if _, err := km.Primitive(serializedKey); err == nil {
 		t.Errorf("expect an error when version is invalid")
 	}

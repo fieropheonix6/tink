@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package hybrid
 
@@ -21,52 +19,67 @@ import (
 
 	"github.com/google/tink/go/core/cryptofmt"
 	"github.com/google/tink/go/core/primitiveset"
-	"github.com/google/tink/go/core/registry"
+	"github.com/google/tink/go/internal/internalregistry"
+	"github.com/google/tink/go/internal/monitoringutil"
 	"github.com/google/tink/go/keyset"
+	"github.com/google/tink/go/monitoring"
 	"github.com/google/tink/go/tink"
 )
 
 // NewHybridDecrypt returns an HybridDecrypt primitive from the given keyset handle.
-func NewHybridDecrypt(h *keyset.Handle) (tink.HybridDecrypt, error) {
-	return NewHybridDecryptWithKeyManager(h, nil /*keyManager*/)
-}
-
-// NewHybridDecryptWithKeyManager returns an HybridDecrypt primitive from the given keyset handle
-// and custom key manager.
-//
-// Deprecated: Use [NewHybridDecrypt].
-func NewHybridDecryptWithKeyManager(h *keyset.Handle, km registry.KeyManager) (tink.HybridDecrypt, error) {
-	ps, err := h.PrimitivesWithKeyManager(km)
+func NewHybridDecrypt(handle *keyset.Handle) (tink.HybridDecrypt, error) {
+	ps, err := handle.Primitives()
 	if err != nil {
 		return nil, fmt.Errorf("hybrid_factory: cannot obtain primitive set: %s", err)
 	}
-
 	return newWrappedHybridDecrypt(ps)
 }
 
 // wrappedHybridDecrypt is an HybridDecrypt implementation that uses the underlying primitive set
 // for decryption.
 type wrappedHybridDecrypt struct {
-	ps *primitiveset.PrimitiveSet
+	ps     *primitiveset.PrimitiveSet
+	logger monitoring.Logger
 }
 
+// compile time assertion that wrappedHybridDecrypt implements the HybridDecrypt interface.
+var _ tink.HybridDecrypt = (*wrappedHybridDecrypt)(nil)
+
 func newWrappedHybridDecrypt(ps *primitiveset.PrimitiveSet) (*wrappedHybridDecrypt, error) {
-	if _, ok := (ps.Primary.Primitive).(tink.HybridDecrypt); !ok {
-		return nil, fmt.Errorf("hybrid_factory: not a HybridDecrypt primitive")
+	if err := isHybridDecrypt(ps.Primary.Primitive); err != nil {
+		return nil, err
 	}
 
 	for _, primitives := range ps.Entries {
 		for _, p := range primitives {
-			if _, ok := (p.Primitive).(tink.HybridDecrypt); !ok {
-				return nil, fmt.Errorf("hybrid_factory: not a HybridDecrypt primitive")
+			if err := isHybridDecrypt(p.Primitive); err != nil {
+				return nil, err
 			}
 		}
 	}
+	logger, err := createDecryptLogger(ps)
+	if err != nil {
+		return nil, err
+	}
+	return &wrappedHybridDecrypt{
+		ps:     ps,
+		logger: logger,
+	}, nil
+}
 
-	ret := new(wrappedHybridDecrypt)
-	ret.ps = ps
-
-	return ret, nil
+func createDecryptLogger(ps *primitiveset.PrimitiveSet) (monitoring.Logger, error) {
+	if len(ps.Annotations) == 0 {
+		return &monitoringutil.DoNothingLogger{}, nil
+	}
+	keysetInfo, err := monitoringutil.KeysetInfoFromPrimitiveSet(ps)
+	if err != nil {
+		return nil, err
+	}
+	return internalregistry.GetMonitoringClient().NewLogger(&monitoring.Context{
+		KeysetInfo:  keysetInfo,
+		Primitive:   "hybrid_decrypt",
+		APIFunction: "decrypt",
+	})
 }
 
 // Decrypt decrypts the given ciphertext, verifying the integrity of contextInfo.
@@ -80,13 +93,10 @@ func (a *wrappedHybridDecrypt) Decrypt(ciphertext, contextInfo []byte) ([]byte, 
 		entries, err := a.ps.EntriesForPrefix(string(prefix))
 		if err == nil {
 			for i := 0; i < len(entries); i++ {
-				p, ok := (entries[i].Primitive).(tink.HybridDecrypt)
-				if !ok {
-					return nil, fmt.Errorf("hybrid_factory: not a HybridDecrypt primitive")
-				}
-
+				p := entries[i].Primitive.(tink.HybridDecrypt) // verified in newWrappedHybridDecrypt
 				pt, err := p.Decrypt(ctNoPrefix, contextInfo)
 				if err == nil {
+					a.logger.Log(entries[i].KeyID, len(ctNoPrefix))
 					return pt, nil
 				}
 			}
@@ -97,18 +107,28 @@ func (a *wrappedHybridDecrypt) Decrypt(ciphertext, contextInfo []byte) ([]byte, 
 	entries, err := a.ps.RawEntries()
 	if err == nil {
 		for i := 0; i < len(entries); i++ {
-			p, ok := (entries[i].Primitive).(tink.HybridDecrypt)
-			if !ok {
-				return nil, fmt.Errorf("hybrid_factory: not a HybridDecrypt primitive")
-			}
-
+			p := entries[i].Primitive.(tink.HybridDecrypt) // verified in newWrappedHybridDecrypt
 			pt, err := p.Decrypt(ciphertext, contextInfo)
 			if err == nil {
+				a.logger.Log(entries[i].KeyID, len(ciphertext))
 				return pt, nil
 			}
 		}
 	}
 
 	// nothing worked
+	a.logger.LogFailure()
 	return nil, fmt.Errorf("hybrid_factory: decryption failed")
+}
+
+// Asserts `p` implements tink.HybridDecrypt and not tink.AEAD. The latter check
+// is required as implementations of tink.AEAD also satisfy tink.HybridDecrypt.
+func isHybridDecrypt(p any) error {
+	if _, ok := p.(tink.AEAD); ok {
+		return fmt.Errorf("hybrid_factory: tink.AEAD is not tink.HybridDecrypt")
+	}
+	if _, ok := p.(tink.HybridDecrypt); !ok {
+		return fmt.Errorf("hybrid_factory: not tink.HybridDecrypt")
+	}
+	return nil
 }

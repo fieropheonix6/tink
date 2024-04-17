@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package jwt
 
@@ -44,14 +42,14 @@ func newVerifierWithKID(tv tink.Verifier, algorithm string, customKID *string) (
 func (v *verifierWithKID) VerifyAndDecodeWithKID(compact string, validator *Validator, kid *string) (*VerifiedJWT, error) {
 	sig, content, err := splitSignedCompact(compact)
 	if err != nil {
-		return nil, err
+		return nil, errJwtVerification
 	}
 	if err := v.tv.Verify(sig, []byte(content)); err != nil {
-		return nil, err
+		return nil, errJwtVerification
 	}
 	rawJWT, err := decodeUnsignedTokenAndValidateHeader(content, v.algorithm, kid, v.customKID)
 	if err != nil {
-		return nil, err
+		return nil, errJwtVerification
 	}
 	if err := validator.Validate(rawJWT); err != nil {
 		return nil, err

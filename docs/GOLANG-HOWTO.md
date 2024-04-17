@@ -115,36 +115,37 @@ const (
 )
 
 func main() {
-  // Generate a new key.
-  kh1, err := keyset.NewHandle(aead.AES128GCMKeyTemplate())
+  // Generate a new keyset handle.
+  handle1, err := keyset.NewHandle(aead.AES128GCMKeyTemplate())
   if err != nil {
     log.Fatal(err)
   }
 
-  // Fetch the master key from a KMS.
+  // Get the key encryption AEAD from a KMS.
   gcpClient, err := gcpkms.NewClientWithCredentials(keyURI, credentialsPath)
   if err != nil {
     log.Fatal(err)
   }
   registry.RegisterKMSClient(gcpClient)
-  masterKey, err := gcpClient.GetAEAD(keyURI)
+  keyEncryptionAEAD, err := gcpClient.GetAEAD(keyURI)
   if err != nil {
     log.Fatal(err)
   }
 
-  // An io.Reader and io.Writer implementation which simply writes to memory.
-  memKeyset := &keyset.MemReaderWriter{}
-
-  // Write encrypts the keyset handle with the master key and writes to the
-  // io.Writer implementation (memKeyset). We recommend that you encrypt the
-  // keyset handle before persisting it.
-  if err := kh1.Write(memKeyset, masterKey); err != nil {
+  // Serialize and encrypt the keyset handle using the key encryption AEAD.
+  // We strongly recommend that you encrypt the keyset handle before persisting
+  // it.
+  buf := new(bytes.Buffer)
+  writer := keyset.NewBinaryWriter(buf)
+  err = handle1.Write(writer, keyEncryptionAEAD)
+  if err != nil {
     log.Fatal(err)
   }
+  encryptedHandle := buf.Bytes()
 
-  // Read reads the encrypted keyset handle back from the io.Reader
-  // implementation and decrypts it using the master key.
-  kh2, err := keyset.Read(memKeyset, masterKey)
+  // Decrypt and parse the encrypted keyset using the key encryption AEAD.
+  reader := keyset.NewBinaryReader(bytes.NewReader(encryptedHandle))
+  handle2, err := keyset.Read(reader, keyEncryptionAEAD)
   if err != nil {
     log.Fatal(err)
   }
@@ -213,61 +214,5 @@ Playground.
 Via the AEAD interface, Tink supports
 [envelope encryption](KEY-MANAGEMENT.md#envelope-encryption).
 
-For example, you can perform envelope encryption with a Google Cloud KMS key at
-`gcp-kms://projects/tink-examples/locations/global/keyRings/foo/cryptoKeys/bar`
-using the credentials in `credentials.json` as follows:
-
-```go
-package main
-
-import (
-  "encoding/base64"
-  "fmt"
-
-  "github.com/google/tink/go/aead"
-  "github.com/google/tink/go/core/registry"
-  "github.com/google/tink/go/integration/gcpkms"
-  "github.com/google/tink/go/keyset"
-)
-
-const (
-   // Change this. AWS KMS, Google Cloud KMS and HashiCorp Vault are supported out of the box.
-   keyURI          = "gcp-kms://projects/tink-examples/locations/global/keyRings/foo/cryptoKeys/bar"
-   credentialsPath = "credentials.json"
-)
-
-func main() {
-  gcpclient, err := gcpkms.NewClientWithCredentials(keyURI, credentialsPath)
-  if err != nil {
-    log.Fatal(err)
-  }
-  registry.RegisterKMSClient(gcpclient)
-
-  dek := aead.AES128CTRHMACSHA256KeyTemplate()
-  kh, err := keyset.NewHandle(aead.KMSEnvelopeAEADKeyTemplate(keyURI, dek))
-  if err != nil {
-    log.Fatal(err)
-  }
-
-  a, err := aead.New(kh)
-  if err != nil {
-    log.Fatal(err)
-  }
-
-  msg := []byte("this message needs to be encrypted")
-  aad := []byte("this data needs to be authenticated, but not encrypted")
-  ct, err := a.Encrypt(msg, aad)
-  if err != nil {
-    log.Fatal(err)
-  }
-
-  pt, err := a.Decrypt(ct, aad)
-  if err != nil {
-    log.Fatal(err)
-  }
-
-  fmt.Printf("Ciphertext: %s\n", base64.StdEncoding.EncodeToString(ct))
-  fmt.Printf("Original  plaintext: %s\n", msg)
-  fmt.Printf("Decrypted Plaintext: %s\n", pt)
-}
-```
+Check out the
+[GCP KMS example](https://pkg.go.dev/github.com/tink-crypto/tink-go-gcpkms/v2@v2.0.0/integration/gcpkms#example-package).

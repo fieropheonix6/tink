@@ -17,6 +17,7 @@
 #ifndef TINK_KMS_CLIENTS_H_
 #define TINK_KMS_CLIENTS_H_
 
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -37,8 +38,15 @@ namespace tink {
 // KmsClient-objects.
 class KmsClients {
  public:
-  // Adds 'kms_client', which must be non-null, to the list
-  // of the list of known clients.
+  // Adds 'kms_client' to the global list of known clients.
+  //
+  // This function should only be called on startup and not on every operation.
+  // Avoid registering a client more than once.
+  //
+  // It is often not necessary to use this function. For example, you can call
+  // kms_client.GetAead to get a remote AEAD instance, and use that to create
+  // an encrypted keyset using KeysetHandle::Write, or create an envelope
+  // AEAD using KmsEnvelopeAead::New.
   static crypto::tink::util::Status Add(std::unique_ptr<KmsClient> kms_client) {
     return GlobalInstance().LocalAdd(std::move(kms_client));
   }

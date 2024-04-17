@@ -14,6 +14,8 @@
 """starlark rules for jarjar. See https://github.com/pantsbuild/jarjar
 """
 
+load("@rules_java//java:defs.bzl", "JavaInfo")
+
 def _jar_jar_impl(ctx):
     ctx.actions.run(
         inputs = [ctx.file.rules, ctx.file.input_jar],
@@ -36,7 +38,7 @@ jar_jar = rule(
     attrs = {
         "input_jar": attr.label(allow_single_file = True),
         "rules": attr.label(allow_single_file = True),
-        "_jarjar": attr.label(executable = True, cfg = "host", default = Label("//tools:jarjar")),
+        "_jarjar": attr.label(executable = True, cfg = "exec", default = Label("//tools:jarjar")),
     },
     outputs = {
         "jar": "%{name}.jar",

@@ -164,13 +164,16 @@ py_library(
 
 py_test(
     name = "_streaming_aead_wrapper_test",
-    timeout = "short",
     srcs = ["_streaming_aead_wrapper_test.py"],
     srcs_version = "PY3",
     deps = [
         ":streaming_aead",
         requirement("absl-py"),
+        "//tink:secret_key_access",
         "//tink:tink_python",
+        "//tink/proto:aes_gcm_hkdf_streaming_py_pb2",
+        "//tink/proto:common_py_pb2",
+        "//tink/proto:tink_py_pb2",
         "//tink/testing:bytes_io",
         "//tink/testing:keyset_builder",
     ],

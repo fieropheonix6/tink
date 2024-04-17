@@ -16,9 +16,8 @@
 
 package com.google.crypto.tink.streamingaead;
 
-import androidx.annotation.RequiresApi;
-import com.google.crypto.tink.PrimitiveSet;
 import com.google.crypto.tink.StreamingAead;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.NonWritableChannelException;
@@ -26,10 +25,10 @@ import java.nio.channels.SeekableByteChannel;
 import java.security.GeneralSecurityException;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.List;
 import javax.annotation.concurrent.GuardedBy;
 
 /** A decrypter for ciphertext given in a {@link SeekableByteChannel}. */
-@RequiresApi(24) // https://developer.android.com/reference/java/nio/channels/SeekableByteChannel
 final class SeekableByteChannelDecrypter implements SeekableByteChannel {
   @GuardedBy("this")
   SeekableByteChannel attemptingChannel;
@@ -57,7 +56,7 @@ final class SeekableByteChannelDecrypter implements SeekableByteChannel {
    * and the next candiate can attempt matching.  The first successful candidate
    * is then used exclusively on subsequent {@code read()}-calls.
    */
-  public SeekableByteChannelDecrypter(PrimitiveSet<StreamingAead> primitives,
+  public SeekableByteChannelDecrypter(List<StreamingAead> allPrimitives,
       SeekableByteChannel ciphertextChannel, final byte[] associatedData) throws IOException {
     // There are 3 phases:
     // 1) both matchingChannel and attemptingChannel are null.
@@ -66,8 +65,8 @@ final class SeekableByteChannelDecrypter implements SeekableByteChannel {
     this.attemptingChannel = null;
     this.matchingChannel = null;
     this.remainingPrimitives = new ArrayDeque<>();
-    for (PrimitiveSet.Entry<StreamingAead> entry : primitives.getRawPrimitives()) {
-      this.remainingPrimitives.add(entry.getPrimitive());
+    for (StreamingAead primitive : allPrimitives) {
+      this.remainingPrimitives.add(primitive);
     }
     this.ciphertextChannel = ciphertextChannel;
     // In phase 1) and 2), cachedPosition is always equal to the last position value set.
@@ -132,6 +131,7 @@ final class SeekableByteChannelDecrypter implements SeekableByteChannel {
     }
   }
 
+  @CanIgnoreReturnValue
   @Override
   @GuardedBy("this")
   public synchronized SeekableByteChannel position(long newPosition) throws IOException {

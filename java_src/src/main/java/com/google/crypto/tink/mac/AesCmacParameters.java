@@ -28,8 +28,8 @@ public final class AesCmacParameters extends MacParameters {
   /**
    * Describes details of the mac computation.
    *
-   * <p>The usual AES CMAC key is used for variant "NO_PREFIX". Other variants slightly change how
-   * the mac is computed, or add a prefix to every computation depending on the key id.
+   * <p>The standard AES CMAC key is used for variant "NO_PREFIX". Other variants slightly change
+   * how the mac is computed, or add a prefix to every computation depending on the key id.
    */
   @Immutable
   public static final class Variant {
@@ -89,8 +89,14 @@ public final class AesCmacParameters extends MacParameters {
     }
 
     public AesCmacParameters build() throws GeneralSecurityException {
-      if (keySizeBytes == null || tagSizeBytes == null) {
-        throw new GeneralSecurityException("Key size and/or tag size not set");
+      if (keySizeBytes == null) {
+        throw new GeneralSecurityException("key size not set");
+      }
+      if (tagSizeBytes == null) {
+        throw new GeneralSecurityException("tag size not set");
+      }
+      if (variant == null) {
+        throw new GeneralSecurityException("variant not set");
       }
       return new AesCmacParameters(keySizeBytes, tagSizeBytes, variant);
     }
@@ -162,7 +168,7 @@ public final class AesCmacParameters extends MacParameters {
 
   @Override
   public int hashCode() {
-    return Objects.hash(tagSizeBytes, variant);
+    return Objects.hash(AesCmacParameters.class, keySizeBytes, tagSizeBytes, variant);
   }
 
   @Override

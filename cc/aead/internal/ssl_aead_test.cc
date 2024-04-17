@@ -16,6 +16,7 @@
 #include "tink/aead/internal/ssl_aead.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <iterator>
@@ -34,7 +35,7 @@
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "tink/aead/internal/wycheproof_aead.h"
-#include "tink/config/tink_fips.h"
+#include "tink/internal/fips_utils.h"
 #include "tink/internal/ssl_util.h"
 #include "tink/subtle/subtle_util.h"
 #include "tink/util/secret_data.h"
@@ -524,7 +525,7 @@ TEST(SslOneShotAeadTest, Xchacha20Poly1305TestFipsOnly) {
 }
 
 TEST(SslOneShotAeadTest, AesGcmTestFipsOnly) {
-  if (IsFipsModeEnabled() && !FIPS_mode()) {
+  if (IsFipsModeEnabled() && !IsFipsEnabledInSsl()) {
     GTEST_SKIP() << "Test should not run in FIPS mode when BoringCrypto is "
                     "unavailable.";
   }
@@ -539,7 +540,7 @@ TEST(SslOneShotAeadTest, AesGcmTestFipsOnly) {
 }
 
 TEST(SslOneShotAeadTest, AesGcmTestTestFipsFailWithoutBoringCrypto) {
-  if (!IsFipsModeEnabled() || FIPS_mode()) {
+  if (!IsFipsModeEnabled() || IsFipsEnabledInSsl()) {
     GTEST_SKIP()
         << "Test assumes kOnlyUseFips but BoringCrypto is unavailable.";
   }

@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 // Package gcpkms provides integration with the GCP Cloud KMS.
 // Tink APIs work with GCP and AWS KMS.
@@ -22,15 +20,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"runtime"
 	"strings"
 
 	"google.golang.org/api/cloudkms/v1"
 	"google.golang.org/api/option"
-	"golang.org/x/oauth2/google"
-	"golang.org/x/oauth2"
 	"github.com/google/tink/go/core/registry"
 	"github.com/google/tink/go/tink"
 )
@@ -72,97 +66,6 @@ func NewClientWithOptions(ctx context.Context, uriPrefix string, opts ...option.
 	}, nil
 }
 
-// ClientConfig defines the configuration that can be provided to configure
-// a GCP KMS client.
-//
-// Deprecated: Use NewClientWithOptions instead to provide client options.
-type ClientConfig struct {
-	// HTTP transport for use with the GCP KMS client.
-	// If it is nil, default config will be used.
-	HTTPTransport *http.Transport
-}
-
-// NewClientWithConfig returns a new GCP KMS client
-// using the provided ClientConfig.
-// It will use default credentials to handle keys with uriPrefix prefix.
-// uriPrefix must have the following format: 'gcp-kms://[:path]'.
-//
-// Deprecated: Use NewClientWithOptions instead.
-// To provide a custom HTTP client, use option.WithHTTPClient.
-func NewClientWithConfig(uriPrefix string, config *ClientConfig) (registry.KMSClient, error) {
-	if !strings.HasPrefix(strings.ToLower(uriPrefix), gcpPrefix) {
-		return nil, fmt.Errorf("uriPrefix must start with %s", gcpPrefix)
-	}
-
-	ctx := context.Background()
-	client, err := google.DefaultClient(ctx, cloudkms.CloudPlatformScope)
-	if err != nil {
-		return nil, err
-	}
-	if config != nil && config.HTTPTransport != nil {
-		t, ok := client.Transport.(*oauth2.Transport)
-		if !ok {
-			return nil, fmt.Errorf("unable to type assert HTTP client.Transport to *oauth2.Transport, got %T", client.Transport)
-		}
-		t.Base = config.HTTPTransport
-	}
-
-	kmsService, err := cloudkms.New(client)
-	if err != nil {
-		return nil, err
-	}
-
-	return &gcpClient{
-		keyURIPrefix: uriPrefix,
-		kms:          kmsService,
-	}, nil
-}
-
-// NewClient returns a new GCP KMS client which will use default
-// credentials to handle keys with uriPrefix prefix.
-// uriPrefix must have the following format: 'gcp-kms://[:path]'.
-//
-// Deprecated: Use NewClientWithOptions instead.
-func NewClient(uriPrefix string) (registry.KMSClient, error) {
-	return NewClientWithConfig(uriPrefix, nil)
-}
-
-// NewClientWithCredentials returns a new GCP KMS client which will use given
-// credentials to handle keys with uriPrefix prefix.
-// uriPrefix must have the following format: 'gcp-kms://[:path]'.
-//
-// Deprecated: Use NewClientWithOptions instead.
-// To provide a credential file, use option.WithCredentialsFile.
-func NewClientWithCredentials(uriPrefix string, credentialPath string) (registry.KMSClient, error) {
-	if !strings.HasPrefix(strings.ToLower(uriPrefix), gcpPrefix) {
-		return nil, fmt.Errorf("uriPrefix must start with %s", gcpPrefix)
-	}
-
-	ctx := context.Background()
-	if len(credentialPath) <= 0 {
-		return nil, errCred
-	}
-	data, err := ioutil.ReadFile(credentialPath)
-	if err != nil {
-		return nil, errCred
-	}
-	creds, err := google.CredentialsFromJSON(ctx, data, "https://www.googleapis.com/auth/cloudkms")
-	if err != nil {
-		return nil, errCred
-	}
-	client := oauth2.NewClient(ctx, creds.TokenSource)
-	kmsService, err := cloudkms.New(client)
-	kmsService.UserAgent = tinkUserAgent
-	if err != nil {
-		return nil, err
-	}
-
-	return &gcpClient{
-		keyURIPrefix: uriPrefix,
-		kms:          kmsService,
-	}, nil
-}
-
 // Supported true if this client does support keyURI
 func (c *gcpClient) Supported(keyURI string) bool {
 	return strings.HasPrefix(keyURI, c.keyURIPrefix)
@@ -174,6 +77,6 @@ func (c *gcpClient) GetAEAD(keyURI string) (tink.AEAD, error) {
 		return nil, errors.New("unsupported keyURI")
 	}
 
-	uri := strings.TrimPrefix(keyURI, gcpPrefix)
-	return newGCPAEAD(uri, c.kms), nil
+	keyName := strings.TrimPrefix(keyURI, gcpPrefix)
+	return newGCPAEAD(keyName, c.kms), nil
 }

@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package mac
 
@@ -21,8 +19,10 @@ import (
 
 	"github.com/google/tink/go/core/cryptofmt"
 	"github.com/google/tink/go/core/primitiveset"
-	"github.com/google/tink/go/core/registry"
+	"github.com/google/tink/go/internal/internalregistry"
+	"github.com/google/tink/go/internal/monitoringutil"
 	"github.com/google/tink/go/keyset"
+	"github.com/google/tink/go/monitoring"
 	"github.com/google/tink/go/tink"
 	tinkpb "github.com/google/tink/go/proto/tink_go_proto"
 )
@@ -33,33 +33,28 @@ const (
 )
 
 // New creates a MAC primitive from the given keyset handle.
-func New(h *keyset.Handle) (tink.MAC, error) {
-	return NewWithKeyManager(h, nil /*keyManager*/)
-}
-
-// NewWithKeyManager creates a MAC primitive from the given keyset handle and a custom key manager.
-//
-// Deprecated: Use [New].
-func NewWithKeyManager(h *keyset.Handle, km registry.KeyManager) (tink.MAC, error) {
-	ps, err := h.PrimitivesWithKeyManager(km)
+func New(handle *keyset.Handle) (tink.MAC, error) {
+	ps, err := handle.Primitives()
 	if err != nil {
 		return nil, fmt.Errorf("mac_factory: cannot obtain primitive set: %s", err)
 	}
-
 	return newWrappedMAC(ps)
 }
 
 // wrappedMAC is a MAC implementation that uses the underlying primitive set to compute and
 // verify MACs.
 type wrappedMAC struct {
-	ps *primitiveset.PrimitiveSet
+	ps            *primitiveset.PrimitiveSet
+	computeLogger monitoring.Logger
+	verifyLogger  monitoring.Logger
 }
+
+var _ (tink.MAC) = (*wrappedMAC)(nil)
 
 func newWrappedMAC(ps *primitiveset.PrimitiveSet) (*wrappedMAC, error) {
 	if _, ok := (ps.Primary.Primitive).(tink.MAC); !ok {
 		return nil, fmt.Errorf("mac_factory: not a MAC primitive")
 	}
-
 	for _, primitives := range ps.Entries {
 		for _, p := range primitives {
 			if _, ok := (p.Primitive).(tink.MAC); !ok {
@@ -67,11 +62,43 @@ func newWrappedMAC(ps *primitiveset.PrimitiveSet) (*wrappedMAC, error) {
 			}
 		}
 	}
+	computeLogger, verifyLogger, err := createLoggers(ps)
+	if err != nil {
+		return nil, err
+	}
+	return &wrappedMAC{
+		ps:            ps,
+		computeLogger: computeLogger,
+		verifyLogger:  verifyLogger,
+	}, nil
+}
 
-	ret := new(wrappedMAC)
-	ret.ps = ps
-
-	return ret, nil
+func createLoggers(ps *primitiveset.PrimitiveSet) (monitoring.Logger, monitoring.Logger, error) {
+	if len(ps.Annotations) == 0 {
+		return &monitoringutil.DoNothingLogger{}, &monitoringutil.DoNothingLogger{}, nil
+	}
+	client := internalregistry.GetMonitoringClient()
+	keysetInfo, err := monitoringutil.KeysetInfoFromPrimitiveSet(ps)
+	if err != nil {
+		return nil, nil, err
+	}
+	computeLogger, err := client.NewLogger(&monitoring.Context{
+		Primitive:   "mac",
+		APIFunction: "compute",
+		KeysetInfo:  keysetInfo,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	verifyLogger, err := client.NewLogger(&monitoring.Context{
+		Primitive:   "mac",
+		APIFunction: "verify",
+		KeysetInfo:  keysetInfo,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return computeLogger, verifyLogger, nil
 }
 
 // ComputeMAC calculates a MAC over the given data using the primary primitive
@@ -85,6 +112,7 @@ func (m *wrappedMAC) ComputeMAC(data []byte) ([]byte, error) {
 	if m.ps.Primary.PrefixType == tinkpb.OutputPrefixType_LEGACY {
 		d := data
 		if len(d) >= maxInt {
+			m.computeLogger.LogFailure()
 			return nil, fmt.Errorf("mac_factory: data too long")
 		}
 		data = make([]byte, 0, len(d)+1)
@@ -93,9 +121,17 @@ func (m *wrappedMAC) ComputeMAC(data []byte) ([]byte, error) {
 	}
 	mac, err := primitive.ComputeMAC(data)
 	if err != nil {
+		m.computeLogger.LogFailure()
 		return nil, err
 	}
-	return append([]byte(primary.Prefix), mac...), nil
+	m.computeLogger.Log(primary.KeyID, len(data))
+	if len(primary.Prefix) == 0 {
+		return mac, nil
+	}
+	output := make([]byte, 0, len(primary.Prefix)+len(mac))
+	output = append(output, primary.Prefix...)
+	output = append(output, mac...)
+	return output, nil
 }
 
 var errInvalidMAC = fmt.Errorf("mac_factory: invalid mac")
@@ -107,6 +143,7 @@ func (m *wrappedMAC) VerifyMAC(mac, data []byte) error {
 	// clearly insecure, thus should be discouraged.
 	prefixSize := cryptofmt.NonRawPrefixSize
 	if len(mac) <= prefixSize {
+		m.verifyLogger.LogFailure()
 		return errInvalidMAC
 	}
 
@@ -119,11 +156,12 @@ func (m *wrappedMAC) VerifyMAC(mac, data []byte) error {
 			entry := entries[i]
 			p, ok := (entry.Primitive).(tink.MAC)
 			if !ok {
-				return fmt.Errorf("mac_factory: not an MAC primitive")
+				return fmt.Errorf("mac_factory internal error: not a MAC primitive")
 			}
 			if entry.PrefixType == tinkpb.OutputPrefixType_LEGACY {
 				d := data
 				if len(d) >= maxInt {
+					m.verifyLogger.LogFailure()
 					return fmt.Errorf("mac_factory: data too long")
 				}
 				data = make([]byte, 0, len(d)+1)
@@ -131,6 +169,7 @@ func (m *wrappedMAC) VerifyMAC(mac, data []byte) error {
 				data = append(data, byte(0))
 			}
 			if err = p.VerifyMAC(macNoPrefix, data); err == nil {
+				m.verifyLogger.Log(entry.KeyID, len(data))
 				return nil
 			}
 		}
@@ -142,15 +181,17 @@ func (m *wrappedMAC) VerifyMAC(mac, data []byte) error {
 		for i := 0; i < len(entries); i++ {
 			p, ok := (entries[i].Primitive).(tink.MAC)
 			if !ok {
-				return fmt.Errorf("mac_factory: not an MAC primitive")
+				return fmt.Errorf("mac_factory internal error: not a MAC primitive")
 			}
 
 			if err = p.VerifyMAC(mac, data); err == nil {
+				m.verifyLogger.Log(entries[i].KeyID, len(data))
 				return nil
 			}
 		}
 	}
 
 	// nothing worked
+	m.verifyLogger.LogFailure()
 	return errInvalidMAC
 }

@@ -16,6 +16,14 @@
 
 package com.google.crypto.tink.subtle;
 
+import static com.google.common.truth.Truth.assertThat;
+
+import java.security.Provider;
+import java.security.Security;
+import java.util.List;
+import javax.crypto.Cipher;
+import org.conscrypt.Conscrypt;
+import org.junit.Assume;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -26,15 +34,95 @@ public class EngineFactoryTest {
 
   @Test
   public void testAtLeastGetsACipherByDefault() throws Exception {
-    EngineFactory.CIPHER.getInstance("AES");
+    Object unused = EngineFactory.CIPHER.getInstance("AES");
     // didn't throw
   }
 
   @Test
   public void testIsReuseable() throws Exception {
-    EngineFactory.CIPHER.getInstance("AES");
-    EngineFactory.CIPHER.getInstance("AES");
-    EngineFactory.CIPHER.getInstance("AES");
+    Object unused = EngineFactory.CIPHER.getInstance("AES");
+    unused = EngineFactory.CIPHER.getInstance("AES");
+    unused = EngineFactory.CIPHER.getInstance("AES");
     // didn't throw
+  }
+
+  @Test
+  public void testDefaultPolicyStillPrefersDefaultProviders() throws Exception {
+    Assume.assumeFalse(SubtleUtil.isAndroid());
+
+    // Add Conscrypt as an additional provider.
+    Conscrypt.checkAvailability();
+    Provider p = Conscrypt.newProvider();
+    Security.addProvider(p);
+    String conscryptName = p.getName();
+
+    // We expect that JDK gets picked first nonetheless.
+    assertThat(EngineFactory.CIPHER.getInstance("AES/GCM/NoPadding").getProvider().getName())
+        .isNotEqualTo(conscryptName);
+  }
+
+  @Test
+  public void testDefaultPolicyRespectsPreferredProviders() throws Exception {
+    Assume.assumeFalse(SubtleUtil.isAndroid());
+
+    // Add Conscrypt as an additional provider.
+    Conscrypt.checkAvailability();
+    Provider p = Conscrypt.newProvider();
+    Security.addProvider(p);
+    String conscryptName = p.getName();
+    List<Provider> preferredProviders = EngineFactory.toProviderList(conscryptName);
+
+    // Check if Conscrypt can provide this cipher.
+    assertThat(Cipher.getInstance("AES/GCM/NoPadding", p)).isNotNull();
+
+    // We expect that our preferred provider is picked.
+    assertThat(
+            EngineFactory.CIPHER
+                .getInstance("AES/GCM/NoPadding", preferredProviders)
+                .getProvider()
+                .getName())
+        .isEqualTo(conscryptName);
+  }
+
+  @Test
+  public void testAndroidPolicyUsesConscrypt() throws Exception {
+    Assume.assumeTrue(SubtleUtil.isAndroid());
+
+    // We expect that the Android policy will prefer Conscrypt if available is on that Android
+    // device.
+    if (Security.getProvider("GmsCore_OpenSSL") != null) {
+      assertThat(EngineFactory.CIPHER.getInstance("AES/GCM/NoPadding").getProvider().getName())
+          .isEqualTo("GmsCore_OpenSSL");
+
+    } else if (Security.getProvider("AndroidOpenSSL") != null) {
+      assertThat(EngineFactory.CIPHER.getInstance("AES/GCM/NoPadding").getProvider().getName())
+          .isEqualTo("AndroidOpenSSL");
+    }
+  }
+
+  @Test
+  public void testAndroidPolicyAlwaysPrefersConscrypt() throws Exception {
+    Assume.assumeTrue(SubtleUtil.isAndroid());
+
+    List<Provider> preferredProviders = EngineFactory.toProviderList("BC", "Crypto");
+
+    // We expect that the Android policy will prefer Conscrypt if available is on that Android
+    // device.
+    if (Security.getProvider("GmsCore_OpenSSL") != null) {
+      assertThat(
+              EngineFactory.CIPHER
+                  .getInstance("AES/GCM/NoPadding", preferredProviders)
+                  .getProvider()
+                  .getName())
+          .isEqualTo("GmsCore_OpenSSL");
+
+    } else if (Security.getProvider("AndroidOpenSSL") != null) {
+      assertThat(
+              EngineFactory.CIPHER
+                  .getInstance("AES/GCM/NoPadding", preferredProviders)
+                  .getProvider()
+                  .getName())
+          .isEqualTo("AndroidOpenSSL");
+    }
   }
 }

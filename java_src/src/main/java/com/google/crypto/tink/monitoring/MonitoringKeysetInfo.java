@@ -17,8 +17,8 @@
 package com.google.crypto.tink.monitoring;
 
 import com.google.crypto.tink.KeyStatus;
-import com.google.crypto.tink.Parameters;
 import com.google.crypto.tink.annotations.Alpha;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.Immutable;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
@@ -42,7 +42,8 @@ public final class MonitoringKeysetInfo {
   public static final class Entry {
     private final KeyStatus status;
     private final int keyId;
-    private final Parameters parameters;
+    private final String keyType;
+    private final String keyPrefix;
 
     public KeyStatus getStatus() {
       return status;
@@ -52,14 +53,19 @@ public final class MonitoringKeysetInfo {
       return keyId;
     }
 
-    public Parameters getParameters() {
-      return parameters;
+    public String getKeyType() {
+      return keyType;
     }
 
-    private Entry(KeyStatus status, int keyId, Parameters parameters) {
+    public String getKeyPrefix() {
+      return keyPrefix;
+    }
+
+    private Entry(KeyStatus status, int keyId, String keyType, String keyPrefix) {
       this.status = status;
       this.keyId = keyId;
-      this.parameters = parameters;
+      this.keyType = keyType;
+      this.keyPrefix = keyPrefix;
     }
 
     @Override
@@ -70,18 +76,20 @@ public final class MonitoringKeysetInfo {
       Entry entry = (Entry) obj;
       return this.status == entry.status
           && this.keyId == entry.keyId
-          && this.parameters.equals(entry.parameters);
+          && this.keyType.equals(entry.keyType)
+          && this.keyPrefix.equals(entry.keyPrefix);
     }
 
     @Override
     public int hashCode() {
-      return Objects.hash(status, keyId, parameters.hashCode());
+      return Objects.hash(status, keyId, keyType, keyPrefix);
     }
 
     @Override
     public String toString() {
       return String.format(
-          "(status=%s, keyId=%s, parameters='%s')", this.status, this.keyId, this.parameters);
+          "(status=%s, keyId=%s, keyType='%s', keyPrefix='%s')",
+          this.status, this.keyId, this.keyType, this.keyPrefix);
     }
   }
 
@@ -93,6 +101,7 @@ public final class MonitoringKeysetInfo {
     private MonitoringAnnotations builderAnnotations = MonitoringAnnotations.EMPTY;
     @Nullable private Integer builderPrimaryKeyId = null;
 
+    @CanIgnoreReturnValue
     public Builder setAnnotations(MonitoringAnnotations annotations) {
       if (builderEntries == null) {
         throw new IllegalStateException("setAnnotations cannot be called after build()");
@@ -101,14 +110,16 @@ public final class MonitoringKeysetInfo {
       return this;
     }
 
-    public Builder addEntry(KeyStatus status, int keyId, Parameters parameters) {
+    @CanIgnoreReturnValue
+    public Builder addEntry(KeyStatus status, int keyId, String keyType, String keyPrefix) {
       if (builderEntries == null) {
         throw new IllegalStateException("addEntry cannot be called after build()");
       }
-      builderEntries.add(new Entry(status, keyId, parameters));
+      builderEntries.add(new Entry(status, keyId, keyType, keyPrefix));
       return this;
     }
 
+    @CanIgnoreReturnValue
     public Builder setPrimaryKeyId(int primaryKeyId) {
       if (builderEntries == null) {
         throw new IllegalStateException("setPrimaryKeyId cannot be called after build()");

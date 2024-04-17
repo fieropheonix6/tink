@@ -16,6 +16,9 @@
 
 #include "tink/experimental/pqcrypto/signature/dilithium_key_template.h"
 
+#include <cstdint>
+
+#include "absl/strings/str_cat.h"
 #include "tink/util/constants.h"
 #include "proto/experimental/pqcrypto/dilithium.pb.h"
 #include "proto/tink.pb.h"
@@ -40,7 +43,7 @@ using google::crypto::tink::DilithiumSeedExpansion;
 using google::crypto::tink::KeyTemplate;
 using google::crypto::tink::OutputPrefixType;
 
-KeyTemplate* NewDilithiumKeyTemplate(int32 key_size,
+KeyTemplate* NewDilithiumKeyTemplate(int32_t key_size,
                                      DilithiumSeedExpansion seed_expansion) {
   KeyTemplate* key_template = new KeyTemplate;
   key_template->set_type_url(

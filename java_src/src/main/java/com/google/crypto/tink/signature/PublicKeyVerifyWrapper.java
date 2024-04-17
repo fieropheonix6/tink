@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2017 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,20 +17,21 @@
 package com.google.crypto.tink.signature;
 
 import com.google.crypto.tink.CryptoFormat;
-import com.google.crypto.tink.PrimitiveSet;
 import com.google.crypto.tink.PrimitiveWrapper;
 import com.google.crypto.tink.PublicKeyVerify;
-import com.google.crypto.tink.Registry;
+import com.google.crypto.tink.internal.LegacyProtoKey;
 import com.google.crypto.tink.internal.MonitoringUtil;
 import com.google.crypto.tink.internal.MutableMonitoringRegistry;
+import com.google.crypto.tink.internal.MutablePrimitiveRegistry;
+import com.google.crypto.tink.internal.PrimitiveConstructor;
+import com.google.crypto.tink.internal.PrimitiveRegistry;
+import com.google.crypto.tink.internal.PrimitiveSet;
 import com.google.crypto.tink.monitoring.MonitoringClient;
 import com.google.crypto.tink.monitoring.MonitoringKeysetInfo;
-import com.google.crypto.tink.proto.OutputPrefixType;
-import com.google.crypto.tink.subtle.Bytes;
+import com.google.crypto.tink.signature.internal.LegacyFullVerify;
 import java.security.GeneralSecurityException;
 import java.util.Arrays;
 import java.util.List;
-import java.util.logging.Logger;
 
 /**
  * The implementation of {@code PrimitiveWrapper<DeterministicAead>}.
@@ -42,10 +43,13 @@ import java.util.logging.Logger;
  *
  * @since 1.0.0
  */
-class PublicKeyVerifyWrapper implements PrimitiveWrapper<PublicKeyVerify, PublicKeyVerify> {
-  private static final Logger logger = Logger.getLogger(PublicKeyVerifyWrapper.class.getName());
+public class PublicKeyVerifyWrapper implements PrimitiveWrapper<PublicKeyVerify, PublicKeyVerify> {
 
-  private static final byte[] FORMAT_VERSION = new byte[] {0};
+  private static final PublicKeyVerifyWrapper WRAPPER = new PublicKeyVerifyWrapper();
+  private static final PrimitiveConstructor<LegacyProtoKey, PublicKeyVerify>
+      LEGACY_PRIMITIVE_CONSTRUCTOR =
+          PrimitiveConstructor.create(
+              LegacyFullVerify::create, LegacyProtoKey.class, PublicKeyVerify.class);
 
   private static class WrappedPublicKeyVerify implements PublicKeyVerify {
     private final PrimitiveSet<PublicKeyVerify> primitives;
@@ -72,21 +76,14 @@ class PublicKeyVerifyWrapper implements PrimitiveWrapper<PublicKeyVerify, Public
         throw new GeneralSecurityException("signature too short");
       }
       byte[] prefix = Arrays.copyOf(signature, CryptoFormat.NON_RAW_PREFIX_SIZE);
-      byte[] sigNoPrefix =
-          Arrays.copyOfRange(signature, CryptoFormat.NON_RAW_PREFIX_SIZE, signature.length);
       List<PrimitiveSet.Entry<PublicKeyVerify>> entries = primitives.getPrimitive(prefix);
       for (PrimitiveSet.Entry<PublicKeyVerify> entry : entries) {
-        byte[] data2 = data;
-        if (entry.getOutputPrefixType().equals(OutputPrefixType.LEGACY)) {
-          data2 = Bytes.concat(data2, FORMAT_VERSION);
-        }
         try {
-          entry.getPrimitive().verify(sigNoPrefix, data2);
-          monitoringLogger.log(entry.getKeyId(), data2.length);
+          entry.getFullPrimitive().verify(signature, data);
+          monitoringLogger.log(entry.getKeyId(), data.length);
           // If there is no exception, the signature is valid and we can return.
           return;
         } catch (GeneralSecurityException e) {
-          logger.info("signature prefix matches a key, but cannot verify: " + e);
           // Ignored as we want to continue verification with the remaining keys.
         }
       }
@@ -95,7 +92,7 @@ class PublicKeyVerifyWrapper implements PrimitiveWrapper<PublicKeyVerify, Public
       entries = primitives.getRawPrimitives();
       for (PrimitiveSet.Entry<PublicKeyVerify> entry : entries) {
         try {
-          entry.getPrimitive().verify(signature, data);
+          entry.getFullPrimitive().verify(signature, data);
           monitoringLogger.log(entry.getKeyId(), data.length);
           // If there is no exception, the signature is valid and we can return.
           return;
@@ -130,7 +127,19 @@ class PublicKeyVerifyWrapper implements PrimitiveWrapper<PublicKeyVerify, Public
    * <p>This is required for calls to {@link Keyset.getPrimitive} with a {@link PublicKeyVerify}
    * argument.
    */
-  public static void register() throws GeneralSecurityException {
-    Registry.registerPrimitiveWrapper(new PublicKeyVerifyWrapper());
+  static void register() throws GeneralSecurityException {
+    MutablePrimitiveRegistry.globalInstance().registerPrimitiveWrapper(WRAPPER);
+    MutablePrimitiveRegistry.globalInstance()
+        .registerPrimitiveConstructor(LEGACY_PRIMITIVE_CONSTRUCTOR);
+  }
+
+  /**
+   * registerToInternalPrimitiveRegistry is a non-public method (it takes an argument of an
+   * internal-only type) registering an instance of {@code PublicKeyVerifyWrapper} to the provided
+   * {@code PrimitiveRegistry#Builder}.
+   */
+  public static void registerToInternalPrimitiveRegistry(
+      PrimitiveRegistry.Builder primitiveRegistryBuilder) throws GeneralSecurityException {
+    primitiveRegistryBuilder.registerPrimitiveWrapper(WRAPPER);
   }
 }

@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package jwt_test
 
@@ -54,7 +52,8 @@ func newKeyData(key *jwtmacpb.JwtHmacKey) (*tinkpb.KeyData, error) {
 }
 
 func createJWTMAC(keyData *tinkpb.KeyData, prefixType tinkpb.OutputPrefixType) (jwt.MAC, error) {
-	handle, err := testkeyset.NewHandle(testutil.NewTestKeyset(keyData, prefixType))
+	primaryKey := testutil.NewKey(keyData, tinkpb.KeyStatusType_ENABLED, 42, prefixType)
+	handle, err := testkeyset.NewHandle(testutil.NewKeyset(primaryKey.KeyId, []*tinkpb.Keyset_Key{primaryKey}))
 	if err != nil {
 		return nil, fmt.Errorf("creating keyset handle: %v", err)
 	}
@@ -203,7 +202,9 @@ func TestFactoryWithRAWKeyAndKID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating NewKeyData: %v", err)
 	}
-	ks := testutil.NewTestKeyset(keyData, tinkpb.OutputPrefixType_RAW)
+	primaryKey := testutil.NewKey(keyData, tinkpb.KeyStatusType_ENABLED, 42, tinkpb.OutputPrefixType_RAW)
+	ks := testutil.NewKeyset(primaryKey.KeyId, []*tinkpb.Keyset_Key{primaryKey})
+
 	handle, err := testkeyset.NewHandle(ks)
 	if err != nil {
 		t.Fatalf("creating keyset handle: %v", err)
@@ -237,5 +238,42 @@ func TestFactoryWithInvalidPrimitiveSetType(t *testing.T) {
 	}
 	if _, err = jwt.NewMAC(kh); err == nil {
 		t.Fatal("calling NewMAC() err = nil, want error")
+	}
+}
+
+func TestVerifyMACAndDecodeReturnsValidationError(t *testing.T) {
+	keyData, err := newKeyData(newJWTHMACKey(jwtmacpb.JwtHmacAlgorithm_HS256, nil))
+	if err != nil {
+		t.Fatalf("creating NewKeyData: %v", err)
+	}
+	p, err := createJWTMAC(keyData, tinkpb.OutputPrefixType_TINK)
+	if err != nil {
+		t.Fatalf("creating New JWT MAC: %v", err)
+	}
+
+	audience := "audience"
+	rawJWT, err := jwt.NewRawJWT(&jwt.RawJWTOptions{Audience: &audience, WithoutExpiration: true})
+	if err != nil {
+		t.Fatalf("jwt.NewRawJWT() err = %v, want nil", err)
+	}
+	token, err := p.ComputeMACAndEncode(rawJWT)
+	if err != nil {
+		t.Errorf("p.ComputeMACAndEncode() err = %v, want nil", err)
+	}
+
+	otherAudience := "otherAudience"
+	validator, err := jwt.NewValidator(
+		&jwt.ValidatorOpts{ExpectedAudience: &otherAudience, AllowMissingExpiration: true})
+	if err != nil {
+		t.Fatalf("jwt.NewValidator() err = %v, want nil", err)
+	}
+
+	_, err = p.VerifyMACAndDecode(token, validator)
+	wantErr := "validating audience claim: otherAudience not found"
+	if err == nil {
+		t.Errorf("p.VerifyMACAndDecode() err = nil, want %q", wantErr)
+	}
+	if err.Error() != wantErr {
+		t.Errorf("p.VerifyMACAndDecode() err = %q, want %q", err.Error(), wantErr)
 	}
 }

@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package insecurecleartextkeyset_test
 
@@ -30,38 +28,98 @@ import (
 	"github.com/google/tink/go/keyset"
 	"github.com/google/tink/go/mac"
 	"github.com/google/tink/go/testing/fakemonitoring"
-	"github.com/google/tink/go/testutil"
 
 	tinkpb "github.com/google/tink/go/proto/tink_go_proto"
 )
 
-func TestInvalidInput(t *testing.T) {
-	if _, err := insecurecleartextkeyset.Read(nil); err == nil {
-		t.Error("insecurecleartextkeyset.Read should not accept nil as keyset")
-	}
-	if err := insecurecleartextkeyset.Write(nil, &keyset.MemReaderWriter{}); err == nil {
-		t.Error("insecurecleartextkeyset.Write should not accept nil as keyset")
-	}
-	if err := insecurecleartextkeyset.Write(&keyset.Handle{}, nil); err == nil {
-		t.Error("insecurecleartextkeyset.Write should not accept nil as writer")
+// A KeysetReader that always returns nil.
+type NilKeysetReader struct {
+}
+
+func (m *NilKeysetReader) Read() (*tinkpb.Keyset, error) {
+	return nil, nil
+}
+
+func (m *NilKeysetReader) ReadEncrypted() (*tinkpb.EncryptedKeyset, error) {
+	return nil, nil
+}
+
+func TestReadWithNilKeysetFails(t *testing.T) {
+	if _, err := insecurecleartextkeyset.Read(&NilKeysetReader{}); err == nil {
+		t.Error("insecurecleartextkeyset.Read(&NilKeysetReader{}) err = nil, want error")
 	}
 }
 
-func TestHandleFromReader(t *testing.T) {
-	// Create a keyset that contains a single HmacKey.
-	manager := testutil.NewHMACKeysetManager()
-	handle, err := manager.Handle()
-	if handle == nil || err != nil {
-		t.Fatalf("cannot get keyset handle: %v", err)
+func TestReadWithNilReaderFails(t *testing.T) {
+	if _, err := insecurecleartextkeyset.Read(nil); err == nil {
+		t.Error("insecurecleartextkeyset.Read(nil) err = nil, want error")
 	}
-	ks := insecurecleartextkeyset.KeysetMaterial(handle)
-	parsedHandle, err := insecurecleartextkeyset.Read(&keyset.MemReaderWriter{Keyset: ks})
+}
+
+func TestWriteWithNilHandleFails(t *testing.T) {
+	buff := &bytes.Buffer{}
+	if err := insecurecleartextkeyset.Write(nil, keyset.NewBinaryWriter(buff)); err == nil {
+		t.Error("insecurecleartextkeyset.Write(nil, _) err = nil, want error")
+	}
+}
+
+func TestWriteWithNilWriterFails(t *testing.T) {
+	handle, err := keyset.NewHandle(mac.HMACSHA256Tag128KeyTemplate())
 	if err != nil {
-		t.Fatalf("unexpected error reading keyset: %v", err)
+		t.Fatalf("keyset.NewHandle(aead.HMACSHA256Tag128KeyTemplate()) err = %v, want nil", err)
 	}
-	parsedKs := insecurecleartextkeyset.KeysetMaterial(parsedHandle)
-	if !proto.Equal(ks, parsedKs) {
-		t.Errorf("parsed keyset (%s) doesn't match original keyset (%s)", parsedKs, ks)
+	if err := insecurecleartextkeyset.Write(handle, nil); err == nil {
+		t.Error("insecurecleartextkeyset.Write(_, nil) err = nil, want error")
+	}
+}
+
+func TestWriteAndReadInBinary(t *testing.T) {
+	handle, err := keyset.NewHandle(mac.HMACSHA256Tag128KeyTemplate())
+	if err != nil {
+		t.Fatalf("keyset.NewHandle(mac.HMACSHA256Tag128KeyTemplate()) err = %v, want nil", err)
+	}
+
+	buff := &bytes.Buffer{}
+	err = insecurecleartextkeyset.Write(handle, keyset.NewBinaryWriter(buff))
+	if err != nil {
+		t.Fatalf("insecurecleartextkeyset.Write() err = %v, want nil", err)
+	}
+	serialized := buff.Bytes()
+
+	parsedHandle, err := insecurecleartextkeyset.Read(keyset.NewBinaryReader(bytes.NewBuffer(serialized)))
+	if err != nil {
+		t.Fatalf("insecurecleartextkeyset.Read() err = %v, want nil", err)
+	}
+
+	want := insecurecleartextkeyset.KeysetMaterial(handle)
+	got := insecurecleartextkeyset.KeysetMaterial(parsedHandle)
+	if !proto.Equal(got, want) {
+		t.Errorf("KeysetMaterial(Read()) = %q, want %q", got, want)
+	}
+}
+
+func TestWriteAndReadInJson(t *testing.T) {
+	handle, err := keyset.NewHandle(mac.HMACSHA256Tag128KeyTemplate())
+	if err != nil {
+		t.Fatalf("keyset.NewHandle(mac.HMACSHA256Tag128KeyTemplate()) err = %v, want nil", err)
+	}
+
+	buff := &bytes.Buffer{}
+	err = insecurecleartextkeyset.Write(handle, keyset.NewJSONWriter(buff))
+	if err != nil {
+		t.Fatalf("insecurecleartextkeyset.Write() err = %v, want nil", err)
+	}
+	serialized := buff.Bytes()
+
+	parsedHandle, err := insecurecleartextkeyset.Read(keyset.NewJSONReader(bytes.NewBuffer(serialized)))
+	if err != nil {
+		t.Fatalf("insecurecleartextkeyset.Read() err = %v, want nil", err)
+	}
+
+	want := insecurecleartextkeyset.KeysetMaterial(handle)
+	got := insecurecleartextkeyset.KeysetMaterial(parsedHandle)
+	if !proto.Equal(got, want) {
+		t.Errorf("KeysetMaterial(Read()) = %q, want %q", got, want)
 	}
 }
 
@@ -139,7 +197,7 @@ func TestHandleFromReaderWithAnnotationsTwiceFails(t *testing.T) {
 	}
 }
 
-func TestHandleFromReaderWithoutAnnotationsMonitorsNoAnnotations(t *testing.T) {
+func TestHandleFromReaderWithoutAnnotationsDoesNotGetMonitored(t *testing.T) {
 	defer internalregistry.ClearMonitoringClient()
 	client := &fakemonitoring.Client{}
 	if err := internalregistry.RegisterMonitoringClient(client); err != nil {
@@ -164,26 +222,7 @@ func TestHandleFromReaderWithoutAnnotationsMonitorsNoAnnotations(t *testing.T) {
 	if _, err := p.Encrypt([]byte("some_data"), nil); err != nil {
 		t.Fatalf("Encrypt() err = %v, want nil", err)
 	}
-	events := client.Events()
-	gotAnnotations := events[0].Context.KeysetInfo.Annotations
-	if gotAnnotations != nil {
-		t.Errorf("Annotations = %v, want nil", gotAnnotations)
-	}
-}
-
-func TestWrite(t *testing.T) {
-	keyData := testutil.NewKeyData("some type url", []byte{0}, tinkpb.KeyData_SYMMETRIC)
-	key := testutil.NewKey(keyData, tinkpb.KeyStatusType_ENABLED, 1, tinkpb.OutputPrefixType_TINK)
-	ks := testutil.NewKeyset(1, []*tinkpb.Keyset_Key{key})
-	h, err := insecurecleartextkeyset.Read(&keyset.MemReaderWriter{Keyset: ks})
-	if err != nil {
-		t.Fatalf("unexpected error creating new KeysetHandle: %v", err)
-	}
-	exported := &keyset.MemReaderWriter{}
-	if err := insecurecleartextkeyset.Write(h, exported); err != nil {
-		t.Fatalf("unexpected error writing keyset: %v", err)
-	}
-	if !proto.Equal(exported.Keyset, ks) {
-		t.Errorf("exported keyset (%s) doesn't match original keyset (%s)", exported.Keyset, ks)
+	if len(client.Events()) != 0 {
+		t.Errorf("len(client.Events()) = %d, want 0", len(client.Events()))
 	}
 }

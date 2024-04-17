@@ -20,10 +20,15 @@
 #include <string>
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
+#include "absl/strings/string_view.h"
 #include "tink/core/key_manager_impl.h"
+#include "tink/core/key_type_manager.h"
 #include "tink/core/private_key_type_manager.h"
 #include "tink/key_manager.h"
+#include "tink/util/status.h"
+#include "tink/util/statusor.h"
 #include "tink/util/validation.h"
 namespace crypto {
 namespace tink {
@@ -72,7 +77,7 @@ class PrivateKeyFactoryImpl : public PrivateKeyFactory {
   crypto::tink::util::StatusOr<std::unique_ptr<google::crypto::tink::KeyData>>
   GetPublicKeyData(absl::string_view serialized_private_key) const override {
     PrivateKeyProto private_key;
-    if (!private_key.ParseFromString(std::string(serialized_private_key))) {
+    if (!private_key.ParseFromString(serialized_private_key)) {
       return crypto::tink::util::Status(
           absl::StatusCode::kInvalidArgument,
           absl::StrCat("Could not parse the passed string as proto '",

@@ -16,7 +16,9 @@
 
 #include "tink/subtle/ed25519_verify_boringssl.h"
 
+#include <cstdint>
 #include <cstring>
+#include <memory>
 #include <utility>
 
 #include "absl/memory/memory.h"
@@ -25,8 +27,11 @@
 #include "absl/strings/string_view.h"
 #include "openssl/evp.h"
 #include "tink/internal/ec_util.h"
+#include "tink/internal/fips_utils.h"
+#include "tink/internal/ssl_unique_ptr.h"
 #include "tink/internal/util.h"
 #include "tink/public_key_verify.h"
+#include "tink/util/status.h"
 #include "tink/util/statusor.h"
 
 namespace crypto {

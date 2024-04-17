@@ -20,12 +20,11 @@
 #include <memory>
 #include <utility>
 
-#include "absl/strings/string_view.h"
+#include "absl/strings/cord.h"
 #include "openssl/evp.h"
 #include "tink/aead/cord_aead.h"
 #include "tink/internal/ssl_unique_ptr.h"
 #include "tink/util/secret_data.h"
-#include "tink/util/status.h"
 #include "tink/util/statusor.h"
 
 namespace crypto {
@@ -35,7 +34,7 @@ namespace internal {
 class CordAesGcmBoringSsl : public CordAead {
  public:
   static crypto::tink::util::StatusOr<std::unique_ptr<CordAead>> New(
-      util::SecretData key_value);
+      const util::SecretData& key_value);
 
   crypto::tink::util::StatusOr<absl::Cord> Encrypt(
       absl::Cord plaintext, absl::Cord associated_data) const override;
@@ -44,10 +43,15 @@ class CordAesGcmBoringSsl : public CordAead {
       absl::Cord ciphertext, absl::Cord associated_data) const override;
 
  private:
-  explicit CordAesGcmBoringSsl(internal::SslUniquePtr<EVP_CIPHER_CTX> context)
-      : context_(std::move(context)) {}
+  explicit CordAesGcmBoringSsl(
+      internal::SslUniquePtr<EVP_CIPHER_CTX> partial_context,
+      const util::SecretData& key)
+      : partial_context_(std::move(partial_context)), key_(key) {}
 
-  internal::SslUniquePtr<EVP_CIPHER_CTX> context_;
+  // Partially-initialized EVP_CIPHER_CTX context that is copied for every
+  // Encrypt/Decrypt operation.
+  internal::SslUniquePtr<EVP_CIPHER_CTX> partial_context_;
+  util::SecretData key_;
 };
 
 }  // namespace internal

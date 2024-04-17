@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2017 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,34 +17,28 @@
 package com.google.crypto.tink.mac;
 
 import static com.google.common.truth.Truth.assertThat;
-import static com.google.crypto.tink.internal.Util.toBytesFromPrintableAscii;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertThrows;
 
-import com.google.crypto.tink.CryptoFormat;
+import com.google.crypto.tink.InsecureSecretKeyAccess;
+import com.google.crypto.tink.KeysetHandle;
 import com.google.crypto.tink.Mac;
-import com.google.crypto.tink.PrimitiveSet;
-import com.google.crypto.tink.SecretKeyAccess;
-import com.google.crypto.tink.internal.KeyParser;
+import com.google.crypto.tink.Registry;
+import com.google.crypto.tink.internal.LegacyKeyManagerImpl;
 import com.google.crypto.tink.internal.MutableMonitoringRegistry;
-import com.google.crypto.tink.internal.MutableSerializationRegistry;
-import com.google.crypto.tink.internal.ProtoKeySerialization;
+import com.google.crypto.tink.internal.MutablePrimitiveRegistry;
+import com.google.crypto.tink.internal.PrimitiveConstructor;
+import com.google.crypto.tink.internal.PrimitiveRegistry;
 import com.google.crypto.tink.internal.testing.FakeMonitoringClient;
+import com.google.crypto.tink.mac.HmacParameters.HashType;
+import com.google.crypto.tink.mac.internal.AesCmacProtoSerialization;
+import com.google.crypto.tink.mac.internal.HmacProtoSerialization;
 import com.google.crypto.tink.monitoring.MonitoringAnnotations;
-import com.google.crypto.tink.proto.KeyData;
 import com.google.crypto.tink.proto.KeyData.KeyMaterialType;
-import com.google.crypto.tink.proto.KeyStatusType;
-import com.google.crypto.tink.proto.Keyset.Key;
-import com.google.crypto.tink.proto.OutputPrefixType;
-import com.google.crypto.tink.subtle.Bytes;
-import com.google.crypto.tink.subtle.Random;
-import com.google.crypto.tink.testing.TestUtil;
-import com.google.protobuf.ByteString;
+import com.google.crypto.tink.subtle.Hex;
+import com.google.crypto.tink.util.SecretBytes;
 import java.security.GeneralSecurityException;
-import java.util.Arrays;
 import java.util.List;
-import javax.annotation.Nullable;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -54,99 +48,363 @@ import org.junit.runners.JUnit4;
 @RunWith(JUnit4.class)
 public class MacWrapperTest {
   private static final int HMAC_KEY_SIZE = 20;
+  private static final int HMAC_TAG_SIZE = 10;
+  private static final int AES_CMAC_KEY_SIZE = 32;
+  private static final int AES_CMAC_TAG_SIZE = 10;
+
+  private static HmacKey rawKey0;
+  private static HmacKey rawKey1;
+  private static AesCmacKey rawKey2;
+  private static AesCmacKey rawKey3;
+  private static HmacKey tinkKey0;
+  private static AesCmacKey tinkKey1;
+  private static HmacKey crunchyKey0;
+  private static AesCmacKey crunchyKey1;
+  private static HmacKey legacyKey0;
+  private static AesCmacKey legacyKey1;
 
   @BeforeClass
   public static void setUp() throws Exception {
     MacConfig.register();
+    AesCmacProtoSerialization.register();
+    HmacProtoSerialization.register();
+    createTestKeys();
+  }
+
+  private static void createTestKeys() {
+    final HmacParameters noPrefixHmacParameters =
+        createDefaultHmacParameters(HmacParameters.Variant.NO_PREFIX);
+    final HmacParameters legacyHmacParameters =
+        createDefaultHmacParameters(HmacParameters.Variant.LEGACY);
+    final HmacParameters crunchyHmacParameters =
+        createDefaultHmacParameters(HmacParameters.Variant.CRUNCHY);
+    final HmacParameters tinkHmacParameters =
+        createDefaultHmacParameters(HmacParameters.Variant.TINK);
+    final AesCmacParameters noPrefixAesCmacParameters =
+        createDefaultAesCmacParameters(AesCmacParameters.Variant.NO_PREFIX);
+    final AesCmacParameters legacyAesCmacParameters =
+        createDefaultAesCmacParameters(AesCmacParameters.Variant.LEGACY);
+    final AesCmacParameters crunchyAesCmacParameters =
+        createDefaultAesCmacParameters(AesCmacParameters.Variant.CRUNCHY);
+    final AesCmacParameters tinkAesCmacParameters =
+        createDefaultAesCmacParameters(AesCmacParameters.Variant.TINK);
+
+    try {
+      rawKey0 =
+          HmacKey.builder()
+              .setParameters(noPrefixHmacParameters)
+              .setKeyBytes(SecretBytes.randomBytes(HMAC_KEY_SIZE))
+              .setIdRequirement(null)
+              .build();
+      rawKey1 =
+          HmacKey.builder()
+              .setParameters(noPrefixHmacParameters)
+              .setKeyBytes(SecretBytes.randomBytes(HMAC_KEY_SIZE))
+              .setIdRequirement(null)
+              .build();
+      rawKey2 =
+          AesCmacKey.builder()
+              .setParameters(noPrefixAesCmacParameters)
+              .setAesKeyBytes(SecretBytes.randomBytes(AES_CMAC_KEY_SIZE))
+              .setIdRequirement(null)
+              .build();
+      rawKey3 =
+          AesCmacKey.builder()
+              .setParameters(noPrefixAesCmacParameters)
+              .setAesKeyBytes(SecretBytes.randomBytes(AES_CMAC_KEY_SIZE))
+              .setIdRequirement(null)
+              .build();
+      tinkKey0 =
+          HmacKey.builder()
+              .setParameters(tinkHmacParameters)
+              .setKeyBytes(SecretBytes.randomBytes(HMAC_KEY_SIZE))
+              .setIdRequirement(4)
+              .build();
+      tinkKey1 =
+          AesCmacKey.builder()
+              .setParameters(tinkAesCmacParameters)
+              .setAesKeyBytes(SecretBytes.randomBytes(AES_CMAC_KEY_SIZE))
+              .setIdRequirement(5)
+              .build();
+      crunchyKey0 =
+          HmacKey.builder()
+              .setParameters(crunchyHmacParameters)
+              .setKeyBytes(SecretBytes.randomBytes(HMAC_KEY_SIZE))
+              .setIdRequirement(6)
+              .build();
+      crunchyKey1 =
+          AesCmacKey.builder()
+              .setParameters(crunchyAesCmacParameters)
+              .setAesKeyBytes(SecretBytes.randomBytes(AES_CMAC_KEY_SIZE))
+              .setIdRequirement(7)
+              .build();
+      legacyKey0 =
+          HmacKey.builder()
+              .setParameters(legacyHmacParameters)
+              .setKeyBytes(SecretBytes.randomBytes(HMAC_KEY_SIZE))
+              .setIdRequirement(8)
+              .build();
+      legacyKey1 =
+          AesCmacKey.builder()
+              .setParameters(legacyAesCmacParameters)
+              .setAesKeyBytes(SecretBytes.randomBytes(AES_CMAC_KEY_SIZE))
+              .setIdRequirement(9)
+              .build();
+    } catch (GeneralSecurityException e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  private static AesCmacParameters createDefaultAesCmacParameters(
+      AesCmacParameters.Variant variant) {
+    try {
+      return AesCmacParameters.builder()
+          .setKeySizeBytes(AES_CMAC_KEY_SIZE)
+          .setTagSizeBytes(AES_CMAC_TAG_SIZE)
+          .setVariant(variant)
+          .build();
+    } catch (GeneralSecurityException e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  private static HmacParameters createDefaultHmacParameters(HmacParameters.Variant variant) {
+    try {
+      return HmacParameters.builder()
+          .setKeySizeBytes(HMAC_KEY_SIZE)
+          .setTagSizeBytes(HMAC_TAG_SIZE)
+          .setVariant(variant)
+          .setHashType(HashType.SHA1)
+          .build();
+    } catch (GeneralSecurityException e) {
+      throw new IllegalArgumentException("Incorrect parameters creation arguments", e);
+    }
   }
 
   @Test
+  public void testComputeVerifyMac_works() throws Exception {
+    MutablePrimitiveRegistry.resetGlobalInstanceTestOnly();
+    MacConfig.register();
+
+    byte[] plaintext = "plaintext".getBytes(UTF_8);
+    KeysetHandle smallKeysetHandle =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(rawKey0).withFixedId(1234).makePrimary())
+            .addEntry(KeysetHandle.importKey(tinkKey1))
+            .build();
+    Mac mac = smallKeysetHandle.getPrimitive(Mac.class);
+
+    byte[] tag = mac.computeMac(plaintext);
+
+    mac.verifyMac(tag, plaintext);
+  }
+
+  @Test
+  public void testComputeVerifyMac_throwsOnWrongKey() throws Exception {
+    MutablePrimitiveRegistry.resetGlobalInstanceTestOnly();
+    MacConfig.register();
+
+    byte[] plaintext = "plaintext".getBytes(UTF_8);
+    KeysetHandle computeKeysetHandle =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(rawKey0).withFixedId(1234).makePrimary())
+            .build();
+    KeysetHandle verifyKeysetHandle =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(rawKey1).withFixedId(1235).makePrimary())
+            .build();
+    Mac computingMac = computeKeysetHandle.getPrimitive(Mac.class);
+    Mac verifyingMac = verifyKeysetHandle.getPrimitive(Mac.class);
+
+    byte[] tag = computingMac.computeMac(plaintext);
+
+    assertThrows(GeneralSecurityException.class, () -> verifyingMac.verifyMac(tag, plaintext));
+  }
+
+  @Test
+  public void testVerifyMac_checksAllNecessaryRawKeys() throws Exception {
+    MutablePrimitiveRegistry.resetGlobalInstanceTestOnly();
+    MacConfig.register();
+
+    byte[] plaintext = "plaintext".getBytes(UTF_8);
+    KeysetHandle computeKeysetHandle =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(rawKey3).withFixedId(1237).makePrimary())
+            .build();
+    KeysetHandle verifyKeysetHandle =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(rawKey1).withFixedId(1235).makePrimary())
+            .addEntry(KeysetHandle.importKey(rawKey3).withFixedId(1237))
+            .build();
+    Mac computingMac = computeKeysetHandle.getPrimitive(Mac.class);
+    Mac verifyingMac = verifyKeysetHandle.getPrimitive(Mac.class);
+
+    byte[] tag = computingMac.computeMac(plaintext);
+
+    verifyingMac.verifyMac(tag, plaintext);
+  }
+
+  @Test
+  public void testVerifyMac_checksRawKeysWhenTagHasTinkKeyPrefix() throws Exception {
+    MutablePrimitiveRegistry.resetGlobalInstanceTestOnly();
+    MacConfig.register();
+
+    byte[] plaintext = "plaintext".getBytes(UTF_8);
+    byte[] tag = Hex.decode("0152af9740d2fab0cf3f");
+    HmacKey rawKey5 =
+        HmacKey.builder()
+            .setParameters(createDefaultHmacParameters(HmacParameters.Variant.NO_PREFIX))
+            .setKeyBytes(
+                SecretBytes.copyFrom(
+                    Hex.decode("7d40a4d7c192ca113f403b8703e1b7b93fecf99a"),
+                    InsecureSecretKeyAccess.get()))
+            .setIdRequirement(null)
+            .build();
+    // Note: 0x52af97f0 are bytes 1 to 4 in the tag.
+    HmacKey tinkKey2 =
+        HmacKey.builder()
+            .setParameters(createDefaultHmacParameters(HmacParameters.Variant.TINK))
+            .setKeyBytes(SecretBytes.randomBytes(HMAC_KEY_SIZE))
+            .setIdRequirement(0x52af9740)
+            .build();
+    KeysetHandle verifyKeysetHandle =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(rawKey5).withFixedId(1235))
+            .addEntry(KeysetHandle.importKey(tinkKey2).makePrimary())
+            .build();
+
+    Mac mac = verifyKeysetHandle.getPrimitive(Mac.class);
+
+    mac.verifyMac(tag, plaintext);
+  }
+
+  @Test
+  public void computeMac_usesPrimaryKey() throws Exception {
+    MutablePrimitiveRegistry.resetGlobalInstanceTestOnly();
+    MacConfig.register();
+
+    byte[] plaintext = "plaintext".getBytes(UTF_8);
+    KeysetHandle keysetHandle =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(rawKey2).withFixedId(1236).makePrimary())
+            .addEntry(KeysetHandle.importKey(rawKey3).withFixedId(1237))
+            .addEntry(KeysetHandle.importKey(tinkKey1))
+            .build();
+    KeysetHandle keysetHandlePrimary =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(rawKey2).withFixedId(1236).makePrimary())
+            .build();
+    Mac computingMac = keysetHandle.getPrimitive(Mac.class);
+    Mac verifyingMac = keysetHandlePrimary.getPrimitive(Mac.class);
+
+    byte[] tag = computingMac.computeMac(plaintext);
+
+    verifyingMac.verifyMac(tag, plaintext);
+  }
+
+  @Test
+  public void testComputeVerifyMac_manyKeysWork() throws Exception {
+    MutablePrimitiveRegistry.resetGlobalInstanceTestOnly();
+    MacConfig.register();
+
+    byte[] plaintext = "plaintext".getBytes(UTF_8);
+    KeysetHandle assortedKeysetHandle =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(rawKey0).withFixedId(1234))
+            .addEntry(KeysetHandle.importKey(rawKey1).withFixedId(1235))
+            .addEntry(KeysetHandle.importKey(rawKey2).withFixedId(1236))
+            .addEntry(KeysetHandle.importKey(rawKey3).withFixedId(1237))
+            .addEntry(KeysetHandle.importKey(tinkKey0))
+            .addEntry(KeysetHandle.importKey(tinkKey1))
+            .addEntry(KeysetHandle.importKey(crunchyKey0))
+            .addEntry(KeysetHandle.importKey(crunchyKey1).makePrimary())
+            .addEntry(KeysetHandle.importKey(legacyKey0))
+            .addEntry(KeysetHandle.importKey(legacyKey1))
+            .build();
+    Mac mac = assortedKeysetHandle.getPrimitive(Mac.class);
+
+    byte[] tag = mac.computeMac(plaintext);
+
+    mac.verifyMac(tag, plaintext);
+  }
+
+  @Test
+  public void testVerifyMac_shiftedPrimaryWithManyKeysWorks() throws Exception {
+    MutablePrimitiveRegistry.resetGlobalInstanceTestOnly();
+    MacConfig.register();
+
+    byte[] plaintext = "plaintext".getBytes(UTF_8);
+    KeysetHandle assortedKeysetHandle0 =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(rawKey0).withFixedId(1234))
+            .addEntry(KeysetHandle.importKey(rawKey1).withFixedId(1235))
+            .addEntry(KeysetHandle.importKey(rawKey2).withFixedId(1236))
+            .addEntry(KeysetHandle.importKey(rawKey3).withFixedId(1237))
+            .addEntry(KeysetHandle.importKey(tinkKey0))
+            .addEntry(KeysetHandle.importKey(tinkKey1))
+            .addEntry(KeysetHandle.importKey(crunchyKey0))
+            .addEntry(KeysetHandle.importKey(crunchyKey1).makePrimary())
+            .addEntry(KeysetHandle.importKey(legacyKey0))
+            .addEntry(KeysetHandle.importKey(legacyKey1))
+            .build();
+    KeysetHandle.Builder assortedBuilder = KeysetHandle.newBuilder(assortedKeysetHandle0);
+    assortedBuilder.getAt(4).makePrimary();
+    KeysetHandle assortedKeysetHandle1 = assortedBuilder.build();
+    Mac mac = assortedKeysetHandle1.getPrimitive(Mac.class);
+
+    byte[] tag = mac.computeMac(plaintext);
+
+    mac.verifyMac(tag, plaintext);
+  }
+
+  // ------------------------------------------------------------------------------ Monitoring tests
+
+  @Test
   public void testMultipleKeysWithoutAnnotation() throws Exception {
+    MutablePrimitiveRegistry.resetGlobalInstanceTestOnly();
+    MacConfig.register();
+
     FakeMonitoringClient fakeMonitoringClient = new FakeMonitoringClient();
     MutableMonitoringRegistry.globalInstance().clear();
     MutableMonitoringRegistry.globalInstance().registerMonitoringClient(fakeMonitoringClient);
 
-    byte[] keyValue = Random.randBytes(HMAC_KEY_SIZE);
-    Key tink = TestUtil.createKey(
-          TestUtil.createHmacKeyData(keyValue, 16),
-          42,
-          KeyStatusType.ENABLED,
-          OutputPrefixType.TINK);
-    Key legacy = TestUtil.createKey(
-          TestUtil.createHmacKeyData(keyValue, 16),
-          43,
-          KeyStatusType.ENABLED,
-          OutputPrefixType.LEGACY);
-    Key raw = TestUtil.createKey(
-          TestUtil.createHmacKeyData(keyValue, 16),
-          44,
-          KeyStatusType.ENABLED,
-          OutputPrefixType.RAW);
-    Key crunchy = TestUtil.createKey(
-          TestUtil.createHmacKeyData(keyValue, 16),
-          45,
-          KeyStatusType.ENABLED,
-          OutputPrefixType.CRUNCHY);
-    Key[] keys = new Key[] {tink, legacy, raw, crunchy};
-    int j = keys.length;
-    for (int i = 0; i < j; i++) {
-      PrimitiveSet<Mac> primitives =
-          TestUtil.createPrimitiveSet(
-              TestUtil.createKeyset(
-                  keys[i], keys[(i + 1) % j], keys[(i + 2) % j], keys[(i + 3) % j]),
-              Mac.class);
-      Mac mac = new MacWrapper().wrap(primitives);
-      byte[] plaintext = "plaintext".getBytes(UTF_8);
-      byte[] tag = mac.computeMac(plaintext);
-      if (!keys[i].getOutputPrefixType().equals(OutputPrefixType.RAW)) {
-        byte[] prefix = Arrays.copyOf(tag, CryptoFormat.NON_RAW_PREFIX_SIZE);
-        assertArrayEquals(prefix, CryptoFormat.getOutputPrefix(keys[i]));
-      }
-      try {
-        mac.verifyMac(tag, plaintext);
-      } catch (GeneralSecurityException e) {
-        throw new AssertionError("Valid MAC, should not throw exception: " + i, e);
-      }
+    byte[] plaintext = "plaintext".getBytes(UTF_8);
+    KeysetHandle mainKeysetHandle =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(rawKey0).withFixedId(1234))
+            .addEntry(KeysetHandle.importKey(rawKey1).withFixedId(1235))
+            .addEntry(KeysetHandle.importKey(rawKey2).withFixedId(1236))
+            .addEntry(KeysetHandle.importKey(rawKey3).withFixedId(1237))
+            .addEntry(KeysetHandle.importKey(tinkKey0))
+            .addEntry(KeysetHandle.importKey(tinkKey1))
+            .addEntry(KeysetHandle.importKey(crunchyKey0))
+            .addEntry(KeysetHandle.importKey(crunchyKey1).makePrimary())
+            .addEntry(KeysetHandle.importKey(legacyKey1))
+            .build();
+    KeysetHandle noPrefixKeyKeyset =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(rawKey2).withFixedId(1236).makePrimary())
+            .build();
+    KeysetHandle prefixedKeyKeyset =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(crunchyKey1).makePrimary())
+            .build();
+    KeysetHandle missingKeyKeyset =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(legacyKey0).makePrimary())
+            .build();
+    Mac mac = mainKeysetHandle.getPrimitive(Mac.class);
+    Mac noPrefixMac = noPrefixKeyKeyset.getPrimitive(Mac.class);
+    Mac prefixedMac = prefixedKeyKeyset.getPrimitive(Mac.class);
+    Mac missingMac = missingKeyKeyset.getPrimitive(Mac.class);
 
-      // Modify plaintext or tag and make sure the verifyMac failed.
-      byte[] plaintextAndTag = Bytes.concat(plaintext, tag);
-      for (int b = 0; b < plaintextAndTag.length; b++) {
-        for (int bit = 0; bit < 8; bit++) {
-          byte[] modified = Arrays.copyOf(plaintextAndTag, plaintextAndTag.length);
-          modified[b] ^= (byte) (1 << bit);
-          assertThrows(
-              GeneralSecurityException.class,
-              () ->
-                  mac.verifyMac(
-                      Arrays.copyOfRange(modified, plaintext.length, modified.length),
-                      Arrays.copyOf(modified, plaintext.length)));
-        }
-      }
-
-      // mac with a non-primary RAW key, verify with the keyset
-      PrimitiveSet<Mac> primitives2 =
-          TestUtil.createPrimitiveSet(TestUtil.createKeyset(raw, legacy, tink, crunchy), Mac.class);
-      Mac mac2 = new MacWrapper().wrap(primitives2);
-      tag = mac2.computeMac(plaintext);
-      try {
-        mac.verifyMac(tag, plaintext);
-      } catch (GeneralSecurityException e) {
-        throw new AssertionError("Valid MAC, should not throw exception", e);
-      }
-
-      // mac with a random key not in the keyset, verify with the keyset should fail
-      byte[] keyValue2 = Random.randBytes(HMAC_KEY_SIZE);
-      Key random = TestUtil.createKey(
-          TestUtil.createHmacKeyData(keyValue2, 16),
-          44,
-          KeyStatusType.ENABLED,
-          OutputPrefixType.TINK);
-      PrimitiveSet<Mac> primitives3 =
-          TestUtil.createPrimitiveSet(TestUtil.createKeyset(random), Mac.class);
-      mac2 = new MacWrapper().wrap(primitives3);
-      byte[] tag2 = mac2.computeMac(plaintext);
-      assertThrows(GeneralSecurityException.class, () -> mac.verifyMac(tag2, plaintext));
-    }
+    // Busy work triggering different code paths.
+    byte[] tag = noPrefixMac.computeMac(plaintext);
+    mac.verifyMac(tag, plaintext);
+    tag = prefixedMac.computeMac(plaintext);
+    mac.verifyMac(tag, plaintext);
+    byte[] missingTag = missingMac.computeMac(plaintext);
+    assertThrows(GeneralSecurityException.class, () -> mac.verifyMac(missingTag, plaintext));
 
     // Without annotations, nothing gets logged.
     assertThat(fakeMonitoringClient.getLogEntries()).isEmpty();
@@ -154,68 +412,37 @@ public class MacWrapperTest {
   }
 
   @Test
-  public void testSmallPlaintextWithRawKey() throws Exception {
-    byte[] keyValue = Random.randBytes(HMAC_KEY_SIZE);
-    Key primary = TestUtil.createKey(
-        TestUtil.createHmacKeyData(keyValue, 16),
-        42,
-        KeyStatusType.ENABLED,
-        OutputPrefixType.RAW);
-    PrimitiveSet<Mac> primitives =
-        TestUtil.createPrimitiveSet(TestUtil.createKeyset(primary), Mac.class);
-    Mac mac = new MacWrapper().wrap(primitives);
-    byte[] plaintext = "blah".getBytes(UTF_8);
-    byte[] tag = mac.computeMac(plaintext);
-    // no prefix
-    assertThat(tag).hasLength(16);
-    try {
-      mac.verifyMac(tag, plaintext);
-    } catch (GeneralSecurityException e) {
-      throw new AssertionError("Valid MAC, should not throw exception", e);
-    }
-  }
-
-  @Test
   public void testWithAnnotation_hasMonitoring() throws Exception {
+    MutablePrimitiveRegistry.resetGlobalInstanceTestOnly();
+    MacConfig.register();
+
     FakeMonitoringClient fakeMonitoringClient = new FakeMonitoringClient();
     MutableMonitoringRegistry.globalInstance().clear();
     MutableMonitoringRegistry.globalInstance().registerMonitoringClient(fakeMonitoringClient);
 
-    Key tinkKey =
-        TestUtil.createKey(
-            TestUtil.createHmacKeyData(Random.randBytes(HMAC_KEY_SIZE), 16),
-            42,
-            KeyStatusType.ENABLED,
-            OutputPrefixType.TINK);
-    Key rawKey =
-        TestUtil.createKey(
-            TestUtil.createHmacKeyData(Random.randBytes(HMAC_KEY_SIZE), 16),
-            43,
-            KeyStatusType.ENABLED,
-            OutputPrefixType.RAW);
-    Key legacyKey =
-        TestUtil.createKey(
-            TestUtil.createHmacKeyData(Random.randBytes(HMAC_KEY_SIZE), 16),
-            44,
-            KeyStatusType.ENABLED,
-            OutputPrefixType.LEGACY);
     MonitoringAnnotations annotations =
         MonitoringAnnotations.newBuilder().add("annotation_name", "annotation_value").build();
-    Mac rawMac =
-        new MacWrapper()
-            .wrap(
-                TestUtil.createPrimitiveSetWithAnnotations(
-                    TestUtil.createKeyset(rawKey), annotations, Mac.class));
-    Mac legacyMac =
-        new MacWrapper()
-            .wrap(
-                TestUtil.createPrimitiveSetWithAnnotations(
-                    TestUtil.createKeyset(legacyKey), annotations, Mac.class));
-    Mac mac =
-        new MacWrapper()
-            .wrap(
-                TestUtil.createPrimitiveSetWithAnnotations(
-                    TestUtil.createKeyset(tinkKey, rawKey, legacyKey), annotations, Mac.class));
+    KeysetHandle rawKeysetHandle =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(rawKey0).withFixedId(43).makePrimary())
+            .setMonitoringAnnotations(annotations)
+            .build();
+    KeysetHandle legacyKeysetHandle =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(legacyKey0).makePrimary())
+            .setMonitoringAnnotations(annotations)
+            .build();
+    KeysetHandle mixedKeysetHandle =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(tinkKey1).makePrimary())
+            .addEntry(KeysetHandle.importKey(rawKey0).withFixedId(43))
+            .addEntry(KeysetHandle.importKey(legacyKey0))
+            .setMonitoringAnnotations(annotations)
+            .build();
+    Mac rawMac = rawKeysetHandle.getPrimitive(Mac.class);
+    Mac legacyMac = legacyKeysetHandle.getPrimitive(Mac.class);
+    Mac mac = mixedKeysetHandle.getPrimitive(Mac.class);
+
     byte[] plaintext = "plaintext".getBytes(UTF_8);
     byte[] tinkTag = mac.computeMac(plaintext);
     byte[] rawTag = rawMac.computeMac(plaintext);
@@ -229,7 +456,8 @@ public class MacWrapperTest {
     assertThat(logEntries).hasSize(6);
 
     FakeMonitoringClient.LogEntry tinkComputeEntry = logEntries.get(0);
-    assertThat(tinkComputeEntry.getKeyId()).isEqualTo(42);
+    // 5 is tinkKey1's id.
+    assertThat(tinkComputeEntry.getKeyId()).isEqualTo(5);
     assertThat(tinkComputeEntry.getPrimitive()).isEqualTo("mac");
     assertThat(tinkComputeEntry.getApi()).isEqualTo("compute");
     assertThat(tinkComputeEntry.getNumBytesAsInput()).isEqualTo(plaintext.length);
@@ -243,15 +471,16 @@ public class MacWrapperTest {
     assertThat(rawComputeEntry.getKeysetInfo().getAnnotations()).isEqualTo(annotations);
 
     FakeMonitoringClient.LogEntry legacyComputeEntry = logEntries.get(2);
-    assertThat(legacyComputeEntry.getKeyId()).isEqualTo(44);
+    // 8 is legacyKey0's id.
+    assertThat(legacyComputeEntry.getKeyId()).isEqualTo(8);
     assertThat(legacyComputeEntry.getPrimitive()).isEqualTo("mac");
     assertThat(legacyComputeEntry.getApi()).isEqualTo("compute");
-    // legacy mac appends one byte to the input data, therefore the input length is one longer.
-    assertThat(legacyComputeEntry.getNumBytesAsInput()).isEqualTo(plaintext.length + 1);
+    assertThat(legacyComputeEntry.getNumBytesAsInput()).isEqualTo(plaintext.length);
     assertThat(legacyComputeEntry.getKeysetInfo().getAnnotations()).isEqualTo(annotations);
 
     FakeMonitoringClient.LogEntry tinkVerifyEntry = logEntries.get(3);
-    assertThat(tinkVerifyEntry.getKeyId()).isEqualTo(42);
+    // 5 is tinkKey1's id.
+    assertThat(tinkVerifyEntry.getKeyId()).isEqualTo(5);
     assertThat(tinkVerifyEntry.getPrimitive()).isEqualTo("mac");
     assertThat(tinkVerifyEntry.getApi()).isEqualTo("verify");
     assertThat(tinkVerifyEntry.getNumBytesAsInput()).isEqualTo(plaintext.length);
@@ -265,11 +494,11 @@ public class MacWrapperTest {
     assertThat(rawVerifyEntry.getKeysetInfo().getAnnotations()).isEqualTo(annotations);
 
     FakeMonitoringClient.LogEntry legacyVerifyEntry = logEntries.get(5);
-    assertThat(legacyVerifyEntry.getKeyId()).isEqualTo(44);
+    // 8 is legacyKey0's id.
+    assertThat(legacyVerifyEntry.getKeyId()).isEqualTo(8);
     assertThat(legacyVerifyEntry.getPrimitive()).isEqualTo("mac");
     assertThat(legacyVerifyEntry.getApi()).isEqualTo("verify");
-    // legacy mac appends one byte to the input data, therefore the input length is one longer.
-    assertThat(legacyVerifyEntry.getNumBytesAsInput()).isEqualTo(plaintext.length + 1);
+    assertThat(legacyVerifyEntry.getNumBytesAsInput()).isEqualTo(plaintext.length);
     assertThat(legacyVerifyEntry.getKeysetInfo().getAnnotations()).isEqualTo(annotations);
 
     List<FakeMonitoringClient.LogFailureEntry> failures =
@@ -278,11 +507,15 @@ public class MacWrapperTest {
     FakeMonitoringClient.LogFailureEntry verifyFailure = failures.get(0);
     assertThat(verifyFailure.getPrimitive()).isEqualTo("mac");
     assertThat(verifyFailure.getApi()).isEqualTo("verify");
-    assertThat(verifyFailure.getKeysetInfo().getPrimaryKeyId()).isEqualTo(42);
+    // 5 is tinkKey1's id.
+    assertThat(verifyFailure.getKeysetInfo().getPrimaryKeyId()).isEqualTo(5);
     assertThat(verifyFailure.getKeysetInfo().getAnnotations()).isEqualTo(annotations);
   }
 
   public static class AlwaysFailingMac implements Mac {
+
+    AlwaysFailingMac(HmacKey key) {}
+
     @Override
     public byte[] computeMac(final byte[] data) throws GeneralSecurityException {
       throw new GeneralSecurityException("fail");
@@ -296,35 +529,45 @@ public class MacWrapperTest {
 
   @Test
   public void testAlwaysFailingWithAnnotation_hasMonitoring() throws Exception {
+    // Test setup.
+    MutablePrimitiveRegistry.resetGlobalInstanceTestOnly();
+    MutablePrimitiveRegistry.globalInstance()
+        .registerPrimitiveConstructor(
+            PrimitiveConstructor.create(AlwaysFailingMac::new, HmacKey.class, Mac.class));
+    MacWrapper.register();
+    HmacProtoSerialization.register();
+    Registry.registerKeyManager(
+        LegacyKeyManagerImpl.create(
+            "type.googleapis.com/google.crypto.tink.HmacKey",
+            Mac.class,
+            KeyMaterialType.SYMMETRIC,
+            com.google.crypto.tink.proto.HmacKey.parser()),
+        true);
+
     FakeMonitoringClient fakeMonitoringClient = new FakeMonitoringClient();
     MutableMonitoringRegistry.globalInstance().clear();
     MutableMonitoringRegistry.globalInstance().registerMonitoringClient(fakeMonitoringClient);
 
     MonitoringAnnotations annotations =
         MonitoringAnnotations.newBuilder().add("annotation_name", "annotation_value").build();
-    PrimitiveSet<Mac> primitives =
-        PrimitiveSet.newBuilder(Mac.class)
-            .setAnnotations(annotations)
-            .addPrimaryPrimitive(
-                new AlwaysFailingMac(),
-                TestUtil.createKey(
-                    TestUtil.createHmacKeyData(Random.randBytes(HMAC_KEY_SIZE), 16),
-                    42,
-                    KeyStatusType.ENABLED,
-                    OutputPrefixType.TINK))
+    KeysetHandle keysetHandle =
+        KeysetHandle.newBuilder()
+            .addEntry(KeysetHandle.importKey(tinkKey0).makePrimary())
+            .setMonitoringAnnotations(annotations)
             .build();
-    Mac mac = new MacWrapper().wrap(primitives);
+    Mac mac = keysetHandle.getPrimitive(Mac.class);
 
     byte[] data = "some data".getBytes(UTF_8);
     byte[] invalidTag = "an invalid tag".getBytes(UTF_8);
+    byte[] shortInvalidTag = "t".getBytes(UTF_8);
 
+    // Test active work, including a test with a short tag, because there is a different code path
+    // for this.
     assertThrows(GeneralSecurityException.class, () -> mac.computeMac(data));
     assertThrows(GeneralSecurityException.class, () -> mac.verifyMac(invalidTag, data));
-
-    // Test short tags, because there is a different code path for this.
-    byte[] shortInvalidTag = "t".getBytes(UTF_8);
     assertThrows(GeneralSecurityException.class, () -> mac.verifyMac(shortInvalidTag, data));
 
+    // Assert correctness.
     assertThat(fakeMonitoringClient.getLogEntries()).isEmpty();
 
     List<FakeMonitoringClient.LogFailureEntry> failures =
@@ -333,103 +576,36 @@ public class MacWrapperTest {
     FakeMonitoringClient.LogFailureEntry compFailure = failures.get(0);
     assertThat(compFailure.getPrimitive()).isEqualTo("mac");
     assertThat(compFailure.getApi()).isEqualTo("compute");
-    assertThat(compFailure.getKeysetInfo().getPrimaryKeyId()).isEqualTo(42);
+    // 4 is tinkKey0's id.
+    assertThat(compFailure.getKeysetInfo().getPrimaryKeyId()).isEqualTo(4);
     assertThat(compFailure.getKeysetInfo().getAnnotations()).isEqualTo(annotations);
 
     FakeMonitoringClient.LogFailureEntry verifyFailure = failures.get(1);
     assertThat(verifyFailure.getPrimitive()).isEqualTo("mac");
     assertThat(verifyFailure.getApi()).isEqualTo("verify");
-    assertThat(verifyFailure.getKeysetInfo().getPrimaryKeyId()).isEqualTo(42);
+    // 4 is tinkKey0's id.
+    assertThat(verifyFailure.getKeysetInfo().getPrimaryKeyId()).isEqualTo(4);
     assertThat(verifyFailure.getKeysetInfo().getAnnotations()).isEqualTo(annotations);
 
     FakeMonitoringClient.LogFailureEntry verifyFailure2 = failures.get(2);
     assertThat(verifyFailure2.getPrimitive()).isEqualTo("mac");
     assertThat(verifyFailure2.getApi()).isEqualTo("verify");
-    assertThat(verifyFailure2.getKeysetInfo().getPrimaryKeyId()).isEqualTo(42);
+    // 4 is tinkKey0's id.
+    assertThat(verifyFailure2.getKeysetInfo().getPrimaryKeyId()).isEqualTo(4);
     assertThat(verifyFailure2.getKeysetInfo().getAnnotations()).isEqualTo(annotations);
   }
 
-  // Returns a key whose output prefix is taken from
-  private static com.google.crypto.tink.Key parseKeyWithProgrammableOutputPrefix(
-      ProtoKeySerialization serialization, @Nullable SecretKeyAccess access) {
-    com.google.crypto.tink.util.Bytes outputPrefix =
-        com.google.crypto.tink.util.Bytes.copyFrom(serialization.getValue().toByteArray());
-    return new MacKey() {
-      @Override
-      public com.google.crypto.tink.util.Bytes getOutputPrefix() {
-        return outputPrefix;
-      }
-
-      @Override
-      public MacParameters getParameters() {
-        return new MacParameters() {
-          @Override
-          public boolean hasIdRequirement() {
-            throw new UnsupportedOperationException("Not needed in test");
-          }
-        };
-      }
-
-      @Override
-      public Integer getIdRequirementOrNull() {
-        throw new UnsupportedOperationException("Not needed in test");
-      }
-
-      @Override
-      public boolean equalsKey(com.google.crypto.tink.Key k) {
-        throw new UnsupportedOperationException("Not needed in test");
-      }
-    };
-  }
-
-  private static final String TYPE_URL_FOR_PROGRAMMABLE_KEY = "typeUrlForProgrammableKey";
-  @BeforeClass
-  public static void registerProgrammableOutputPrefixKey() throws Exception {
-    MutableSerializationRegistry.globalInstance()
-        .registerKeyParser(
-            KeyParser.create(
-                MacWrapperTest::parseKeyWithProgrammableOutputPrefix,
-                toBytesFromPrintableAscii(TYPE_URL_FOR_PROGRAMMABLE_KEY),
-                ProtoKeySerialization.class));
-  }
-
   @Test
-  public void correctOutputPrefixInKey_creatingWorks() throws Exception {
-    Key key =
-        Key.newBuilder()
-            .setOutputPrefixType(OutputPrefixType.TINK)
-            .setKeyData(
-                KeyData.newBuilder()
-                    .setTypeUrl(TYPE_URL_FOR_PROGRAMMABLE_KEY)
-                    .setValue(ByteString.copyFrom(new byte[] {0x01, 0x01, 0x02, 0x03, 0x04}))
-                    .setKeyMaterialType(KeyMaterialType.SYMMETRIC))
-            .setKeyId(0x01020304)
-            .setStatus(KeyStatusType.ENABLED)
-            .build();
-    // Wrapping would throw before any mac is computed, so we can use any Mac for the test.
-    PrimitiveSet<Mac> primitives =
-        PrimitiveSet.newBuilder(Mac.class).addPrimaryPrimitive(new AlwaysFailingMac(), key).build();
-    new MacWrapper().wrap(primitives);
-  }
+  public void registerToInternalPrimitiveRegistry_works() throws Exception {
+    PrimitiveRegistry.Builder initialBuilder = PrimitiveRegistry.builder();
+    PrimitiveRegistry initialRegistry = initialBuilder.build();
+    PrimitiveRegistry.Builder processedBuilder = PrimitiveRegistry.builder(initialRegistry);
 
-  @Test
-  public void wrongOutputPrefixInKey_creationFails() throws Exception {
-    Key key =
-        Key.newBuilder()
-            .setOutputPrefixType(OutputPrefixType.TINK)
-            .setKeyData(
-                KeyData.newBuilder()
-                    .setTypeUrl(TYPE_URL_FOR_PROGRAMMABLE_KEY)
-                    .setValue(ByteString.copyFrom(new byte[] {0x01, 0x01, 0x02, 0x03, 0x04}))
-                    .setKeyMaterialType(KeyMaterialType.SYMMETRIC))
-            .setKeyId(0x01020305)
-            .setStatus(KeyStatusType.ENABLED)
-            .build();
-    // Wrapping throws before any mac is computed, so we can use an AlwaysFailingMac for the test.
-    PrimitiveSet<Mac> primitives =
-        PrimitiveSet.newBuilder(Mac.class).addPrimaryPrimitive(new AlwaysFailingMac(), key).build();
-    GeneralSecurityException e =
-        assertThrows(GeneralSecurityException.class, () -> new MacWrapper().wrap(primitives));
-    assertThat(e).hasMessageThat().contains("has wrong output prefix");
+    MacWrapper.registerToInternalPrimitiveRegistry(processedBuilder);
+    PrimitiveRegistry processedRegistry = processedBuilder.build();
+
+    assertThrows(
+        GeneralSecurityException.class, () -> initialRegistry.getInputPrimitiveClass(Mac.class));
+    assertThat(processedRegistry.getInputPrimitiveClass(Mac.class)).isEqualTo(Mac.class);
   }
 }

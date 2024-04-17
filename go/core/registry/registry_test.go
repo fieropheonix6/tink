@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package registry_test
 
@@ -146,12 +144,17 @@ func TestPrimitiveFromKeyData(t *testing.T) {
 func TestPrimitive(t *testing.T) {
 	// hmac key
 	key := testutil.NewHMACKey(commonpb.HashType_SHA256, 16)
-	serializedKey, _ := proto.Marshal(key)
+	serializedKey, err := proto.Marshal(key)
+	if err != nil {
+		t.Fatalf("proto.Marshal() err = %s, want nil", err)
+	}
 	p, err := registry.Primitive(testutil.HMACTypeURL, serializedKey)
 	if err != nil {
-		t.Errorf("unexpected error: %s", err)
+		t.Fatalf("registry.Primitive() err = %s, want nil", err)
 	}
-	var _ *subtle.HMAC = p.(*subtle.HMAC)
+	if _, ok := p.(*subtle.HMAC); !ok {
+		t.Error("object returned by registry.Primitive() does not implement *subtle.HMAC")
+	}
 	// unregistered url
 	if _, err := registry.Primitive("some url", serializedKey); err == nil {
 		t.Errorf("expect an error when typeURL has not been registered")
@@ -173,29 +176,29 @@ func TestPrimitive(t *testing.T) {
 }
 
 func TestRegisterKmsClient(t *testing.T) {
-	c1, err := fakekms.NewClient("fake-kms://prefix1")
+	client1, err := fakekms.NewClient("fake-kms://prefix1")
 	if err != nil {
 		t.Fatalf("fakekms.NewClient('fake-kms://prefix1') failed: %v", err)
 	}
-	c2, err := fakekms.NewClient("fake-kms://prefix2")
+	client2, err := fakekms.NewClient("fake-kms://prefix2")
 	if err != nil {
 		t.Fatalf("fakekms.NewClient('fake-kms://prefix2') failed: %v", err)
 	}
-	registry.RegisterKMSClient(c1)
-	registry.RegisterKMSClient(c2)
+	registry.RegisterKMSClient(client1)
+	registry.RegisterKMSClient(client2)
 	output1, err := registry.GetKMSClient("fake-kms://prefix1-postfix")
 	if err != nil {
 		t.Errorf("registry.GetKMSClient('fake-kms://prefix1-postfix') failed: %v", err)
 	}
-	if output1 != c1 {
-		t.Errorf("registry.GetKMSClient('fake-kms://prefix1-postfix') did not return c1")
+	if output1 != client1 {
+		t.Errorf("registry.GetKMSClient('fake-kms://prefix1-postfix') did not return client1")
 	}
 	output2, err := registry.GetKMSClient("fake-kms://prefix2-postfix")
 	if err != nil {
 		t.Errorf("registry.GetKMSClient('fake-kms://prefix2-postfix') failed: %v", err)
 	}
-	if output2 != c2 {
-		t.Errorf("registry.GetKMSClient('fake-kms://prefix2-postfix') did not return c2")
+	if output2 != client2 {
+		t.Errorf("registry.GetKMSClient('fake-kms://prefix2-postfix') did not return client2")
 	}
 	_, err = registry.GetKMSClient("fake-kms://unknown-prefix")
 	if err == nil {
@@ -204,5 +207,48 @@ func TestRegisterKmsClient(t *testing.T) {
 	_, err = registry.GetKMSClient("bad-kms://unknown-prefix")
 	if err == nil {
 		t.Errorf("registry.GetKMSClient('bad-kms://unknown-prefix') succeeded, want fail")
+	}
+}
+
+func TestRegisterTwoKmsClientsForSameUri_firstGetsReturned(t *testing.T) {
+	abcClient, err := fakekms.NewClient("fake-kms://abc")
+	if err != nil {
+		t.Fatalf("fakekms.NewClient(\"fake-kms://abc\") err = %q, want nil", err)
+	}
+	registry.RegisterKMSClient(abcClient)
+
+	abc123Client, err := fakekms.NewClient("fake-kms://abc123")
+	if err != nil {
+		t.Fatalf("fakekms.NewClient(\"fake-kms://abc123\") err = %q, want nil", err)
+	}
+	registry.RegisterKMSClient(abc123Client)
+
+	// Both clients support "fake-kms://abc123". But abcClient was registered first.
+	got, err := registry.GetKMSClient("fake-kms://abc123")
+	if err != nil {
+		t.Fatalf("registry.GetKMSClient(\"fake-kms://abc123\") err = %q, want nil", err)
+	}
+	if got != abcClient {
+		t.Errorf("registry.GetKMSClient(\"fake-kms://abc123\") = %q, want abcClient", got)
+	}
+}
+
+func TestClearKMSClients(t *testing.T) {
+	client, err := fakekms.NewClient("fake-kms://xyz")
+	if err != nil {
+		t.Fatalf("fakekms.NewClient('fake-kms://xyz') failed: %v", err)
+	}
+	registry.RegisterKMSClient(client)
+
+	_, err = registry.GetKMSClient("fake-kms://xyz-123")
+	if err != nil {
+		t.Errorf("registry.GetKMSClient('fake-kms://xyz-123') failed: %v", err)
+	}
+
+	registry.ClearKMSClients()
+
+	_, err = registry.GetKMSClient("fake-kms://xyz-123")
+	if err == nil {
+		t.Errorf("registry.GetKMSClient('fake-kms://xyz-123') succeeded, want fail")
 	}
 }

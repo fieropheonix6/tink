@@ -20,18 +20,21 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "tink/keyset_handle.h"
 #include "tink/keyset_reader.h"
+#include "tink/keyset_writer.h"
 #include "tink/util/errors.h"
+#include "tink/util/secret_proto.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "proto/tink.pb.h"
 
 using google::crypto::tink::Keyset;
-
 
 namespace crypto {
 namespace tink {
@@ -41,14 +44,24 @@ util::StatusOr<std::unique_ptr<KeysetHandle>> CleartextKeysetHandle::Read(
     std::unique_ptr<KeysetReader> reader,
     const absl::flat_hash_map<std::string, std::string>&
         monitoring_annotations) {
-  auto keyset_result = reader->Read();
+  util::StatusOr<std::unique_ptr<Keyset>> keyset_result = reader->Read();
   if (!keyset_result.ok()) {
     return ToStatusF(absl::StatusCode::kInvalidArgument,
                      "Error reading keyset data: %s",
                      keyset_result.status().message());
   }
-  std::unique_ptr<KeysetHandle> handle(new KeysetHandle(
-      std::move(keyset_result.value()), monitoring_annotations));
+  util::StatusOr<std::vector<std::shared_ptr<const KeysetHandle::Entry>>>
+      entries = KeysetHandle::GetEntriesFromKeyset(**keyset_result);
+  if (!entries.ok()) {
+    return entries.status();
+  }
+  if (entries->size() != (*keyset_result)->key_size()) {
+    return util::Status(absl::StatusCode::kInternal,
+                        "Error converting keyset proto into key entries.");
+  }
+  std::unique_ptr<KeysetHandle> handle(
+      new KeysetHandle(util::SecretProto<Keyset>(**keyset_result), *entries,
+                       monitoring_annotations));
   return std::move(handle);
 }
 
@@ -65,9 +78,8 @@ crypto::tink::util::Status CleartextKeysetHandle::Write(
 // static
 std::unique_ptr<KeysetHandle> CleartextKeysetHandle::GetKeysetHandle(
     const Keyset& keyset) {
-  auto unique_keyset = absl::make_unique<Keyset>(keyset);
   std::unique_ptr<KeysetHandle> handle =
-      absl::WrapUnique(new KeysetHandle(std::move(unique_keyset)));
+      absl::WrapUnique(new KeysetHandle(util::SecretProto<Keyset>(keyset)));
   return handle;
 }
 

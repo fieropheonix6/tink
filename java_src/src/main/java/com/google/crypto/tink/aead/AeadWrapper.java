@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2017 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,18 +18,20 @@ package com.google.crypto.tink.aead;
 
 import com.google.crypto.tink.Aead;
 import com.google.crypto.tink.CryptoFormat;
-import com.google.crypto.tink.PrimitiveSet;
 import com.google.crypto.tink.PrimitiveWrapper;
-import com.google.crypto.tink.Registry;
+import com.google.crypto.tink.aead.internal.LegacyFullAead;
+import com.google.crypto.tink.internal.LegacyProtoKey;
 import com.google.crypto.tink.internal.MonitoringUtil;
 import com.google.crypto.tink.internal.MutableMonitoringRegistry;
+import com.google.crypto.tink.internal.MutablePrimitiveRegistry;
+import com.google.crypto.tink.internal.PrimitiveConstructor;
+import com.google.crypto.tink.internal.PrimitiveRegistry;
+import com.google.crypto.tink.internal.PrimitiveSet;
 import com.google.crypto.tink.monitoring.MonitoringClient;
 import com.google.crypto.tink.monitoring.MonitoringKeysetInfo;
-import com.google.crypto.tink.subtle.Bytes;
 import java.security.GeneralSecurityException;
 import java.util.Arrays;
 import java.util.List;
-import java.util.logging.Logger;
 
 /**
  * AeadWrapper is the implementation of SetWrapper for the Aead primitive.
@@ -40,7 +42,11 @@ import java.util.logging.Logger;
  * simply throw a GeneralSecurityException.
  */
 public class AeadWrapper implements PrimitiveWrapper<Aead, Aead> {
-  private static final Logger logger = Logger.getLogger(AeadWrapper.class.getName());
+
+  private static final AeadWrapper WRAPPER = new AeadWrapper();
+  private static final PrimitiveConstructor<LegacyProtoKey, Aead>
+      LEGACY_FULL_AEAD_PRIMITIVE_CONSTRUCTOR =
+          PrimitiveConstructor.create(LegacyFullAead::create, LegacyProtoKey.class, Aead.class);
 
   private static class WrappedAead implements Aead {
     private final PrimitiveSet<Aead> pSet;
@@ -64,12 +70,9 @@ public class AeadWrapper implements PrimitiveWrapper<Aead, Aead> {
     public byte[] encrypt(final byte[] plaintext, final byte[] associatedData)
         throws GeneralSecurityException {
       try {
-        byte[] output =
-            Bytes.concat(
-                pSet.getPrimary().getIdentifier(),
-                pSet.getPrimary().getPrimitive().encrypt(plaintext, associatedData));
+        byte[] result = pSet.getPrimary().getFullPrimitive().encrypt(plaintext, associatedData);
         encLogger.log(pSet.getPrimary().getKeyId(), plaintext.length);
-        return output;
+        return result;
       } catch (GeneralSecurityException e) {
         encLogger.logFailure();
         throw e;
@@ -81,17 +84,14 @@ public class AeadWrapper implements PrimitiveWrapper<Aead, Aead> {
         throws GeneralSecurityException {
       if (ciphertext.length > CryptoFormat.NON_RAW_PREFIX_SIZE) {
         byte[] prefix = Arrays.copyOf(ciphertext, CryptoFormat.NON_RAW_PREFIX_SIZE);
-        byte[] ciphertextNoPrefix =
-            Arrays.copyOfRange(ciphertext, CryptoFormat.NON_RAW_PREFIX_SIZE, ciphertext.length);
         List<PrimitiveSet.Entry<Aead>> entries = pSet.getPrimitive(prefix);
         for (PrimitiveSet.Entry<Aead> entry : entries) {
           try {
-            byte[] result = entry.getPrimitive().decrypt(ciphertextNoPrefix, associatedData);
-            decLogger.log(entry.getKeyId(), ciphertextNoPrefix.length);
+            byte[] result = entry.getFullPrimitive().decrypt(ciphertext, associatedData);
+            decLogger.log(entry.getKeyId(), ciphertext.length);
             return result;
-          } catch (GeneralSecurityException e) {
-            logger.info("ciphertext prefix matches a key, but cannot decrypt: " + e);
-            continue;
+          } catch (GeneralSecurityException ignored) {
+            // ignore and continue trying
           }
         }
       }
@@ -100,11 +100,11 @@ public class AeadWrapper implements PrimitiveWrapper<Aead, Aead> {
       List<PrimitiveSet.Entry<Aead>> entries = pSet.getRawPrimitives();
       for (PrimitiveSet.Entry<Aead> entry : entries) {
         try {
-          byte[] result = entry.getPrimitive().decrypt(ciphertext, associatedData);
+          byte[] result = entry.getFullPrimitive().decrypt(ciphertext, associatedData);
           decLogger.log(entry.getKeyId(), ciphertext.length);
           return result;
-        } catch (GeneralSecurityException e) {
-          continue;
+        } catch (GeneralSecurityException ignored) {
+          // ignore and continue trying
         }
       }
       decLogger.logFailure();
@@ -131,6 +131,18 @@ public class AeadWrapper implements PrimitiveWrapper<Aead, Aead> {
   }
 
   public static void register() throws GeneralSecurityException {
-    Registry.registerPrimitiveWrapper(new AeadWrapper());
+    MutablePrimitiveRegistry.globalInstance().registerPrimitiveWrapper(WRAPPER);
+    MutablePrimitiveRegistry.globalInstance()
+        .registerPrimitiveConstructor(LEGACY_FULL_AEAD_PRIMITIVE_CONSTRUCTOR);
+  }
+
+  /**
+   * registerToInternalPrimitiveRegistry is a non-public method (it takes an argument of an
+   * internal-only type) registering an instance of {@code AeadWrapper} to the provided {@code
+   * PrimitiveRegistry.Builder}.
+   */
+  public static void registerToInternalPrimitiveRegistry(
+      PrimitiveRegistry.Builder primitiveRegistryBuilder) throws GeneralSecurityException {
+    primitiveRegistryBuilder.registerPrimitiveWrapper(WRAPPER);
   }
 }

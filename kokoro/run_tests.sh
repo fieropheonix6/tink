@@ -21,93 +21,66 @@ set -e
 # Display commands to stderr.
 set -x
 
-
 readonly PLATFORM="$(uname | tr '[:upper:]' '[:lower:]')"
 
-fail_with_debug_output() {
-  ls -l
-  df -h /
-  exit 1
+IS_KOKORO="false"
+if [[ -n "${KOKORO_ROOT}" ]]; then
+  IS_KOKORO="true"
+fi
+readonly IS_KOKORO
+
+use_bazel() {
+  local -r bazel_version="$1"
+  if [[ "${IS_KOKORO}" == "false" ]]; then
+    # Do nothing.
+    return 0
+  fi
+  if ! command -v "bazelisk" &> /dev/null; then
+    use_bazel.sh "${bazel_version}"
+  fi
 }
 
-run_linux_tests() {
-  local workspace_dir="$1"
-  shift 1
-  local manual_targets=("$@")
-
-  # This is needed to handle recent Chrome distributions on macOS which have
-  # paths with spaces.
-  #
-  # Context:
-  # https://github.com/bazelbuild/bazel/issues/4327#issuecomment-627422865
-  local -a BAZEL_FLAGS
-  if [[ "${PLATFORM}" == 'darwin' && "${workspace_dir}" == 'javascript' ]]; then
-    BAZEL_FLAGS+=( --experimental_inprocess_symlink_creation )
-  fi
-  readonly BAZEL_FLAGS
-
-  local -a TEST_FLAGS=( --strategy=TestRunner=standalone --test_output=all )
-  if [[ "${PLATFORM}" == 'darwin' ]]; then
-    TEST_FLAGS+=( --jvmopt="-Djava.net.preferIPv6Addresses=true" )
-  fi
-  readonly TEST_FLAGS
-  (
-    cd "${workspace_dir}"
-    time bazel build "${BAZEL_FLAGS[@]}" -- ... || fail_with_debug_output
-    time bazel test "${BAZEL_FLAGS[@]}" "${TEST_FLAGS[@]}" -- ... \
-      || fail_with_debug_output
-    if (( ${#manual_targets[@]} > 0 )); then
-      time bazel test "${TEST_FLAGS[@]}"  -- "${manual_targets[@]}" \
-        || fail_with_debug_output
-    fi
-  )
+run_cc_tests() {
+  use_bazel "$(cat cc/.bazelversion)"
+  ./kokoro/testutils/run_bazel_tests.sh "cc"
 }
 
-run_all_linux_tests() {
-  # Only run these tests if exeucting a Kokoro GitHub continuous integration
-  # job or if running locally (e.g. as part of release.sh).
-  #
-  # TODO(b/228529710): Use an easier to maintain approach to test parity.
-  if [[ "${KOKORO_JOB_NAME:-}" =~ ^tink/github \
-      || -z "${KOKORO_JOB_NAME+x}" ]]; then
-    run_linux_tests "cc"
+run_go_tests() {
+  use_bazel "$(cat go/.bazelversion)"
+  ./kokoro/testutils/run_bazel_tests.sh -t --test_arg=--test.v "go"
+}
 
-    local -a MANUAL_JAVA_TARGETS
-    if [[ -n "${KOKORO_ROOT}" ]]; then
-      MANUAL_JAVA_TARGETS+=(
-        "//src/test/java/com/google/crypto/tink/integration/gcpkms:KmsAeadKeyManagerWithGcpTest"
-        "//src/test/java/com/google/crypto/tink/integration/gcpkms:KmsEnvelopeAeadKeyManagerWithGcpTest"
-      )
-    fi
-    readonly MANUAL_JAVA_TARGETS
-    run_linux_tests "java_src" "${MANUAL_JAVA_TARGETS[@]}"
+run_py_tests() {
+  use_bazel "$(cat python/.bazelversion)"
+  ./kokoro/testutils/run_bazel_tests.sh "python"
+}
 
-    run_linux_tests "go"
-    run_linux_tests "python"
+run_tools_tests() {
+  use_bazel "$(cat tools/.bazelversion)"
+  ./kokoro/testutils/run_bazel_tests.sh "tools"
+}
 
-    local -a MANUAL_TOOLS_TARGETS
-    if [[ -n "${KOKORO_ROOT}" ]]; then
-      MANUAL_TOOLS_TARGETS+=(
-        "//testing/cc:aws_kms_aead_test"
-        "//testing/cc:gcp_kms_aead_test"
-        "//testing/cross_language:aead_envelope_test"
-        "//tinkey/src/test/java/com/google/crypto/tink/tinkey:AddKeyCommandTest"
-        "//tinkey/src/test/java/com/google/crypto/tink/tinkey:CreateKeysetCommandTest"
-        "//tinkey/src/test/java/com/google/crypto/tink/tinkey:CreatePublicKeysetCommandTest"
-        "//tinkey/src/test/java/com/google/crypto/tink/tinkey:RotateKeysetCommandTest"
-      )
-    fi
-    readonly MANUAL_TOOLS_TARGETS
-    run_linux_tests "tools" "${MANUAL_TOOLS_TARGETS[@]}"
-
-    run_linux_tests "apps"
+run_java_tests() {
+  use_bazel "$(cat java_src/.bazelversion)"
+  local -a MANUAL_JAVA_TARGETS
+  if [[ "${IS_KOKORO}" == "true" ]]; then
+    MANUAL_JAVA_TARGETS+=(
+      "//src/test/java/com/google/crypto/tink/integration/gcpkms:GcpKmsIntegrationTest"
+    )
   fi
+  readonly MANUAL_JAVA_TARGETS
+  ./kokoro/testutils/run_bazel_tests.sh "java_src" "${MANUAL_JAVA_TARGETS[@]}"
+}
 
-  run_linux_tests "javascript"
-  run_linux_tests "cc/examples"
+run_cc_examples_tests() {
+  use_bazel "$(cat cc/examples/.bazelversion)"
+  ./kokoro/testutils/run_bazel_tests.sh "cc/examples"
+}
 
+run_java_examples_tests() {
+  use_bazel "$(cat java_src/examples/.bazelversion)"
   local -a MANUAL_EXAMPLE_JAVA_TARGETS
-  if [[ -n "${KOKORO_ROOT}" ]]; then
+  if [[ "${IS_KOKORO}" == "true" ]]; then
     MANUAL_EXAMPLE_JAVA_TARGETS=(
       "//gcs:gcs_envelope_aead_example_test"
       "//encryptedkeyset:encrypted_keyset_example_test"
@@ -115,13 +88,26 @@ run_all_linux_tests() {
     )
   fi
   readonly MANUAL_EXAMPLE_JAVA_TARGETS
-  run_linux_tests "java_src/examples" "${MANUAL_EXAMPLE_JAVA_TARGETS[@]}"
+  ./kokoro/testutils/run_bazel_tests.sh "java_src/examples" \
+    "${MANUAL_EXAMPLE_JAVA_TARGETS[@]}"
+}
 
+run_py_examples_tests() {
+  use_bazel "$(cat python/examples/.bazelversion)"
   ## Install Tink and its dependencies via pip for the examples/python tests.
-  install_tink_via_pip
+  ./kokoro/testutils/install_tink_via_pip.sh -a "${PWD}/python"
+  if [[ "${IS_KOKORO}" == "true" ]]; then
+    local pip_flags=( --require-hashes --no-deps )
+    if [[ "${PLATFORM}" == "darwin" ]]; then
+      pip_flags+=( --user )
+    fi
+    readonly pip_flags
+    # Install dependencies for the examples/python tests.
+    pip3 install "${pip_flags[@]}" -r python/examples/requirements.txt
+  fi
 
   local -a MANUAL_EXAMPLE_PYTHON_TARGETS
-  if [[ -n "${KOKORO_ROOT}" ]]; then
+  if [[ "${IS_KOKORO}" == "true" ]]; then
     MANUAL_EXAMPLE_PYTHON_TARGETS=(
       "//gcs:gcs_envelope_aead_test_package"
       "//gcs:gcs_envelope_aead_test"
@@ -132,127 +118,50 @@ run_all_linux_tests() {
     )
   fi
   readonly MANUAL_EXAMPLE_PYTHON_TARGETS
-  run_linux_tests "python/examples" "${MANUAL_EXAMPLE_PYTHON_TARGETS[@]}"
+  ./kokoro/testutils/run_bazel_tests.sh "python/examples" \
+    "${MANUAL_EXAMPLE_PYTHON_TARGETS[@]}"
 }
 
-run_macos_tests() {
-  local -a BAZEL_FLAGS=(
-    --compilation_mode=dbg --dynamic_mode=off --cpu=ios_x86_64
-    --experimental_enable_objc_cc_deps
-    --ios_sdk_version="${IOS_SDK_VERSION}"
-    --xcode_version="${XCODE_VERSION}" --verbose_failures
-    --test_output=all
-  )
-  readonly BAZEL_FLAGS
-
-  (
-    cd objc
-
-    # Build the iOS targets.
-    time bazel build "${BAZEL_FLAGS[@]}" ... || fail_with_debug_output
-
-    # Run the iOS tests.
-    time bazel test "${BAZEL_FLAGS[@]}" :TinkTests || fail_with_debug_output
-  )
-}
-
-install_tink_via_pip() {
-  local -a PIP_FLAGS
-  if [[ "${PLATFORM}" == 'darwin' ]]; then
-    PIP_FLAGS=( --user )
+run_all_tests() {
+  # Only run these tests if exeucting a Kokoro GitHub continuous integration
+  # job or if running locally (e.g. as part of release.sh).
+  #
+  # TODO(b/231610897): Use an easier to maintain approach to test parity.
+  if [[ "${KOKORO_JOB_NAME:-}" =~ ^tink/github \
+        || -z "${KOKORO_JOB_NAME+x}" ]]; then
+    run_cc_tests
+    run_java_tests
+    run_go_tests
+    run_py_tests
+    run_tools_tests
   fi
-  readonly PIP_FLAGS
-
-  # Set path to Tink base folder
-  export TINK_PYTHON_SETUPTOOLS_OVERRIDE_BASE_PATH="${PWD}"
-
-  # Check if we can build Tink python package.
-  pip3 install "${PIP_FLAGS[@]}" --upgrade pip
-  # TODO(b/219813176): Remove once Kokoro environment is compatible.
-  pip3 install "${PIP_FLAGS[@]}" --upgrade 'setuptools==60.9.0'
-  pip3 install "${PIP_FLAGS[@]}" ./python
-
-  # Install dependencies for the examples/python tests
-  pip3 install "${PIP_FLAGS[@]}" google-cloud-storage
-}
-
-install_temp_protoc() {
-  local protoc_version='3.19.3'
-  local protoc_platform
-  case "${PLATFORM}" in
-    'linux')
-      protoc_platform='linux-x86_64'
-      ;;
-    'darwin')
-      protoc_platform='osx-x86_64'
-      ;;
-    *)
-      echo "Unsupported platform, unable to install protoc."
-      exit 1
-      ;;
-  esac
-  local protoc_zip="protoc-${protoc_version}-${protoc_platform}.zip"
-  local protoc_url="https://github.com/protocolbuffers/protobuf/releases/download/v${protoc_version}/${protoc_zip}"
-  local -r protoc_tmpdir=$(mktemp -dt tink-protoc.XXXXXX)
-  (
-    cd "${protoc_tmpdir}"
-    curl -OLsS "${protoc_url}"
-    unzip ${protoc_zip} bin/protoc
-  )
-  export PATH="${protoc_tmpdir}/bin:${PATH}"
-}
-
-#######################################
-# Test Maven packages.
-# Globals:
-#   PLATFORM
-#   KOKORO_JOB_NAME
-# Arguments:
-#   None
-#######################################
-test_maven_packages() {
-  # Only test in the Ubuntu environment.
-  if [[ "${PLATFORM}" != "linux" ]]; then
-    return
-  fi
-
-  local -a maven_script_flags
-  if [[ "${KOKORO_JOB_NAME:-}" != "tink/github/gcp_ubuntu/continuous" ]]; then
-    # Unless running the GitHub continuous job, deploy and test Maven packages
-    # locally.
-    #
-    # Otherwise, snapshots will be published to the Maven Central repository.
-    maven_script_flags+=( -l )
-  fi
-  readonly maven_script_flags
-
-  ./maven/publish_snapshot.sh "${maven_script_flags[@]}"
-  ./maven/test_snapshot.sh "${maven_script_flags[@]}"
+  run_cc_examples_tests
+  run_java_examples_tests
+  run_py_examples_tests
 }
 
 main() {
   # Initialization for Kokoro environments.
-  if [[ -n "${KOKORO_ROOT}" ]]; then
+  if [[ "${IS_KOKORO}" == "true" ]]; then
     cd "${KOKORO_ARTIFACTS_DIR}"/git*/tink*
+    # Install protoc.
+    source ./kokoro/testutils/install_protoc.sh
 
-    use_bazel.sh $(cat .bazelversion)
-
-    # Install protoc into a temporary directory.
-    install_temp_protoc
+    # Sourcing required to update callers environment.
+    source ./kokoro/testutils/install_python3.sh
 
     if [[ "${PLATFORM}" == 'linux' ]]; then
-      # Install a more recent Python. Sourcing required to update callers
-      # environment.
-      source ./kokoro/testutils/install_python3.sh
+      ./kokoro/testutils/upgrade_gcc.sh
     fi
 
     if [[ "${PLATFORM}" == 'darwin' ]]; then
       # Default values for iOS SDK and Xcode. Can be overriden by another script.
       : "${IOS_SDK_VERSION:=13.2}"
-      : "${XCODE_VERSION:=11.3}"
+      : "${XCODE_VERSION:=14.1}"
 
-      export DEVELOPER_DIR="/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
-      export ANDROID_HOME="/Users/kbuilder/Library/Android/sdk"
+      export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
+      export JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-8-latest/Contents/Home
+      export ANDROID_HOME="/usr/local/share/android-sdk"
       export COURSIER_OPTS="-Djava.net.preferIPv6Addresses=true"
 
       # TODO(b/155225382): Avoid modifying the sytem Python installation.
@@ -264,7 +173,6 @@ main() {
     ./kokoro/testutils/copy_credentials.sh "java_src/testdata" "all"
     ./kokoro/testutils/copy_credentials.sh "python/examples/testdata" "gcp"
     ./kokoro/testutils/copy_credentials.sh "python/testdata" "all"
-    ./kokoro/testutils/copy_credentials.sh "tools/testdata" "all"
 
     ./kokoro/testutils/update_android_sdk.sh
     # Sourcing required to update callers environment.
@@ -284,9 +192,6 @@ main() {
     exit 4
   fi
 
-  echo "using bazel binary: $(which bazel)"
-  bazel version
-
   echo "using java binary: $(which java)"
   java -version
 
@@ -305,15 +210,7 @@ main() {
   echo "using protoc: $(which protoc)"
   protoc --version
 
-  run_all_linux_tests
-
-  if [[ "${PLATFORM}" == 'darwin' ]]; then
-    # TODO(b/155060426): re-enable after ObjC WORKSPACE is added.
-    # run_macos_tests
-    echo "*** ObjC tests not enabled yet."
-  fi
-
-  test_maven_packages
+  run_all_tests
 }
 
 main "$@"

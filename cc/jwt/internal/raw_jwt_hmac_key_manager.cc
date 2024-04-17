@@ -20,6 +20,7 @@
 
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
+#include "tink/input_stream.h"
 #include "tink/mac.h"
 #include "tink/subtle/hmac_boringssl.h"
 #include "tink/subtle/random.h"
@@ -45,8 +46,6 @@ using google::crypto::tink::JwtHmacKey;
 using google::crypto::tink::JwtHmacKeyFormat;
 
 namespace {
-
-constexpr int kMinKeySizeInBytes = 32;
 
 StatusOr<int> MinimumKeySize(const JwtHmacAlgorithm& algorithm) {
   switch (algorithm) {

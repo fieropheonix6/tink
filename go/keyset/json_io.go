@@ -11,14 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package keyset
 
 import (
 	"io"
-	"io/ioutil"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -61,7 +58,7 @@ func (bkr *JSONReader) ReadEncrypted() (*tinkpb.EncryptedKeyset, error) {
 }
 
 func (bkr *JSONReader) readJSON(r io.Reader, msg proto.Message) error {
-	b, err := ioutil.ReadAll(r)
+	b, err := io.ReadAll(r)
 	if err != nil {
 		return err
 	}

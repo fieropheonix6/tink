@@ -16,9 +16,13 @@
 
 #include "tink/streamingaead/streaming_aead_wrapper.h"
 
+#include <memory>
 #include <utility>
+#include <vector>
 
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
+#include "absl/strings/string_view.h"
 #include "tink/crypto_format.h"
 #include "tink/input_stream.h"
 #include "tink/output_stream.h"
@@ -47,12 +51,6 @@ Status Validate(PrimitiveSet<StreamingAead>* primitives) {
     return Status(absl::StatusCode::kInvalidArgument,
                   "primitive set has no primary");
   }
-  auto raw_primitives_result = primitives->get_raw_primitives();
-  if (!raw_primitives_result.ok()) {
-    return Status(absl::StatusCode::kInvalidArgument,
-                  "primitive set has no raw primitives");
-  }
-  // TODO(b/129044084)
   return util::OkStatus();
 }
 
@@ -78,7 +76,7 @@ class StreamingAeadSetWrapper: public StreamingAead {
       std::unique_ptr<crypto::tink::RandomAccessStream> ciphertext_source,
       absl::string_view associated_data) const override;
 
-  ~StreamingAeadSetWrapper() override {}
+  ~StreamingAeadSetWrapper() override = default;
 
  private:
   // We use a shared_ptr here to ensure that primitives_ stays alive

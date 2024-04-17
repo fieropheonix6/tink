@@ -16,10 +16,13 @@
 
 #include "tink/subtle/rsa_ssa_pss_verify_boringssl.h"
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
 #include "absl/strings/escaping.h"
@@ -28,8 +31,8 @@
 #include "absl/strings/string_view.h"
 #include "openssl/bn.h"
 #include "include/rapidjson/document.h"
-#include "tink/config/tink_fips.h"
 #include "tink/internal/err_util.h"
+#include "tink/internal/fips_utils.h"
 #include "tink/internal/rsa_util.h"
 #include "tink/internal/ssl_unique_ptr.h"
 #include "tink/public_key_sign.h"
@@ -64,7 +67,7 @@ struct NistTestVector {
   int salt_length;
 };
 
-const NistTestVector GetNistTestVector() {
+NistTestVector GetNistTestVector() {
   NistTestVector test_vector = {
       absl::HexStringToBytes(
           "a47d04e7cacdba4ea26eca8a4c6e14563c2ce03b623b768c0d49868a57121301dbf7"
@@ -98,7 +101,7 @@ const NistTestVector GetNistTestVector() {
 }
 
 TEST(RsaSsaPssVerifyBoringSslTest, BasicVerify) {
-  if (IsFipsModeEnabled()) {
+  if (internal::IsFipsModeEnabled()) {
     GTEST_SKIP() << "Test not run in FIPS-only mode";
   }
   const NistTestVector kNistTestVector = GetNistTestVector();
@@ -118,7 +121,7 @@ TEST(RsaSsaPssVerifyBoringSslTest, BasicVerify) {
 }
 
 TEST(RsaSsaPssVerifyBoringSslTest, NewErrors) {
-  if (IsFipsModeEnabled()) {
+  if (internal::IsFipsModeEnabled()) {
     GTEST_SKIP() << "Test not run in FIPS-only mode";
   }
   const NistTestVector kNistTestVector = GetNistTestVector();
@@ -152,7 +155,7 @@ TEST(RsaSsaPssVerifyBoringSslTest, NewErrors) {
 }
 
 TEST(RsaSsaPssVerifyBoringSslTest, Modification) {
-  if (IsFipsModeEnabled()) {
+  if (internal::IsFipsModeEnabled()) {
     GTEST_SKIP() << "Test not run in FIPS-only mode";
   }
   const NistTestVector kNistTestVector = GetNistTestVector();
@@ -252,7 +255,7 @@ using RsaSsaPssWycheproofTest =
 
 // Tests signature verification using a test vector.
 TEST_P(RsaSsaPssWycheproofTest, SignatureVerify) {
-  if (IsFipsModeEnabled()) {
+  if (internal::IsFipsModeEnabled()) {
     GTEST_SKIP() << "Test not run in FIPS-only mode";
   }
   RsaSsaPssWycheproofTestVector params = GetParam();
@@ -304,7 +307,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 // FIPS-only mode test
 TEST(RsaSsaPssVerifyBoringSslTest, TestFipsFailWithoutBoringCrypto) {
-  if (!IsFipsModeEnabled() || FIPS_mode()) {
+  if (!internal::IsFipsModeEnabled() || internal::IsFipsEnabledInSsl()) {
     GTEST_SKIP()
         << "Test assumes kOnlyUseFips but BoringCrypto is unavailable.";
   }
@@ -320,7 +323,7 @@ TEST(RsaSsaPssVerifyBoringSslTest, TestFipsFailWithoutBoringCrypto) {
 }
 
 TEST(RsaSsaPssVerifyBoringSslTest, TestAllowedFipsModuli) {
-  if (!IsFipsModeEnabled() || !FIPS_mode()) {
+  if (!internal::IsFipsModeEnabled() || !internal::IsFipsEnabledInSsl()) {
     GTEST_SKIP() << "Test assumes kOnlyUseFips and BoringCrypto.";
   }
 
@@ -341,7 +344,7 @@ TEST(RsaSsaPssVerifyBoringSslTest, TestAllowedFipsModuli) {
 }
 
 TEST(RsaSsaPssVerifyBoringSslTest, TestRestrictedFipsModuli) {
-  if (!IsFipsModeEnabled() || !FIPS_mode()) {
+  if (!internal::IsFipsModeEnabled() || !internal::IsFipsEnabledInSsl()) {
     GTEST_SKIP() << "Test assumes kOnlyUseFips and BoringCrypto.";
   }
 

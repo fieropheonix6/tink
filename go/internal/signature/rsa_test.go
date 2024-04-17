@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package signature_test
 
@@ -128,7 +126,7 @@ func TestRSAKeySelfTestWithCorruptedKeysFails(t *testing.T) {
 				Primes: []*big.Int{
 					func() *big.Int {
 						p := validPrivKey.Primes[0].Bytes()
-						p[4] <<= 1
+						p[4] = byte(uint8(p[4] + 1))
 						return new(big.Int).SetBytes(p)
 					}(),
 					validPrivKey.Primes[1],

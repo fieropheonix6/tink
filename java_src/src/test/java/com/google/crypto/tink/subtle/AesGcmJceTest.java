@@ -17,46 +17,49 @@
 package com.google.crypto.tink.subtle;
 
 import static com.google.common.truth.Truth.assertThat;
+import static com.google.crypto.tink.internal.TinkBugException.exceptionIsBug;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.fail;
 
+import com.google.crypto.tink.Aead;
+import com.google.crypto.tink.InsecureSecretKeyAccess;
+import com.google.crypto.tink.aead.AesGcmKey;
+import com.google.crypto.tink.aead.AesGcmParameters;
 import com.google.crypto.tink.config.TinkFips;
 import com.google.crypto.tink.config.internal.TinkFipsUtil;
+import com.google.crypto.tink.internal.Util;
 import com.google.crypto.tink.testing.TestUtil;
 import com.google.crypto.tink.testing.TestUtil.BytesMutation;
 import com.google.crypto.tink.testing.WycheproofTestUtil;
+import com.google.crypto.tink.util.SecretBytes;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.security.GeneralSecurityException;
 import java.security.Security;
 import java.util.Arrays;
 import java.util.HashSet;
-import javax.crypto.Cipher;
+import javax.annotation.Nullable;
 import org.conscrypt.Conscrypt;
 import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.experimental.theories.DataPoints;
+import org.junit.experimental.theories.FromDataPoints;
+import org.junit.experimental.theories.Theories;
+import org.junit.experimental.theories.Theory;
 import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
 
 /** Unit tests for AesGcm. */
-@RunWith(JUnit4.class)
+@RunWith(Theories.class)
 public class AesGcmJceTest {
 
   private Integer[] keySizeInBytes;
 
   @Before
   public void setUp() throws Exception {
-    if (Cipher.getMaxAllowedKeyLength("AES") < 256) {
-      System.out.println(
-          "Unlimited Strength Jurisdiction Policy Files are required"
-              + " but not installed. Skip tests with keys larger than 128 bits.");
-      keySizeInBytes = new Integer[] {16};
-    } else {
-      keySizeInBytes = new Integer[] {16, 32};
-    }
+    keySizeInBytes = new Integer[] {16, 32};
   }
 
   @Before
@@ -93,7 +96,9 @@ public class AesGcmJceTest {
   @Test
   public void testEncryptWithAad_shouldFailOnAndroid19OrOlder() throws Exception {
     Assume.assumeTrue(!TinkFips.useOnlyFips() || TinkFipsUtil.fipsModuleAvailable());
-    Assume.assumeFalse(!SubtleUtil.isAndroid() || SubtleUtil.androidApiLevel() > 19);
+    @Nullable Integer apiLevel = Util.getAndroidApiLevel();
+    Assume.assumeNotNull(apiLevel);
+    Assume.assumeTrue(apiLevel <= 19);
 
     AesGcmJce gcm = new AesGcmJce(Random.randBytes(16));
     byte[] message = Random.randBytes(20);
@@ -103,7 +108,7 @@ public class AesGcmJceTest {
   }
 
   @Test
-  /** BC had a bug, where GCM failed for messages of size > 8192 */
+  /* BC had a bug, where GCM failed for messages of size > 8192 */
   public void testLongMessages() throws Exception {
     Assume.assumeTrue(!TinkFips.useOnlyFips() || TinkFipsUtil.fipsModuleAvailable());
     Assume.assumeFalse(TestUtil.isAndroid()); // doesn't work on Android
@@ -162,6 +167,100 @@ public class AesGcmJceTest {
   }
 
   @Test
+  public void testWithAesGcmKey_noPrefix_works() throws Exception {
+    Assume.assumeTrue(!TinkFips.useOnlyFips() || TinkFipsUtil.fipsModuleAvailable());
+    AesGcmParameters parameters =
+        AesGcmParameters.builder()
+            .setKeySizeBytes(16)
+            .setTagSizeBytes(16)
+            .setIvSizeBytes(12)
+            .setVariant(AesGcmParameters.Variant.NO_PREFIX)
+            .build();
+
+    AesGcmKey key =
+        AesGcmKey.builder()
+            .setParameters(parameters)
+            .setKeyBytes(
+                SecretBytes.copyFrom(
+                    Hex.decode("5b9604fe14eadba931b0ccf34843dab9"), InsecureSecretKeyAccess.get()))
+            .build();
+    Aead aead = AesGcmJce.create(key);
+    byte[] ciphertext = aead.encrypt(new byte[] {}, new byte[] {});
+    assertThat(ciphertext).hasLength(parameters.getIvSizeBytes() + parameters.getTagSizeBytes());
+
+    assertThat(aead.decrypt(ciphertext, new byte[] {})).isEmpty();
+
+    byte[] fixedCiphertext = Hex.decode("c3561ce7f48b8a6b9b8d5ef957d2e512368f7da837bcf2aeebe176e3");
+    assertThat(aead.decrypt(fixedCiphertext, new byte[] {})).isEmpty();
+  }
+
+  @Test
+  public void testWithAesGcmKey_tinkPrefix_works() throws Exception {
+    Assume.assumeTrue(!TinkFips.useOnlyFips() || TinkFipsUtil.fipsModuleAvailable());
+    AesGcmParameters parameters =
+        AesGcmParameters.builder()
+            .setKeySizeBytes(16)
+            .setTagSizeBytes(16)
+            .setIvSizeBytes(12)
+            .setVariant(AesGcmParameters.Variant.TINK)
+            .build();
+
+    AesGcmKey key =
+        AesGcmKey.builder()
+            .setParameters(parameters)
+            .setKeyBytes(
+                SecretBytes.copyFrom(
+                    Hex.decode("5b9604fe14eadba931b0ccf34843dab9"), InsecureSecretKeyAccess.get()))
+            .setIdRequirement(0x9943243)
+            .build();
+    Aead aead = AesGcmJce.create(key);
+    byte[] ciphertext = aead.encrypt(new byte[] {}, new byte[] {});
+    assertThat(ciphertext)
+        .hasLength(
+            key.getOutputPrefix().size()
+                + parameters.getIvSizeBytes()
+                + parameters.getTagSizeBytes());
+    assertThat(aead.decrypt(ciphertext, new byte[] {})).isEmpty();
+
+    byte[] fixedCiphertext =
+        Hex.decode("0109943243c3561ce7f48b8a6b9b8d5ef957d2e512368f7da837bcf2aeebe176e3");
+    assertThat(aead.decrypt(fixedCiphertext, new byte[] {})).isEmpty();
+  }
+
+  @Test
+  public void testWithAesGcmKey_crunchyPrefix_works() throws Exception {
+    Assume.assumeTrue(!TinkFips.useOnlyFips() || TinkFipsUtil.fipsModuleAvailable());
+    AesGcmParameters parameters =
+        AesGcmParameters.builder()
+            .setKeySizeBytes(16)
+            .setTagSizeBytes(16)
+            .setIvSizeBytes(12)
+            .setVariant(AesGcmParameters.Variant.CRUNCHY)
+            .build();
+
+    AesGcmKey key =
+        AesGcmKey.builder()
+            .setParameters(parameters)
+            .setKeyBytes(
+                SecretBytes.copyFrom(
+                    Hex.decode("5b9604fe14eadba931b0ccf34843dab9"), InsecureSecretKeyAccess.get()))
+            .setIdRequirement(0x9943243)
+            .build();
+    Aead aead = AesGcmJce.create(key);
+    byte[] ciphertext = aead.encrypt(new byte[] {}, new byte[] {});
+    assertThat(ciphertext)
+        .hasLength(
+            key.getOutputPrefix().size()
+                + parameters.getIvSizeBytes()
+                + parameters.getTagSizeBytes());
+    assertThat(aead.decrypt(ciphertext, new byte[] {})).isEmpty();
+
+    byte[] fixedCiphertext =
+        Hex.decode("0009943243c3561ce7f48b8a6b9b8d5ef957d2e512368f7da837bcf2aeebe176e3");
+    assertThat(aead.decrypt(fixedCiphertext, new byte[] {})).isEmpty();
+  }
+
+  @Test
   public void testWycheproofVectors() throws Exception {
     Assume.assumeTrue(!TinkFips.useOnlyFips() || TinkFipsUtil.fipsModuleAvailable());
 
@@ -187,7 +286,8 @@ public class AesGcmJceTest {
         byte[] key = Hex.decode(testcase.get("key").getAsString());
         byte[] msg = Hex.decode(testcase.get("msg").getAsString());
         byte[] aad = Hex.decode(testcase.get("aad").getAsString());
-        if (SubtleUtil.isAndroid() && SubtleUtil.androidApiLevel() <= 19 && aad.length != 0) {
+        @Nullable Integer apiLevel = Util.getAndroidApiLevel();
+        if (apiLevel != null && apiLevel <= 19 && aad.length != 0) {
           cntSkippedTests++;
           continue;
         }
@@ -316,7 +416,7 @@ public class AesGcmJceTest {
   }
 
   @Test
-  /**
+  /*
    * This is a very simple test for the randomness of the nonce. The test simply checks that the
    * multiple ciphertexts of the same message are distinct.
    */
@@ -331,7 +431,7 @@ public class AesGcmJceTest {
     HashSet<String> ciphertexts = new HashSet<>();
     for (int i = 0; i < samples; i++) {
       byte[] ct = gcm.encrypt(message, aad);
-      String ctHex = TestUtil.hexEncode(ct);
+      String ctHex = Hex.encode(ct);
       assertThat(ciphertexts).doesNotContain(ctHex);
       ciphertexts.add(ctHex);
     }
@@ -341,7 +441,8 @@ public class AesGcmJceTest {
     byte[] aad = Random.randBytes(20);
     // AES-GCM on Android <= 19 doesn't support AAD. See last bullet point in
     // https://github.com/google/tink/blob/master/docs/KNOWN-ISSUES.md#android.
-    if (SubtleUtil.isAndroid() && SubtleUtil.androidApiLevel() <= 19) {
+    @Nullable Integer apiLevel = Util.getAndroidApiLevel();
+    if (apiLevel != null && apiLevel <= 19) {
       aad = new byte[0];
     }
     return aad;
@@ -353,5 +454,145 @@ public class AesGcmJceTest {
 
     byte[] key = Random.randBytes(16);
     assertThrows(GeneralSecurityException.class, () -> new AesGcmJce(key));
+  }
+
+  private static AesGcmParameters[] createValidAesGcmParameters() {
+    return exceptionIsBug(
+        () ->
+            new AesGcmParameters[] {
+              AesGcmParameters.builder()
+                  .setKeySizeBytes(16)
+                  .setIvSizeBytes(12)
+                  .setTagSizeBytes(16)
+                  .setVariant(AesGcmParameters.Variant.NO_PREFIX)
+                  .build(),
+              AesGcmParameters.builder()
+                  .setKeySizeBytes(16)
+                  .setIvSizeBytes(12)
+                  .setTagSizeBytes(16)
+                  .setVariant(AesGcmParameters.Variant.TINK)
+                  .build(),
+              AesGcmParameters.builder()
+                  .setKeySizeBytes(16)
+                  .setIvSizeBytes(12)
+                  .setTagSizeBytes(16)
+                  .setVariant(AesGcmParameters.Variant.CRUNCHY)
+                  .build(),
+              AesGcmParameters.builder()
+                  .setKeySizeBytes(32)
+                  .setIvSizeBytes(12)
+                  .setTagSizeBytes(16)
+                  .setVariant(AesGcmParameters.Variant.NO_PREFIX)
+                  .build(),
+              AesGcmParameters.builder()
+                  .setKeySizeBytes(32)
+                  .setIvSizeBytes(12)
+                  .setTagSizeBytes(16)
+                  .setVariant(AesGcmParameters.Variant.TINK)
+                  .build(),
+              AesGcmParameters.builder()
+                  .setKeySizeBytes(32)
+                  .setIvSizeBytes(12)
+                  .setTagSizeBytes(16)
+                  .setVariant(AesGcmParameters.Variant.CRUNCHY)
+                  .build(),
+            });
+  }
+
+  @DataPoints("validParameters")
+  public static AesGcmParameters[] parameters = createValidAesGcmParameters();
+
+  private static AesGcmKey createRandomKey(AesGcmParameters parameters) throws Exception {
+    AesGcmKey.Builder builder =
+        AesGcmKey.builder()
+            .setParameters(parameters)
+            .setKeyBytes(SecretBytes.randomBytes(parameters.getKeySizeBytes()));
+    if (parameters.hasIdRequirement()) {
+      builder.setIdRequirement(Random.randInt());
+    }
+    return builder.build();
+  }
+
+  @Theory
+  public void ciphertextStartsWithOutputPrefix(
+      @FromDataPoints("validParameters") AesGcmParameters parameters) throws Exception {
+    if (TinkFips.useOnlyFips() && !TinkFipsUtil.fipsModuleAvailable()) {
+      return;
+    }
+    AesGcmKey key = createRandomKey(parameters);
+    Aead aead = AesGcmJce.create(key);
+
+    byte[] ciphertext = aead.encrypt(Random.randBytes(10), generateAad());
+
+    assertThat(
+            com.google.crypto.tink.util.Bytes.copyFrom(ciphertext, 0, key.getOutputPrefix().size()))
+        .isEqualTo(key.getOutputPrefix());
+  }
+
+  @Theory
+  public void encryptThenDecrypt_works(
+      @FromDataPoints("validParameters") AesGcmParameters parameters) throws Exception {
+    if (TinkFips.useOnlyFips() && !TinkFipsUtil.fipsModuleAvailable()) {
+      return;
+    }
+    AesGcmKey key = createRandomKey(parameters);
+    Aead aead = AesGcmJce.create(key);
+
+    byte[] plaintext = Random.randBytes(100);
+    byte[] associatedData = generateAad();
+
+    byte[] ciphertext = aead.encrypt(plaintext, associatedData);
+
+    assertThat(aead.decrypt(ciphertext, associatedData)).isEqualTo(plaintext);
+  }
+
+  @Theory
+  public void computedLength_isAsExpected(
+      @FromDataPoints("validParameters") AesGcmParameters parameters) throws Exception {
+    if (TinkFips.useOnlyFips() && !TinkFipsUtil.fipsModuleAvailable()) {
+      return;
+    }
+    AesGcmKey key = createRandomKey(parameters);
+    Aead aead = AesGcmJce.create(key);
+
+    byte[] plaintext = Random.randBytes(100);
+    byte[] associatedData = generateAad();
+
+    byte[] ciphertext = aead.encrypt(plaintext, associatedData);
+
+    assertThat(ciphertext)
+        .hasLength(
+            key.getOutputPrefix().size()
+                + parameters.getIvSizeBytes()
+                + plaintext.length
+                + parameters.getTagSizeBytes());
+  }
+
+  @Test
+  public void create_wrongIvSize_throws() throws Exception {
+    Assume.assumeTrue(!TinkFips.useOnlyFips() || TinkFipsUtil.fipsModuleAvailable());
+    AesGcmKey key =
+        createRandomKey(
+            AesGcmParameters.builder()
+                .setKeySizeBytes(32)
+                .setIvSizeBytes(16)
+                .setTagSizeBytes(16)
+                .setVariant(AesGcmParameters.Variant.NO_PREFIX)
+                .build());
+    assertThrows(GeneralSecurityException.class, () -> AesGcmJce.create(key));
+  }
+
+  @Test
+  public void create_wrongTagSize_throws() throws Exception {
+    Assume.assumeTrue(!TinkFips.useOnlyFips() || TinkFipsUtil.fipsModuleAvailable());
+    AesGcmKey key =
+        createRandomKey(
+            AesGcmParameters.builder()
+                .setKeySizeBytes(32)
+                .setIvSizeBytes(12)
+                .setTagSizeBytes(12)
+                .setVariant(AesGcmParameters.Variant.NO_PREFIX)
+                .build());
+    assertThrows(GeneralSecurityException.class, () -> AesGcmJce.create(key));
   }
 }

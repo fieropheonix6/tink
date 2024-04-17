@@ -16,7 +16,6 @@
 
 package com.google.crypto.tink;
 
-import com.google.crypto.tink.annotations.Alpha;
 import com.google.crypto.tink.monitoring.MonitoringAnnotations;
 import com.google.crypto.tink.proto.Keyset;
 import com.google.protobuf.ExtensionRegistryLite;
@@ -39,8 +38,10 @@ public final class CleartextKeysetHandle {
   /**
    * @return a new {@link KeysetHandle} from {@code serialized} that is a serialized {@link Keyset}
    * @throws GeneralSecurityException
-   * @deprecated use {@link #read} instead
+   * @deprecated Call {@code TinkProtoKeysetFormat.parseKeyset(serialized,
+   *     InsecureSecretKeyAccess.get())} which has the same semantics.
    */
+  @SuppressWarnings("UnusedException")
   @Deprecated
   public static final KeysetHandle parseFrom(final byte[] serialized)
       throws GeneralSecurityException {
@@ -68,9 +69,11 @@ public final class CleartextKeysetHandle {
    * the {@link MonitoringClient}.
    *
    * @throws GeneralSecurityException when the keyset is invalid or cannot be read.
+   * @deprecated Instead, use a {@link KeysetHandle.Builder}.
    */
-  @Alpha
-  public static KeysetHandle read(KeysetReader reader, Map<String, String> monitoringAnnotations)
+  @Deprecated
+  public static KeysetHandle read(
+      KeysetReader reader, Map<String, String> monitoringAnnotations)
       throws GeneralSecurityException, IOException {
     return KeysetHandle.fromKeysetAndAnnotations(
         reader.read(), MonitoringAnnotations.newBuilder().addAll(monitoringAnnotations).build());
@@ -78,12 +81,20 @@ public final class CleartextKeysetHandle {
 
   /**
    * @return the keyset underlying this {@code keysetHandle}.
+   * @deprecated Instead, call "KeysetHandle.getAt()" to get information about individual keys or
+   *     TinkProtoKeysetFormat if you need a serialized keyset.
    */
+  @Deprecated
   public static Keyset getKeyset(KeysetHandle keysetHandle) {
     return keysetHandle.getKeyset();
   }
 
-  /** Returns a KeysetHandle for {@code keyset}. */
+  /**
+   * Returns a KeysetHandle for {@code keyset}.
+   *
+   * @deprecated Instead, use a {@link KeysetHandle.Builder}.
+   */
+  @Deprecated
   public static KeysetHandle fromKeyset(Keyset keyset) throws GeneralSecurityException {
     return KeysetHandle.fromKeyset(keyset);
   }

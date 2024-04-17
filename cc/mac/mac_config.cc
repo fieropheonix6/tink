@@ -20,23 +20,17 @@
 #include "tink/config/config_util.h"
 #include "tink/config/tink_fips.h"
 #include "tink/mac/aes_cmac_key_manager.h"
+#include "tink/mac/aes_cmac_proto_serialization.h"
 #include "tink/mac/hmac_key_manager.h"
+#include "tink/mac/hmac_proto_serialization.h"
 #include "tink/mac/internal/chunked_mac_wrapper.h"
 #include "tink/mac/mac_wrapper.h"
 #include "tink/registry.h"
 #include "tink/util/status.h"
 #include "proto/config.pb.h"
 
-using google::crypto::tink::RegistryConfig;
-
 namespace crypto {
 namespace tink {
-
-// static
-const RegistryConfig& MacConfig::Latest() {
-  static const RegistryConfig* config = new RegistryConfig();
-  return *config;
-}
 
 // static
 util::Status MacConfig::Register() {
@@ -55,6 +49,9 @@ util::Status MacConfig::Register() {
                                             true);
   if (!status.ok()) return status;
 
+  status = RegisterHmacProtoSerialization();
+  if (!status.ok()) return status;
+
   if (IsFipsModeEnabled()) {
     return util::OkStatus();
   }
@@ -62,6 +59,9 @@ util::Status MacConfig::Register() {
   // CMac in BoringSSL is not FIPS validated.
   status = Registry::RegisterKeyTypeManager(
       absl::make_unique<AesCmacKeyManager>(), true);
+  if (!status.ok()) return status;
+
+  status = RegisterAesCmacProtoSerialization();
   if (!status.ok()) return status;
 
   return util::OkStatus();

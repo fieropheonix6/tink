@@ -16,12 +16,15 @@
 
 package com.google.crypto.tink.daead;
 
+import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertEquals;
 
+import com.google.crypto.tink.TinkProtoParametersFormat;
 import com.google.crypto.tink.proto.AesSivKeyFormat;
 import com.google.crypto.tink.proto.KeyTemplate;
 import com.google.crypto.tink.proto.OutputPrefixType;
 import com.google.protobuf.ExtensionRegistryLite;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -29,10 +32,15 @@ import org.junit.runners.JUnit4;
 /** Tests for DeterministicAeadKeyTemplates. */
 @RunWith(JUnit4.class)
 public class DeterministicAeadKeyTemplatesTest {
+  @BeforeClass
+  public static void setUp() throws Exception {
+    DeterministicAeadConfig.register();
+  }
+
   @Test
   public void aes256Siv() throws Exception {
     KeyTemplate template = DeterministicAeadKeyTemplates.AES256_SIV;
-    assertEquals(new AesSivKeyManager().getKeyType(), template.getTypeUrl());
+    assertEquals(AesSivKeyManager.getKeyType(), template.getTypeUrl());
     assertEquals(OutputPrefixType.TINK, template.getOutputPrefixType());
     AesSivKeyFormat format =
         AesSivKeyFormat.parseFrom(template.getValue(), ExtensionRegistryLite.getEmptyRegistry());
@@ -46,11 +54,18 @@ public class DeterministicAeadKeyTemplatesTest {
     // to test that the function correctly puts them in the resulting template.
     int keySize = 42;
     KeyTemplate template = DeterministicAeadKeyTemplates.createAesSivKeyTemplate(keySize);
-    assertEquals(new AesSivKeyManager().getKeyType(), template.getTypeUrl());
+    assertEquals(AesSivKeyManager.getKeyType(), template.getTypeUrl());
     assertEquals(OutputPrefixType.TINK, template.getOutputPrefixType());
     AesSivKeyFormat format =
         AesSivKeyFormat.parseFrom(template.getValue(), ExtensionRegistryLite.getEmptyRegistry());
 
     assertEquals(keySize, format.getKeySize());
+  }
+
+  @Test
+  public void testAesSivParametersEqualsKeyTemplate() throws Exception {
+    assertThat(
+            TinkProtoParametersFormat.parse(DeterministicAeadKeyTemplates.AES256_SIV.toByteArray()))
+        .isEqualTo(PredefinedDeterministicAeadParameters.AES256_SIV);
   }
 }

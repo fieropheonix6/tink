@@ -35,7 +35,6 @@ import java.security.GeneralSecurityException;
  * @since 1.0.0
  */
 public interface KeyManager<P> {
-  // APIs for primitive development
 
   /**
    * Constructs an instance of P for the key given in {@code serializedKey}, which must be a
@@ -58,36 +57,72 @@ public interface KeyManager<P> {
    * PublicKeyVerify}, {@code DeterministicAead}, {@code HybridEncrypt}, and {@code HybridDecrypt}
    * this should be a primitive which <b>ignores</b> the output prefix and assumes "RAW".
    *
+   * <p>This method is not used by Tink. It does not need to be implemented.
+   *
    * @return the new constructed P
    * @throws GeneralSecurityException if the key given in {@code key} is corrupted or not supported
+   * @deprecated Use {@code getPrimitive(serializedKey)} instead.
    */
-  P getPrimitive(MessageLite key) throws GeneralSecurityException;
+  @Deprecated // Unused Interface Method. Will be removed.
+  default P getPrimitive(MessageLite key) throws GeneralSecurityException {
+    throw new UnsupportedOperationException();
+  }
 
   /**
    * Generates a new key according to specification in {@code serializedKeyFormat}, which must be a
    * serialized key format protocol buffer handled by this manager.
    *
+   * <p>This method is not used by Tink anymore. It does not need to be implemented.
+   *
    * @return the new generated key
    * @throws GeneralSecurityException if the specified format is wrong or not supported
+   * @deprecated Use {@code newKeyData(serializedKeyFormat)} instead.
    */
-  MessageLite newKey(ByteString serializedKeyFormat) throws GeneralSecurityException;
+  @Deprecated // Unused Interface Method. Will be removed.
+  default MessageLite newKey(ByteString serializedKeyFormat) throws GeneralSecurityException {
+    throw new UnsupportedOperationException();
+  }
 
   /**
    * Generates a new key according to specification in {@code keyFormat}.
    *
+   * <p>This method is only used by {@link Registry.newKey} which is deprecated and not used by Tink
+   * anymore. This method does not need to be implemented.
+   *
    * @return the new generated key
    * @throws GeneralSecurityException if the specified format is wrong or not supported
+   * @deprecated Use {@code newKeyData(serializedKeyFormat)} instead.
    */
-  MessageLite newKey(MessageLite keyFormat) throws GeneralSecurityException;
+  @Deprecated // Unused Interface Method. Will be removed.
+  default MessageLite newKey(MessageLite keyFormat) throws GeneralSecurityException {
+    throw new UnsupportedOperationException();
+  }
 
-  /** @return true iff this KeyManager supports key type identified by {@code typeUrl}. */
-  boolean doesSupport(String typeUrl);
+  /**
+   * Returns true iff this KeyManager supports key type identified by {@code typeUrl}.
+   *
+   * <p>This method is not used by Tink anymore. It does not need to be implemented.
+   *
+   * @deprecated Use {@code getKeyType()} instead.
+   */
+  @Deprecated // Unused Interface Method. Will be removed.
+  default boolean doesSupport(String typeUrl) {
+    throw new UnsupportedOperationException();
+  }
 
-  /** @return the type URL that identifies the key type of keys managed by this KeyManager. */
+  /** Returns the type URL that identifies the key type of keys managed by this KeyManager. */
   String getKeyType();
 
-  /** @return the version number of this KeyManager. */
-  int getVersion();
+  /**
+   * Returns the version number of this KeyManager.
+   *
+   * <p>This method is not used by Tink anymore. It does not need to be implemented.
+   * @deprecated Do not use it.
+   */
+  @Deprecated // Unused Interface Method. Will be removed.
+  default int getVersion() {
+    throw new UnsupportedOperationException();
+  }
 
   /**
    * Returns the primitive class object of the P. Should be implemented as {@code return P.class;}
@@ -97,12 +132,8 @@ public interface KeyManager<P> {
    */
   Class<P> getPrimitiveClass();
 
-  // APIs for Key Management
-
   /**
-   * Generates a new {@code KeyData} according to specification in {@code serializedkeyFormat}.
-   *
-   * <p>This should be used solely by {@link KeysetManager}.
+   * Generates a new {@code KeyData} according to specification in {@code serializedKeyFormat}.
    *
    * @return the new generated key
    * @throws GeneralSecurityException if the specified format is wrong or not supported

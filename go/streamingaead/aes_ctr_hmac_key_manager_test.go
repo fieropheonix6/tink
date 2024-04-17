@@ -11,13 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package streamingaead_test
 
 import (
-	"bytes"
 	"fmt"
 	"testing"
 
@@ -76,6 +73,16 @@ func TestAESCTRHMACGetPrimitiveWithInvalidInput(t *testing.T) {
 	if _, err := keyManager.Primitive([]byte{}); err == nil {
 		t.Errorf("expect an error when input is empty")
 	}
+
+	keyNilParams := testutil.NewAESCTRHMACKey(testutil.AESCTRHMACKeyVersion, 32, commonpb.HashType_SHA256, 32, commonpb.HashType_SHA256, 16, 4096)
+	keyNilParams.Params = nil
+	serializedKeyNilParams, err := proto.Marshal(keyNilParams)
+	if err != nil {
+		t.Errorf("proto.Marshal(keyNilParams) err = %v, want nil", err)
+	}
+	if _, err := keyManager.Primitive(serializedKeyNilParams); err == nil {
+		t.Errorf("keyManager.Primitive(serializedKeyNilParams) err = nil, want non-nil")
+	}
 }
 
 func TestAESCTRHMACNewKeyMultipleTimes(t *testing.T) {
@@ -91,14 +98,20 @@ func TestAESCTRHMACNewKeyMultipleTimes(t *testing.T) {
 	keys := make(map[string]struct{})
 	n := 26
 	for i := 0; i < n; i++ {
-		key, _ := keyManager.NewKey(serializedFormat)
+		key, err := keyManager.NewKey(serializedFormat)
+		if err != nil {
+			t.Fatalf("keyManager.NewKey() err = %q, want nil", err)
+		}
 		serializedKey, err := proto.Marshal(key)
 		if err != nil {
 			t.Errorf("failed to marshal key: %s", err)
 		}
 		keys[string(serializedKey)] = struct{}{}
 
-		keyData, _ := keyManager.NewKeyData(serializedFormat)
+		keyData, err := keyManager.NewKeyData(serializedFormat)
+		if err != nil {
+			t.Fatalf("keyManager.NewKeyData() err = %q, want nil", err)
+		}
 		serializedKey = keyData.Value
 		keys[string(serializedKey)] = struct{}{}
 	}
@@ -153,6 +166,16 @@ func TestAESCTRHMACNewKeyWithInvalidInput(t *testing.T) {
 	if _, err := keyManager.NewKey([]byte{}); err == nil {
 		t.Errorf("expect an error when input is empty")
 	}
+	// params field is unset
+	formatNilParams := testutil.NewAESCTRHMACKeyFormat(32, commonpb.HashType_SHA256, 32, commonpb.HashType_SHA256, 16, 4096)
+	formatNilParams.Params = nil
+	serializedFormatNilParams, err := proto.Marshal(formatNilParams)
+	if err != nil {
+		t.Errorf("proto.Marshal(formatNilParams) err = %v, want nil", err)
+	}
+	if _, err := keyManager.NewKey(serializedFormatNilParams); err == nil {
+		t.Errorf("keyManager.NewKey(serializedFormatNilParams) err = nil, want non-nil")
+	}
 }
 
 func TestAESCTRHMACNewKeyDataBasic(t *testing.T) {
@@ -182,6 +205,14 @@ func TestAESCTRHMACNewKeyDataBasic(t *testing.T) {
 		}
 		if err := validateAESCTRHMACKey(key, format); err != nil {
 			t.Errorf("%s", err)
+		}
+		p, err := registry.PrimitiveFromKeyData(keyData)
+		if err != nil {
+			t.Errorf("registry.PrimitiveFromKeyData(kd) err = %v, want nil", err)
+		}
+		_, ok := p.(*subtle.AESCTRHMAC)
+		if !ok {
+			t.Error("registry.PrimitiveFromKeyData(kd) did not return a AESCTRHMAC primitive")
 		}
 	}
 }
@@ -246,6 +277,17 @@ func genInvalidAESCTRHMACKeys() []proto.Message {
 
 		// bad version
 		testutil.NewAESCTRHMACKey(testutil.AESCTRHMACKeyVersion+1, 16, commonpb.HashType_SHA256, 16, commonpb.HashType_SHA256, 16, 4096),
+
+		// bad ciphertext_segment_size
+		testutil.NewAESCTRHMACKey(testutil.AESCTRHMACKeyVersion, 16, commonpb.HashType_SHA256, 16, commonpb.HashType_SHA256, 16, 2147483648),
+
+		// bad hmac params hash type
+		testutil.NewAESCTRHMACKey(testutil.AESCTRHMACKeyVersion, 16, commonpb.HashType_SHA256, 16, commonpb.HashType_SHA224, 16, 4096),
+		testutil.NewAESCTRHMACKey(testutil.AESCTRHMACKeyVersion, 16, commonpb.HashType_SHA256, 16, commonpb.HashType_SHA384, 16, 4096),
+
+		// bad hkdf hash type
+		testutil.NewAESCTRHMACKey(testutil.AESCTRHMACKeyVersion, 16, commonpb.HashType_SHA224, 16, commonpb.HashType_SHA256, 16, 4096),
+		testutil.NewAESCTRHMACKey(testutil.AESCTRHMACKeyVersion, 16, commonpb.HashType_SHA384, 16, commonpb.HashType_SHA256, 16, 4096),
 	}
 }
 
@@ -293,10 +335,7 @@ func validateAESCTRHMACKey(key *ctrhmacpb.AesCtrHmacStreamingKey, format *ctrhma
 	return validateAESCTRHMACPrimitive(p, key)
 }
 
-func validateAESCTRHMACPrimitive(p interface{}, key *ctrhmacpb.AesCtrHmacStreamingKey) error {
+func validateAESCTRHMACPrimitive(p any, key *ctrhmacpb.AesCtrHmacStreamingKey) error {
 	cipher := p.(*subtle.AESCTRHMAC)
-	if !bytes.Equal(cipher.MainKey, key.KeyValue) {
-		return fmt.Errorf("main key and primitive don't match")
-	}
 	return encryptDecrypt(cipher, cipher, 32, 32)
 }

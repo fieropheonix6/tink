@@ -23,10 +23,12 @@
 #include <utility>
 
 #include "absl/base/internal/endian.h"
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "tink/aead.h"
+#include "tink/aead/internal/aead_util.h"
 #include "tink/registry.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
@@ -60,15 +62,19 @@ std::string GetEnvelopeCiphertext(absl::string_view encrypted_dek,
 util::StatusOr<std::unique_ptr<Aead>> KmsEnvelopeAead::New(
     const google::crypto::tink::KeyTemplate& dek_template,
     std::unique_ptr<Aead> remote_aead) {
+  if (!internal::IsSupportedKmsEnvelopeAeadDekKeyType(
+          dek_template.type_url())) {
+    return util::Status(absl::StatusCode::kInvalidArgument,
+                        "unsupported key type");
+  }
   if (remote_aead == nullptr) {
     return util::Status(absl::StatusCode::kInvalidArgument,
                         "remote_aead must be non-null");
   }
   auto km_result = Registry::get_key_manager<Aead>(dek_template.type_url());
   if (!km_result.ok()) return km_result.status();
-  std::unique_ptr<Aead> envelope_aead(
+  return absl::WrapUnique(
       new KmsEnvelopeAead(dek_template, std::move(remote_aead)));
-  return std::move(envelope_aead);
 }
 
 util::StatusOr<std::string> KmsEnvelopeAead::Encrypt(

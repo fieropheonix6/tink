@@ -47,7 +47,7 @@ public final class PublicKeyVerifyConfig {
    */
   @Deprecated
   public static void registerStandardKeyTypes() throws GeneralSecurityException {
-    Config.register(SignatureConfig.TINK_1_0_0);
+    SignatureConfig.register();
   }
 
   private PublicKeyVerifyConfig() {}

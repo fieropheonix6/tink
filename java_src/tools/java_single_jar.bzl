@@ -14,6 +14,8 @@
 
 """ Definition of java_single_jar. """
 
+load("@rules_java//java:defs.bzl", "JavaInfo")
+
 def _check_non_empty(value, name):
     if not value:
         fail("%s must be non-empty" % name)
@@ -25,7 +27,7 @@ def _java_single_jar(ctx):
     if ctx.attr.source_jar:
         inputs = depset(transitive = [dep[JavaInfo].transitive_source_jars for dep in ctx.attr.deps])
     else:
-        inputs = depset(transitive = [dep[JavaInfo].transitive_runtime_deps for dep in ctx.attr.deps])
+        inputs = depset(transitive = [dep[JavaInfo].transitive_runtime_jars for dep in ctx.attr.deps])
 
     args = ctx.actions.args()
     args.add_all("--sources", inputs)
@@ -89,7 +91,7 @@ java_single_jar = rule(
         ),
         "_singlejar": attr.label(
             default = Label("@bazel_tools//tools/jdk:singlejar"),
-            cfg = "host",
+            cfg = "exec",
             allow_single_file = True,
             executable = True,
         ),

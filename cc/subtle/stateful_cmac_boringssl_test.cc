@@ -19,13 +19,16 @@
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/escaping.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "include/rapidjson/document.h"
 #include "tink/subtle/common_enums.h"
 #include "tink/subtle/mac/stateful_mac.h"
 #include "tink/subtle/wycheproof_util.h"

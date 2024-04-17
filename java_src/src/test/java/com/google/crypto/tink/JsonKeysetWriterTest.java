@@ -19,10 +19,9 @@ package com.google.crypto.tink;
 import static com.google.common.truth.Truth.assertThat;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import com.google.crypto.tink.aead.AeadKeyTemplates;
+import com.google.crypto.tink.aead.PredefinedAeadParameters;
 import com.google.crypto.tink.config.TinkConfig;
-import com.google.crypto.tink.mac.MacKeyTemplates;
-import com.google.crypto.tink.proto.KeyTemplate;
+import com.google.crypto.tink.mac.PredefinedMacParameters;
 import com.google.crypto.tink.proto.Keyset;
 import com.google.crypto.tink.subtle.Random;
 import java.io.ByteArrayInputStream;
@@ -38,7 +37,7 @@ import org.junit.runners.JUnit4;
 public class JsonKeysetWriterTest {
   @BeforeClass
   public static void setUp() throws GeneralSecurityException {
-    Config.register(TinkConfig.TINK_1_0_0);
+    TinkConfig.register();
   }
 
   private void assertKeysetHandle(KeysetHandle handle1, KeysetHandle handle2) throws Exception {
@@ -62,8 +61,7 @@ public class JsonKeysetWriterTest {
 
   @Test
   public void testWrite_singleKey_shouldWork() throws Exception {
-    KeyTemplate template = MacKeyTemplates.HMAC_SHA256_128BITTAG;
-    KeysetHandle handle1 = KeysetHandle.generateNew(template);
+    KeysetHandle handle1 = KeysetHandle.generateNew(PredefinedMacParameters.HMAC_SHA256_128BITTAG);
 
     testWrite_shouldWork(handle1);
   }
@@ -88,8 +86,8 @@ public class JsonKeysetWriterTest {
 
   private void testWriteEncrypted_shouldWork(KeysetHandle handle1) throws Exception {
     // Encrypt the keyset with an AeadKey.
-    KeyTemplate masterKeyTemplate = AeadKeyTemplates.AES128_EAX;
-    Aead masterKey = Registry.getPrimitive(Registry.newKeyData(masterKeyTemplate));
+    Aead masterKey =
+        KeysetHandle.generateNew(PredefinedAeadParameters.AES128_EAX).getPrimitive(Aead.class);
     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
     handle1.write(JsonKeysetWriter.withOutputStream(outputStream), masterKey);
     KeysetHandle handle2 =
@@ -103,7 +101,7 @@ public class JsonKeysetWriterTest {
   @Test
   public void testWriteEncrypted_singleKey_shouldWork() throws Exception {
     // Encrypt the keyset with an AeadKey.
-    KeysetHandle handle1 = KeysetHandle.generateNew(MacKeyTemplates.HMAC_SHA256_128BITTAG);
+    KeysetHandle handle1 = KeysetHandle.generateNew(PredefinedMacParameters.HMAC_SHA256_128BITTAG);
 
     testWriteEncrypted_shouldWork(handle1);
   }
@@ -132,13 +130,14 @@ public class JsonKeysetWriterTest {
     int magicKeyId = -19230912;
     Keyset unmodified =
         CleartextKeysetHandle.getKeyset(
-            KeysetHandle.generateNew(MacKeyTemplates.HMAC_SHA256_128BITTAG));
+            KeysetHandle.generateNew(PredefinedMacParameters.HMAC_SHA256_128BITTAG));
     Keyset modified =
         Keyset.newBuilder(unmodified)
             .setPrimaryKeyId(magicKeyId)
             .setKey(0, Keyset.Key.newBuilder(unmodified.getKey(0)).setKeyId(magicKeyId).build())
             .build();
-    KeysetHandle modifiedHandle = CleartextKeysetHandle.parseFrom(modified.toByteArray());
+    KeysetHandle modifiedHandle =
+        TinkProtoKeysetFormat.parseKeyset(modified.toByteArray(), InsecureSecretKeyAccess.get());
 
     // Write cleartext keyset
     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();

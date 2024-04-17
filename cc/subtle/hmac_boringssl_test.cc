@@ -16,13 +16,17 @@
 
 #include "tink/subtle/hmac_boringssl.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <utility>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
 #include "absl/strings/escaping.h"
-#include "tink/config/tink_fips.h"
+#include "absl/strings/string_view.h"
+#include "tink/internal/fips_utils.h"
 #include "tink/mac.h"
 #include "tink/subtle/common_enums.h"
 #include "tink/util/secret_data.h"
@@ -57,7 +61,7 @@ class HmacBoringSslTest : public ::testing::Test {
 };
 
 TEST_F(HmacBoringSslTest, testBasic) {
-  if (IsFipsModeEnabled() && !FIPS_mode()) {
+  if (internal::IsFipsModeEnabled() && !internal::IsFipsEnabledInSsl()) {
     GTEST_SKIP()
         << "Test should not run in FIPS mode when BoringCrypto is unavailable.";
   }
@@ -71,29 +75,29 @@ TEST_F(HmacBoringSslTest, testBasic) {
   { // Test with some example data.
     std::string data = "Some data to test.";
     auto res = hmac->ComputeMac(data);
-    EXPECT_TRUE(res.ok()) << res.status().ToString();
+    EXPECT_TRUE(res.ok()) << res.status();
     std::string tag = res.value();
     EXPECT_EQ(tag_size, tag.size());
     EXPECT_EQ(tag, absl::HexStringToBytes("9ccdca5b7fffb690df396e4ac49b9cd4"));
     auto status = hmac->VerifyMac(tag, data);
-    EXPECT_TRUE(status.ok()) << "tag:" << absl::BytesToHexString(tag)
-                             << " status:" << status.ToString();
+    EXPECT_TRUE(status.ok())
+        << "tag:" << absl::BytesToHexString(tag) << " status:" << status;
   }
   { // Test with empty example data.
     absl::string_view data;
     auto res = hmac->ComputeMac(data);
-    EXPECT_TRUE(res.ok()) << res.status().ToString();
+    EXPECT_TRUE(res.ok()) << res.status();
     std::string tag = res.value();
     EXPECT_EQ(tag_size, tag.size());
     EXPECT_EQ(tag, absl::HexStringToBytes("5433122f77bcf8a4d9b874b4149823ef"));
     auto status = hmac->VerifyMac(tag, data);
-    EXPECT_TRUE(status.ok()) << "tag:" << absl::BytesToHexString(tag)
-                             << " status:" << status.ToString();
+    EXPECT_TRUE(status.ok())
+        << "tag:" << absl::BytesToHexString(tag) << " status:" << status;
   }
 }
 
 TEST_F(HmacBoringSslTest, testModification) {
-  if (IsFipsModeEnabled() && !FIPS_mode()) {
+  if (internal::IsFipsModeEnabled() && !internal::IsFipsEnabledInSsl()) {
     GTEST_SKIP()
         << "Test should not run in FIPS mode when BoringCrypto is unavailable.";
   }
@@ -106,7 +110,7 @@ TEST_F(HmacBoringSslTest, testModification) {
   std::string data = "Some data to test";
   std::string tag = hmac->ComputeMac(data).value();
   auto status = hmac->VerifyMac(tag, data);
-  EXPECT_TRUE(status.ok()) << status.ToString();
+  EXPECT_TRUE(status.ok()) << status;
   size_t bits = tag.size() * 8;
   for (size_t i = 0; i < bits; i++) {
     std::string modified_tag = tag;
@@ -118,7 +122,7 @@ TEST_F(HmacBoringSslTest, testModification) {
 }
 
 TEST_F(HmacBoringSslTest, testTruncation) {
-  if (IsFipsModeEnabled() && !FIPS_mode()) {
+  if (internal::IsFipsModeEnabled() && !internal::IsFipsEnabledInSsl()) {
     GTEST_SKIP()
         << "Test should not run in FIPS mode when BoringCrypto is unavailable.";
   }
@@ -131,7 +135,7 @@ TEST_F(HmacBoringSslTest, testTruncation) {
   std::string data = "Some data to test";
   std::string tag = hmac->ComputeMac(data).value();
   auto status = hmac->VerifyMac(tag, data);
-  EXPECT_TRUE(status.ok()) << status.ToString();
+  EXPECT_TRUE(status.ok()) << status;
   for (size_t i = 0; i < tag.size(); i++) {
     std::string modified_tag(tag, 0, i);
     EXPECT_FALSE(hmac->VerifyMac(modified_tag, data).ok())
@@ -141,7 +145,7 @@ TEST_F(HmacBoringSslTest, testTruncation) {
 }
 
 TEST_F(HmacBoringSslTest, testInvalidKeySizes) {
-  if (IsFipsModeEnabled() && !FIPS_mode()) {
+  if (internal::IsFipsModeEnabled() && !internal::IsFipsEnabledInSsl()) {
     GTEST_SKIP()
         << "Test should not run in FIPS mode when BoringCrypto is unavailable.";
   }
@@ -160,7 +164,7 @@ TEST_F(HmacBoringSslTest, testInvalidKeySizes) {
 }
 
 TEST_F(HmacBoringSslTest, TestFipsFailWithoutBoringCrypto) {
-  if (!IsFipsModeEnabled() || FIPS_mode()) {
+  if (!internal::IsFipsModeEnabled() || internal::IsFipsEnabledInSsl()) {
     GTEST_SKIP()
         << "Test assumes kOnlyUseFips but BoringCrypto is unavailable.";
   }

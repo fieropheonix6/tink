@@ -16,6 +16,7 @@
 
 #include "tink/experimental/pqcrypto/signature/subtle/sphincs_verify.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -23,9 +24,13 @@
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_format.h"
+#include "absl/strings/string_view.h"
 #include "tink/experimental/pqcrypto/signature/subtle/sphincs_helper_pqclean.h"
 #include "tink/experimental/pqcrypto/signature/subtle/sphincs_subtle_utils.h"
+#include "tink/internal/fips_utils.h"
+#include "tink/public_key_verify.h"
 #include "tink/util/secret_data.h"
+#include "tink/util/status.h"
 #include "tink/util/statusor.h"
 
 namespace crypto {
@@ -55,7 +60,7 @@ util::StatusOr<std::unique_ptr<PublicKeyVerify>> SphincsVerify::New(
 util::Status SphincsVerify::Verify(absl::string_view signature,
                                    absl::string_view data) const {
   SphincsParamsPqclean params = key_.GetParams();
-  util::StatusOr<int32> key_size_index =
+  util::StatusOr<int32_t> key_size_index =
       SphincsKeySizeToIndex(params.private_key_size);
   if (!key_size_index.ok()) {
     return key_size_index.status();

@@ -16,6 +16,9 @@
 
 #include "tink/experimental/pqcrypto/signature/sphincs_key_template.h"
 
+#include <cstdint>
+
+#include "absl/strings/str_cat.h"
 #include "tink/util/constants.h"
 #include "proto/experimental/pqcrypto/sphincs.pb.h"
 #include "proto/tink.pb.h"
@@ -72,7 +75,7 @@ using ::google::crypto::tink::SphincsPrivateKey;
 using ::google::crypto::tink::SphincsSignatureType;
 using ::google::crypto::tink::SphincsVariant;
 
-KeyTemplate* NewSphincsKeyTemplate(int32 private_key_size,
+KeyTemplate* NewSphincsKeyTemplate(int32_t private_key_size,
                                    SphincsHashType hash_type,
                                    SphincsVariant variant,
                                    SphincsSignatureType type) {

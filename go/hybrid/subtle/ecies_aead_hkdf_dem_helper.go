@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package subtle
 
@@ -23,5 +21,5 @@ type EciesAEADHKDFDEMHelper interface {
 	GetSymmetricKeySize() uint32
 
 	// GetAEADOrDAEAD returns the newly created AEAD or Deterministic Aead primitive.
-	GetAEADOrDAEAD(symmetricKeyValue []byte) (interface{}, error)
+	GetAEADOrDAEAD(symmetricKeyValue []byte) (any, error)
 }

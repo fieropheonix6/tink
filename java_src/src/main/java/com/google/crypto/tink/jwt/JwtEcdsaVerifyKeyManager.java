@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2017 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,29 +17,97 @@ package com.google.crypto.tink.jwt;
 
 import static java.nio.charset.StandardCharsets.US_ASCII;
 
-import com.google.crypto.tink.internal.KeyTypeManager;
-import com.google.crypto.tink.internal.PrimitiveFactory;
+import com.google.crypto.tink.AccessesPartialKey;
+import com.google.crypto.tink.PublicKeyVerify;
+import com.google.crypto.tink.internal.PrimitiveConstructor;
 import com.google.crypto.tink.proto.JwtEcdsaAlgorithm;
-import com.google.crypto.tink.proto.JwtEcdsaPublicKey;
-import com.google.crypto.tink.proto.KeyData.KeyMaterialType;
+import com.google.crypto.tink.signature.EcdsaParameters;
+import com.google.crypto.tink.signature.EcdsaPublicKey;
 import com.google.crypto.tink.subtle.EcdsaVerifyJce;
 import com.google.crypto.tink.subtle.EllipticCurves;
-import com.google.crypto.tink.subtle.EllipticCurves.EcdsaEncoding;
 import com.google.crypto.tink.subtle.Enums;
-import com.google.crypto.tink.subtle.Validators;
 import com.google.gson.JsonObject;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.ExtensionRegistryLite;
-import com.google.protobuf.InvalidProtocolBufferException;
 import java.security.GeneralSecurityException;
-import java.security.interfaces.ECPublicKey;
-import java.util.Optional;
 
 /**
  * This key manager produces new instances of {@code JwtEcdsaVerify}. It doesn't support key
  * generation.
  */
-class JwtEcdsaVerifyKeyManager extends KeyTypeManager<JwtEcdsaPublicKey> {
+class JwtEcdsaVerifyKeyManager {
+  static EcdsaParameters.CurveType getCurveType(JwtEcdsaParameters parameters)
+      throws GeneralSecurityException {
+    if (parameters.getAlgorithm().equals(JwtEcdsaParameters.Algorithm.ES256)) {
+      return EcdsaParameters.CurveType.NIST_P256;
+    }
+    if (parameters.getAlgorithm().equals(JwtEcdsaParameters.Algorithm.ES384)) {
+      return EcdsaParameters.CurveType.NIST_P384;
+    }
+    if (parameters.getAlgorithm().equals(JwtEcdsaParameters.Algorithm.ES512)) {
+      return EcdsaParameters.CurveType.NIST_P521;
+    }
+    throw new GeneralSecurityException("unknown algorithm in parameters: " + parameters);
+  }
+
+  static EcdsaParameters.HashType getHash(JwtEcdsaParameters parameters)
+      throws GeneralSecurityException {
+    if (parameters.getAlgorithm().equals(JwtEcdsaParameters.Algorithm.ES256)) {
+      return EcdsaParameters.HashType.SHA256;
+    }
+    if (parameters.getAlgorithm().equals(JwtEcdsaParameters.Algorithm.ES384)) {
+      return EcdsaParameters.HashType.SHA384;
+    }
+    if (parameters.getAlgorithm().equals(JwtEcdsaParameters.Algorithm.ES512)) {
+      return EcdsaParameters.HashType.SHA512;
+    }
+    throw new GeneralSecurityException("unknown algorithm in parameters: " + parameters);
+  }
+
+  @AccessesPartialKey
+  static EcdsaPublicKey toEcdsaPublicKey(com.google.crypto.tink.jwt.JwtEcdsaPublicKey publicKey)
+      throws GeneralSecurityException {
+    EcdsaParameters ecdsaParameters =
+        EcdsaParameters.builder()
+            .setSignatureEncoding(EcdsaParameters.SignatureEncoding.IEEE_P1363)
+            .setCurveType(getCurveType(publicKey.getParameters()))
+            .setHashType(getHash(publicKey.getParameters()))
+            .build();
+    return EcdsaPublicKey.builder()
+        .setParameters(ecdsaParameters)
+        .setPublicPoint(publicKey.getPublicPoint())
+        .build();
+  }
+
+  @SuppressWarnings("Immutable") // EcdsaVerifyJce.create returns an immutable verifier.
+  static JwtPublicKeyVerify createFullPrimitive(
+      com.google.crypto.tink.jwt.JwtEcdsaPublicKey publicKey) throws GeneralSecurityException {
+    EcdsaPublicKey ecdsaPublicKey = toEcdsaPublicKey(publicKey);
+    final PublicKeyVerify verifier = EcdsaVerifyJce.create(ecdsaPublicKey);
+
+    return new JwtPublicKeyVerify() {
+      @Override
+      public VerifiedJwt verifyAndDecode(String compact, JwtValidator validator)
+          throws GeneralSecurityException {
+        JwtFormat.Parts parts = JwtFormat.splitSignedCompact(compact);
+        verifier.verify(parts.signatureOrMac, parts.unsignedCompact.getBytes(US_ASCII));
+        JsonObject parsedHeader = JsonUtil.parseJson(parts.header);
+        JwtFormat.validateHeader(
+            parsedHeader,
+            publicKey.getParameters().getAlgorithm().getStandardName(),
+            publicKey.getKid(),
+            publicKey.getParameters().allowKidAbsent());
+        RawJwt token = RawJwt.fromJsonPayload(JwtFormat.getTypeHeader(parsedHeader), parts.payload);
+        return validator.validate(token);
+      }
+    };
+  }
+
+  static final PrimitiveConstructor<
+          com.google.crypto.tink.jwt.JwtEcdsaPublicKey, JwtPublicKeyVerify>
+      PRIMITIVE_CONSTRUCTOR =
+          PrimitiveConstructor.create(
+              JwtEcdsaVerifyKeyManager::createFullPrimitive,
+              com.google.crypto.tink.jwt.JwtEcdsaPublicKey.class,
+              JwtPublicKeyVerify.class);
 
   static final EllipticCurves.CurveType getCurve(JwtEcdsaAlgorithm algorithm)
       throws GeneralSecurityException {
@@ -72,75 +140,13 @@ class JwtEcdsaVerifyKeyManager extends KeyTypeManager<JwtEcdsaPublicKey> {
   static final void validateEcdsaAlgorithm(JwtEcdsaAlgorithm algorithm)
       throws GeneralSecurityException {
     // Purposely ignore the result. This function will throw if the algorithm is invalid.
-    hashForEcdsaAlgorithm(algorithm);
+    Object unused = hashForEcdsaAlgorithm(algorithm);
   }
 
-  private static class JwtPublicKeyVerifyFactory
-      extends PrimitiveFactory<JwtPublicKeyVerifyInternal, JwtEcdsaPublicKey> {
-    public JwtPublicKeyVerifyFactory() {
-      super(JwtPublicKeyVerifyInternal.class);
-    }
+  private JwtEcdsaVerifyKeyManager() {}
 
-    @Override
-    public JwtPublicKeyVerifyInternal getPrimitive(JwtEcdsaPublicKey keyProto)
-        throws GeneralSecurityException {
-      // This will throw an exception is protocol is invalid
-      EllipticCurves.CurveType curve = getCurve(keyProto.getAlgorithm());
-      ECPublicKey publicKey =
-          EllipticCurves.getEcPublicKey(
-              curve, keyProto.getX().toByteArray(), keyProto.getY().toByteArray());
-      Enums.HashType hash = hashForEcdsaAlgorithm(keyProto.getAlgorithm());
-      final EcdsaVerifyJce verifier = new EcdsaVerifyJce(publicKey, hash, EcdsaEncoding.IEEE_P1363);
-      final String algorithmName = keyProto.getAlgorithm().name();
-      final Optional<String> customKidFromEcdsaPublicKey =
-          keyProto.hasCustomKid()
-              ? Optional.of(keyProto.getCustomKid().getValue())
-              : Optional.empty();
-
-      return new JwtPublicKeyVerifyInternal() {
-        @Override
-        public VerifiedJwt verifyAndDecodeWithKid(
-            String compact, JwtValidator validator, Optional<String> kid)
-            throws GeneralSecurityException {
-          JwtFormat.Parts parts = JwtFormat.splitSignedCompact(compact);
-          verifier.verify(parts.signatureOrMac, parts.unsignedCompact.getBytes(US_ASCII));
-          JsonObject parsedHeader = JsonUtil.parseJson(parts.header);
-          JwtFormat.validateHeader(algorithmName, kid, customKidFromEcdsaPublicKey, parsedHeader);
-          RawJwt token =
-              RawJwt.fromJsonPayload(JwtFormat.getTypeHeader(parsedHeader), parts.payload);
-          return validator.validate(token);
-        }
-      };
-    }
-  }
-
-  public JwtEcdsaVerifyKeyManager() {
-    super(JwtEcdsaPublicKey.class, new JwtPublicKeyVerifyFactory());
-  }
-
-  @Override
-  public String getKeyType() {
+  static String getKeyType() {
     return "type.googleapis.com/google.crypto.tink.JwtEcdsaPublicKey";
   }
 
-  @Override
-  public int getVersion() {
-    return 0;
-  }
-
-  @Override
-  public KeyMaterialType keyMaterialType() {
-    return KeyMaterialType.ASYMMETRIC_PUBLIC;
-  }
-
-  @Override
-  public JwtEcdsaPublicKey parseKey(ByteString byteString) throws InvalidProtocolBufferException {
-    return JwtEcdsaPublicKey.parseFrom(byteString, ExtensionRegistryLite.getEmptyRegistry());
-  }
-
-  @Override
-  public void validateKey(JwtEcdsaPublicKey pubKey) throws GeneralSecurityException {
-    Validators.validateVersion(pubKey.getVersion(), getVersion());
-    validateEcdsaAlgorithm(pubKey.getAlgorithm());
-  }
 }

@@ -17,20 +17,25 @@
 #include "tink/mac/hmac_key_manager.h"
 
 #include <memory>
+#include <sstream>
 #include <string>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
-#include "tink/core/key_manager_impl.h"
 #include "tink/chunked_mac.h"
+#include "tink/core/key_manager_impl.h"
 #include "tink/mac.h"
+#include "tink/subtle/hmac_boringssl.h"
+#include "tink/util/enums.h"
 #include "tink/util/istream_input_stream.h"
 #include "tink/util/secret_data.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 #include "proto/hmac.pb.h"
+#include "proto/tink.pb.h"
 
 namespace crypto {
 namespace tink {
@@ -42,7 +47,6 @@ using ::crypto::tink::util::StatusOr;
 using ::google::crypto::tink::HashType;
 using ::google::crypto::tink::HmacKey;
 using ::google::crypto::tink::HmacKeyFormat;
-using ::google::crypto::tink::KeyData;
 using ::testing::Eq;
 using ::testing::HasSubstr;
 using ::testing::Not;

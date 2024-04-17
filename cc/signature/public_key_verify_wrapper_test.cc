@@ -16,20 +16,31 @@
 
 #include "tink/signature/public_key_verify_wrapper.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "tink/primitive_set.h"
-#include "tink/public_key_verify.h"
+#include "absl/container/flat_hash_map.h"
+#include "absl/memory/memory.h"
+#include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "tink/internal/registry_impl.h"
 #include "tink/monitoring/monitoring.h"
 #include "tink/monitoring/monitoring_client_mocks.h"
+#include "tink/primitive_set.h"
+#include "tink/public_key_sign.h"
+#include "tink/public_key_verify.h"
+#include "tink/registry.h"
 #include "tink/signature/failing_signature.h"
 #include "tink/util/status.h"
+#include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 #include "tink/util/test_util.h"
+#include "proto/tink.pb.h"
 
 namespace crypto {
 namespace tink {
@@ -115,12 +126,12 @@ TEST_F(PublicKeyVerifySetWrapperTest, testBasic) {
                                                     keyset_info.key_info(0));
     ASSERT_TRUE(entry_result.ok());
 
-    pk_verify.reset(new DummyPublicKeyVerify(signature_name_1));
+    pk_verify = std::make_unique<DummyPublicKeyVerify>(signature_name_1);
     entry_result = pk_verify_set->AddPrimitive(std::move(pk_verify),
                                                keyset_info.key_info(1));
     ASSERT_TRUE(entry_result.ok());
 
-    pk_verify.reset(new DummyPublicKeyVerify(signature_name_2));
+    pk_verify = std::make_unique<DummyPublicKeyVerify>(signature_name_2);
     entry_result = pk_verify_set->AddPrimitive(std::move(pk_verify),
                                                keyset_info.key_info(2));
     ASSERT_TRUE(entry_result.ok());

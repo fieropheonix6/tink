@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package jwt
 
@@ -21,14 +19,15 @@ import (
 
 	"github.com/google/tink/go/core/primitiveset"
 	"github.com/google/tink/go/keyset"
+	tinkpb "github.com/google/tink/go/proto/tink_go_proto"
 )
 
 // NewVerifier generates a new instance of the JWT Verifier primitive.
-func NewVerifier(h *keyset.Handle) (Verifier, error) {
-	if h == nil {
+func NewVerifier(handle *keyset.Handle) (Verifier, error) {
+	if handle == nil {
 		return nil, fmt.Errorf("keyset handle can't be nil")
 	}
-	ps, err := h.PrimitivesWithKeyManager(nil)
+	ps, err := handle.PrimitivesWithKeyManager(nil)
 	if err != nil {
 		return nil, fmt.Errorf("jwt_verifier_factory: cannot obtain primitive set: %v", err)
 	}
@@ -48,6 +47,9 @@ func newWrappedVerifier(ps *primitiveset.PrimitiveSet) (*wrappedVerifier, error)
 	}
 	for _, primitives := range ps.Entries {
 		for _, p := range primitives {
+			if p.PrefixType != tinkpb.OutputPrefixType_RAW && p.PrefixType != tinkpb.OutputPrefixType_TINK {
+				return nil, fmt.Errorf("jwt_verifier_factory: invalid OutputPrefixType: %s", p.PrefixType)
+			}
 			if _, ok := (p.Primitive).(*verifierWithKID); !ok {
 				return nil, fmt.Errorf("jwt_verifier_factory: not a JWT Verifier primitive")
 			}
@@ -57,16 +59,25 @@ func newWrappedVerifier(ps *primitiveset.PrimitiveSet) (*wrappedVerifier, error)
 }
 
 func (w *wrappedVerifier) VerifyAndDecode(compact string, validator *Validator) (*VerifiedJWT, error) {
+	var interestingErr error
 	for _, s := range w.ps.Entries {
 		for _, e := range s {
 			p, ok := e.Primitive.(*verifierWithKID)
 			if !ok {
 				return nil, fmt.Errorf("jwt_verifier_factory: not a JWT Verifier primitive")
 			}
-			if verifiedJWT, err := p.VerifyAndDecodeWithKID(compact, validator, keyID(e.KeyID, e.PrefixType)); err == nil {
+			verifiedJWT, err := p.VerifyAndDecodeWithKID(compact, validator, keyID(e.KeyID, e.PrefixType))
+			if err == nil {
 				return verifiedJWT, nil
+			}
+			if err != errJwtVerification {
+				// any error that is not the generic errJwtVerification is considered interesting
+				interestingErr = err
 			}
 		}
 	}
-	return nil, fmt.Errorf("verification failed")
+	if interestingErr != nil {
+		return nil, interestingErr
+	}
+	return nil, errJwtVerification
 }

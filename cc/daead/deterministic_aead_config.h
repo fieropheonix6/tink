@@ -35,14 +35,6 @@ namespace tink {
 //
 class DeterministicAeadConfig {
  public:
-  static constexpr char kCatalogueName[] = "TinkDeterministicAead";
-  static constexpr char kPrimitiveName[] = "DeterministicAead";
-
-  // Returns config of DeterministicAead implementations supported
-  // in the current Tink release.
-  ABSL_DEPRECATED("This is not supported anymore.")
-  static const google::crypto::tink::RegistryConfig& Latest();
-
   // Registers DeterministicAead primitive wrapper and key managers for all
   // DeterministicAead key types from the current Tink release.
   static crypto::tink::util::Status Register();

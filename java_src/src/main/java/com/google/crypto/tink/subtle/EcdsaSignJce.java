@@ -16,15 +16,23 @@
 
 package com.google.crypto.tink.subtle;
 
+import com.google.crypto.tink.AccessesPartialKey;
+import com.google.crypto.tink.InsecureSecretKeyAccess;
 import com.google.crypto.tink.PublicKeySign;
+import com.google.crypto.tink.PublicKeyVerify;
 import com.google.crypto.tink.config.internal.TinkFipsUtil;
+import com.google.crypto.tink.signature.EcdsaParameters;
+import com.google.crypto.tink.signature.EcdsaPrivateKey;
+import com.google.crypto.tink.subtle.EllipticCurves.CurveType;
 import com.google.crypto.tink.subtle.EllipticCurves.EcdsaEncoding;
 import com.google.crypto.tink.subtle.Enums.HashType;
 import com.google.errorprone.annotations.Immutable;
 import java.security.GeneralSecurityException;
+import java.security.Provider;
 import java.security.Signature;
 import java.security.interfaces.ECPrivateKey;
 import java.security.spec.EllipticCurve;
+import java.util.List;
 
 /**
  * ECDSA signing with JCE.
@@ -42,7 +50,18 @@ public final class EcdsaSignJce implements PublicKeySign {
   private final String signatureAlgorithm;
   private final EcdsaEncoding encoding;
 
-  public EcdsaSignJce(final ECPrivateKey priv, HashType hash, EcdsaEncoding encoding)
+  @SuppressWarnings("Immutable")
+  private final byte[] outputPrefix;
+
+  @SuppressWarnings("Immutable")
+  private final byte[] messageSuffix;
+
+  private EcdsaSignJce(
+      final ECPrivateKey priv,
+      HashType hash,
+      EcdsaEncoding encoding,
+      byte[] outputPrefix,
+      byte[] messageSuffix)
       throws GeneralSecurityException {
     if (!FIPS.isCompatible()) {
       throw new GeneralSecurityException(
@@ -52,11 +71,55 @@ public final class EcdsaSignJce implements PublicKeySign {
     this.privateKey = priv;
     this.signatureAlgorithm = SubtleUtil.toEcdsaAlgo(hash);
     this.encoding = encoding;
+    this.outputPrefix = outputPrefix;
+    this.messageSuffix = messageSuffix;
   }
 
-  @Override
-  public byte[] sign(final byte[] data) throws GeneralSecurityException {
-    Signature signer = EngineFactory.SIGNATURE.getInstance(signatureAlgorithm);
+  public EcdsaSignJce(final ECPrivateKey priv, HashType hash, EcdsaEncoding encoding)
+      throws GeneralSecurityException {
+    this(priv, hash, encoding, new byte[0], new byte[0]);
+  }
+
+  @AccessesPartialKey
+  public static PublicKeySign create(EcdsaPrivateKey key) throws GeneralSecurityException {
+    HashType hashType =
+        EcdsaVerifyJce.HASH_TYPE_CONVERTER.toProtoEnum(key.getParameters().getHashType());
+    EcdsaEncoding ecdsaEncoding =
+        EcdsaVerifyJce.ENCODING_CONVERTER.toProtoEnum(key.getParameters().getSignatureEncoding());
+    CurveType curveType =
+        EcdsaVerifyJce.CURVE_TYPE_CONVERTER.toProtoEnum(key.getParameters().getCurveType());
+
+    ECPrivateKey privateKey =
+        EllipticCurves.getEcPrivateKey(
+            curveType,
+            key.getPrivateValue().getBigInteger(InsecureSecretKeyAccess.get()).toByteArray());
+
+    PublicKeySign signer =
+        new EcdsaSignJce(
+            privateKey,
+            hashType,
+            ecdsaEncoding,
+            key.getOutputPrefix().toByteArray(),
+            key.getParameters().getVariant().equals(EcdsaParameters.Variant.LEGACY)
+                ? new byte[] {0}
+                : new byte[0]);
+    PublicKeyVerify verify = EcdsaVerifyJce.create(key.getPublicKey());
+    try {
+      verify.verify(signer.sign(new byte[] {1, 2, 3}), new byte[] {1, 2, 3});
+    } catch (GeneralSecurityException e) {
+      throw new GeneralSecurityException(
+          "ECDSA signing with private key followed by verifying with public key failed."
+              + " The key may be corrupted.",
+          e);
+    }
+    return signer;
+  }
+
+  private byte[] noPrefixSign(final byte[] data) throws GeneralSecurityException {
+    // Prefer Conscrypt over other providers if available.
+    List<Provider> preferredProviders =
+        EngineFactory.toProviderList("GmsCore_OpenSSL", "AndroidOpenSSL", "Conscrypt");
+    Signature signer = EngineFactory.SIGNATURE.getInstance(signatureAlgorithm, preferredProviders);
     signer.initSign(privateKey);
     signer.update(data);
     byte[] signature = signer.sign();
@@ -66,5 +129,20 @@ public final class EcdsaSignJce implements PublicKeySign {
           EllipticCurves.ecdsaDer2Ieee(signature, 2 * EllipticCurves.fieldSizeInBytes(curve));
     }
     return signature;
+  }
+
+  @Override
+  public byte[] sign(final byte[] data) throws GeneralSecurityException {
+    byte[] signature;
+    if (messageSuffix.length == 0) {
+      signature = noPrefixSign(data);
+    } else {
+      signature = noPrefixSign(Bytes.concat(data, messageSuffix));
+    }
+    if (outputPrefix.length == 0) {
+      return signature;
+    } else {
+      return Bytes.concat(outputPrefix, signature);
+    }
   }
 }

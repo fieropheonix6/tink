@@ -16,18 +16,21 @@
 
 #include "tink/mac/mac_wrapper.h"
 
+#include <memory>
 #include <string>
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "tink/crypto_format.h"
-#include "tink/internal/util.h"
-#include "tink/mac.h"
-#include "tink/primitive_set.h"
 #include "tink/internal/monitoring_util.h"
 #include "tink/internal/registry_impl.h"
+#include "tink/internal/util.h"
+#include "tink/mac.h"
 #include "tink/monitoring/monitoring.h"
+#include "tink/primitive_set.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "proto/tink.pb.h"
@@ -59,7 +62,7 @@ class MacSetWrapper : public Mac {
   crypto::tink::util::Status VerifyMac(absl::string_view mac_value,
                                        absl::string_view data) const override;
 
-  ~MacSetWrapper() override {}
+  ~MacSetWrapper() override = default;
 
  private:
   std::unique_ptr<PrimitiveSet<Mac>> mac_set_;
@@ -89,8 +92,7 @@ util::StatusOr<std::string> MacSetWrapper::ComputeMac(
   std::string local_data;
   if (primary->get_output_prefix_type() == OutputPrefixType::LEGACY) {
     local_data = std::string(data);
-    local_data.append(
-        reinterpret_cast<const char*>(&CryptoFormat::kLegacyStartByte), 1);
+    local_data.push_back(CryptoFormat::kLegacyStartByte);
     data = local_data;
   }
   auto compute_mac_result = primary->get_primitive().ComputeMac(data);
@@ -137,8 +139,6 @@ util::Status MacSetWrapper::VerifyMac(
                                            data.size());
           }
           return status;
-        } else {
-          // TODO(przydatek): LOG that a matching key didn't verify the MAC.
         }
       }
     }

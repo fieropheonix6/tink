@@ -17,6 +17,8 @@
 #ifndef TINK_KEYSET_READER_H_
 #define TINK_KEYSET_READER_H_
 
+#include <memory>
+
 #include "tink/util/statusor.h"
 #include "proto/tink.pb.h"
 
@@ -37,7 +39,7 @@ class KeysetReader {
     std::unique_ptr<google::crypto::tink::EncryptedKeyset>>
   ReadEncrypted() = 0;
 
-  virtual ~KeysetReader() {}
+  virtual ~KeysetReader() = default;
 };
 
 }  // namespace tink

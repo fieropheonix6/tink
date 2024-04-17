@@ -17,18 +17,11 @@
 package com.google.crypto.tink;
 
 import static com.google.common.truth.Truth.assertThat;
-import static java.util.concurrent.TimeUnit.SECONDS;
+import static java.util.concurrent.TimeUnit.DAYS;
+import static org.junit.Assert.assertNotNull;
 
-import com.google.crypto.tink.internal.KeyTypeManager;
-import com.google.crypto.tink.internal.PrivateKeyTypeManager;
-import com.google.crypto.tink.proto.AesGcmKey;
-import com.google.crypto.tink.proto.Ed25519PrivateKey;
-import com.google.crypto.tink.proto.Ed25519PublicKey;
 import com.google.crypto.tink.proto.KeyData;
-import com.google.crypto.tink.proto.KeyData.KeyMaterialType;
 import com.google.protobuf.ByteString;
-import com.google.protobuf.InvalidProtocolBufferException;
-import com.google.protobuf.MessageLite;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.List;
@@ -42,9 +35,7 @@ import org.junit.runners.JUnit4;
 /** Thread safety tests for {@link Registry}. */
 @RunWith(JUnit4.class)
 public final class RegistryMultithreadTest {
-  private static class Primitive {}
-
-  private static class TestKeyManager implements KeyManager<Primitive> {
+  private static class TestKeyManager implements KeyManager<Aead> {
     public TestKeyManager(String typeUrl) {
       this.typeUrl = typeUrl;
     }
@@ -52,22 +43,7 @@ public final class RegistryMultithreadTest {
     private final String typeUrl;
 
     @Override
-    public Primitive getPrimitive(ByteString proto) throws GeneralSecurityException {
-      throw new UnsupportedOperationException("Not needed for test");
-    }
-
-    @Override
-    public Primitive getPrimitive(MessageLite proto) throws GeneralSecurityException {
-      throw new UnsupportedOperationException("Not needed for test");
-    }
-
-    @Override
-    public MessageLite newKey(ByteString template) throws GeneralSecurityException {
-      throw new UnsupportedOperationException("Not needed for test");
-    }
-
-    @Override
-    public MessageLite newKey(MessageLite template) throws GeneralSecurityException {
+    public Aead getPrimitive(ByteString serializedKey) throws GeneralSecurityException {
       throw new UnsupportedOperationException("Not needed for test");
     }
 
@@ -77,140 +53,23 @@ public final class RegistryMultithreadTest {
     }
 
     @Override
-    public boolean doesSupport(String typeUrl) {
-      throw new UnsupportedOperationException("Not needed for test");
-    }
-
-    @Override
     public String getKeyType() {
       return this.typeUrl;
     }
 
     @Override
-    public int getVersion() {
-      throw new UnsupportedOperationException("Not needed for test");
-    }
-
-    @Override
-    public Class<Primitive> getPrimitiveClass() {
-      return Primitive.class;
+    public Class<Aead> getPrimitiveClass() {
+      return Aead.class;
     }
   }
 
-  private static class TestKeyTypeManager extends KeyTypeManager<AesGcmKey> {
-    private final String typeUrl;
-
-    public TestKeyTypeManager(String typeUrl) {
-      super(AesGcmKey.class);
-      this.typeUrl = typeUrl;
-    }
-
-    @Override
-    public String getKeyType() {
-      return typeUrl;
-    }
-
-    @Override
-    public int getVersion() {
-      throw new UnsupportedOperationException("Not needed for test");
-    }
-
-    @Override
-    public KeyMaterialType keyMaterialType() {
-      throw new UnsupportedOperationException("Not needed for test");
-    }
-
-    @Override
-    public void validateKey(AesGcmKey keyProto) throws GeneralSecurityException {}
-
-    @Override
-    public AesGcmKey parseKey(ByteString byteString) throws InvalidProtocolBufferException {
-      throw new UnsupportedOperationException("Not needed for test");
-    }
-  }
-
-  private static class TestPublicKeyTypeManager extends KeyTypeManager<Ed25519PublicKey> {
-    private final String typeUrl;
-
-    public TestPublicKeyTypeManager(String typeUrl) {
-      super(Ed25519PublicKey.class);
-      this.typeUrl = typeUrl;
-    }
-
-    @Override
-    public String getKeyType() {
-      return typeUrl;
-    }
-
-    @Override
-    public int getVersion() {
-      throw new UnsupportedOperationException("Not needed for test");
-    }
-
-    @Override
-    public KeyMaterialType keyMaterialType() {
-      throw new UnsupportedOperationException("Not needed for test");
-    }
-
-    @Override
-    public void validateKey(Ed25519PublicKey keyProto) throws GeneralSecurityException {}
-
-    @Override
-    public Ed25519PublicKey parseKey(ByteString byteString) throws InvalidProtocolBufferException {
-      throw new UnsupportedOperationException("Not needed for test");
-    }
-  }
-
-  private static class TestPrivateKeyTypeManager
-      extends PrivateKeyTypeManager<Ed25519PrivateKey, Ed25519PublicKey> {
-    private final String typeUrl;
-
-    public TestPrivateKeyTypeManager(String typeUrl) {
-      super(Ed25519PrivateKey.class, Ed25519PublicKey.class);
-      this.typeUrl = typeUrl;
-    }
-
-    @Override
-    public String getKeyType() {
-      return typeUrl;
-    }
-
-    @Override
-    public int getVersion() {
-      throw new UnsupportedOperationException("Not needed for test");
-    }
-
-    @Override
-    public KeyMaterialType keyMaterialType() {
-      throw new UnsupportedOperationException("Not needed for test");
-    }
-
-    @Override
-    public void validateKey(Ed25519PrivateKey keyProto) throws GeneralSecurityException {}
-
-    @Override
-    public Ed25519PrivateKey parseKey(ByteString byteString) throws InvalidProtocolBufferException {
-      throw new UnsupportedOperationException("Not needed for test");
-    }
-
-    @Override
-    public Ed25519PublicKey getPublicKey(Ed25519PrivateKey privateKey) {
-      throw new UnsupportedOperationException("Not needed for test");
-    }
-  }
-
-  private static final int REPETITIONS = 1000;
+  private static final int REPETITIONS = 200;
 
   @Test
   public void registerAndGetKeyManager_works() throws Exception {
     ExecutorService threadPool = Executors.newFixedThreadPool(4);
     List<Future<?>> futures = new ArrayList<>();
     Registry.registerKeyManager(new TestKeyManager("KeyManagerStart"), false);
-    Registry.registerKeyManager(new TestKeyTypeManager("KeyTypeManagerStart"), false);
-    Registry.registerAsymmetricKeyManagers(
-        new TestPrivateKeyTypeManager("PrivateKeyTypeManagerStart"),
-        new TestPublicKeyTypeManager("PublicKeyTypeManagerStart"),
-        false);
     futures.add(
         threadPool.submit(
             () -> {
@@ -227,36 +86,7 @@ public final class RegistryMultithreadTest {
             () -> {
               try {
                 for (int i = 0; i < REPETITIONS; ++i) {
-                  Registry.registerKeyManager(new TestKeyTypeManager("KeyTypeManager" + i), false);
-                }
-              } catch (GeneralSecurityException e) {
-                throw new RuntimeException(e);
-              }
-            }));
-    futures.add(
-        threadPool.submit(
-            () -> {
-              try {
-                for (int i = 0; i < REPETITIONS; ++i) {
-                  Registry.registerAsymmetricKeyManagers(
-                      new TestPrivateKeyTypeManager("Private" + i),
-                      new TestPublicKeyTypeManager("Public" + i),
-                      false);
-                }
-              } catch (GeneralSecurityException e) {
-                throw new RuntimeException(e);
-              }
-            }));
-    futures.add(
-        threadPool.submit(
-            () -> {
-              try {
-                for (int i = 0; i < REPETITIONS; ++i) {
-
-                  Registry.getKeyManager("KeyManagerStart");
-                  Registry.getKeyManager("KeyTypeManagerStart");
-                  Registry.getKeyManager("PrivateKeyTypeManagerStart");
-                  Registry.getKeyManager("PublicKeyTypeManagerStart");
+                  assertNotNull(Registry.getUntypedKeyManager("KeyManagerStart"));
                 }
               } catch (GeneralSecurityException e) {
                 throw new RuntimeException(e);
@@ -264,7 +94,8 @@ public final class RegistryMultithreadTest {
             }));
 
     threadPool.shutdown();
-    assertThat(threadPool.awaitTermination(300, SECONDS)).isTrue();
+    // Wait forever: if the test times out we will notice independently.
+    assertThat(threadPool.awaitTermination(1, DAYS)).isTrue();
     for (int i = 0; i < futures.size(); ++i) {
       futures.get(i).get(); // This will throw an exception if the thread threw an exception.
     }

@@ -16,20 +16,26 @@
 
 #include "tink/util/test_util.h"
 
-#include <fcntl.h>
 #include <stdarg.h>
 #include <stdlib.h>
-#include <unistd.h>
 
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
+#include <ios>
+#include <iostream>
+#include <memory>
+#include <ostream>
+#include <sstream>
 #include <string>
+#include <vector>
 
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
+#include "absl/strings/string_view.h"
 #include "tink/aead/aes_ctr_hmac_aead_key_manager.h"
 #include "tink/aead/aes_gcm_key_manager.h"
 #include "tink/aead/xchacha20_poly1305_key_manager.h"
@@ -46,6 +52,7 @@
 #include "tink/util/statusor.h"
 #include "proto/aes_ctr.pb.h"
 #include "proto/aes_ctr_hmac_aead.pb.h"
+#include "proto/aes_gcm.pb.h"
 #include "proto/aes_siv.pb.h"
 #include "proto/common.pb.h"
 #include "proto/ecdsa.pb.h"
@@ -59,7 +66,6 @@ using crypto::tink::util::Enums;
 using crypto::tink::util::Status;
 using google::crypto::tink::AesGcmKeyFormat;
 using google::crypto::tink::EcdsaPrivateKey;
-using google::crypto::tink::EcdsaSignatureEncoding;
 using google::crypto::tink::EciesAeadHkdfPrivateKey;
 using google::crypto::tink::Ed25519PrivateKey;
 using google::crypto::tink::Keyset;
@@ -69,80 +75,16 @@ namespace crypto {
 namespace tink {
 namespace test {
 
-int GetTestFileDescriptor(absl::string_view filename, int size,
-                          std::string* file_contents) {
-  (*file_contents) = subtle::Random::GetRandomBytes(size);
-  return GetTestFileDescriptor(filename, *file_contents);
-}
-
-int GetTestFileDescriptor(
-    absl::string_view filename, absl::string_view file_contents) {
-  std::string full_filename =
-      absl::StrCat(crypto::tink::test::TmpDir(), "/", filename);
-  mode_t mode = S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH;
-  int fd = open(full_filename.c_str(), O_WRONLY | O_CREAT | O_TRUNC, mode);
-  if (fd == -1) {
-    std::clog << "Cannot create file " << full_filename
-              << " error: " << errno << std::endl;
+std::string ReadTestFile(absl::string_view filename) {
+  std::string full_filename = absl::StrCat(test::TmpDir(), "/", filename);
+  std::ifstream input_stream(full_filename, std::ios::binary);
+  if (!input_stream) {
+    std::clog << "Cannot open file " << full_filename << '\n';
     exit(1);
   }
-  auto size = file_contents.size();
-  if (write(fd, file_contents.data(), size) != size) {
-    std::clog << "Failed to write " << size << " bytes to file "
-              << full_filename << " error: " << errno << std::endl;
-
-    exit(1);
-  }
-  close(fd);
-  fd = open(full_filename.c_str(), O_RDONLY);
-  if (fd == -1) {
-    std::clog << "Cannot re-open file " << full_filename
-              << " error: " << errno << std::endl;
-    exit(1);
-  }
-  return fd;
-}
-
-
-int GetTestFileDescriptor(absl::string_view filename) {
-  std::string full_filename =
-      absl::StrCat(crypto::tink::test::TmpDir(), "/", filename);
-  mode_t mode = S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH;
-  int fd = open(full_filename.c_str(), O_WRONLY | O_CREAT | O_TRUNC, mode);
-  if (fd == -1) {
-    std::clog << "Cannot create file " << full_filename
-              << " error: " << errno << std::endl;
-    exit(1);
-  }
-  return fd;
-}
-
-std::string ReadTestFile(std::string filename) {
-  std::string full_filename =
-      absl::StrCat(crypto::tink::test::TmpDir(), "/", filename);
-  int fd = open(full_filename.c_str(), O_RDONLY);
-  if (fd == -1) {
-    std::clog << "Cannot open file " << full_filename
-              << " error: " << errno << std::endl;
-    exit(1);
-  }
-  std::string contents;
-  int buffer_size = 128 * 1024;
-  auto buffer = absl::make_unique<uint8_t[]>(buffer_size);
-  int read_result = read(fd, buffer.get(), buffer_size);
-  while (read_result > 0) {
-    std::clog << "Read " << read_result << " bytes" << std::endl;
-    contents.append(reinterpret_cast<const char*>(buffer.get()), read_result);
-    read_result = read(fd, buffer.get(), buffer_size);
-  }
-  if (read_result < 0) {
-    std::clog << "Error reading file " << full_filename
-              << " error: " << errno << std::endl;
-    exit(1);
-  }
-  close(fd);
-  std::clog << "Read in total " << contents.length() << " bytes" << std::endl;
-  return contents;
+  std::stringstream buffer;
+  buffer << input_stream.rdbuf();
+  return buffer.str();
 }
 
 util::StatusOr<std::string> HexDecode(absl::string_view hex) {
@@ -184,24 +126,25 @@ std::string HexEncode(absl::string_view bytes) {
 }
 
 std::string TmpDir() {
-  // The Bazel 'test' command sets TEST_TMPDIR.
-  const char* env = getenv("TEST_TMPDIR");
-  if (env && env[0] != '\0') {
-    return env;
+  // Try the following environment variables in order:
+  //  - TEST_TMPDIR: Set by `bazel test`.
+  //  - TMPDIR: Set by some Tink tests.
+  //  - TEMP, TMP: Set on Windows; they contain the tmp dir's path.
+  for (const std::string& tmp_env_variable :
+       {"TEST_TMPDIR", "TMPDIR", "TEMP", "TMP"}) {
+    const char* env = getenv(tmp_env_variable.c_str());
+    if (env && env[0] != '\0') {
+      return env;
+    }
   }
-  env = getenv("TMPDIR");
-  if (env && env[0] != '\0') {
-    return env;
-  }
+  // Tmp dir on Linux/macOS.
   return "/tmp";
 }
 
-void AddKeyData(
-    const google::crypto::tink::KeyData& key_data,
-    uint32_t key_id,
-    google::crypto::tink::OutputPrefixType output_prefix,
-    google::crypto::tink::KeyStatusType key_status,
-    google::crypto::tink::Keyset* keyset) {
+void AddKeyData(const google::crypto::tink::KeyData& key_data, uint32_t key_id,
+                google::crypto::tink::OutputPrefixType output_prefix,
+                google::crypto::tink::KeyStatusType key_status,
+                google::crypto::tink::Keyset* keyset) {
   Keyset::Key* key = keyset->add_key();
   key->set_output_prefix_type(output_prefix);
   key->set_key_id(key_id);
@@ -293,7 +236,7 @@ EciesAeadHkdfPrivateKey GetEciesAesGcmHkdfTestKey(
   AesGcmKeyFormat key_format;
   key_format.set_key_size(aes_gcm_key_size);
   auto aead_dem = params->mutable_dem_params()->mutable_aead_dem();
-  std::unique_ptr<AesGcmKeyManager> key_manager(new AesGcmKeyManager());
+  auto key_manager = std::make_unique<AesGcmKeyManager>();
   std::string dem_key_type = key_manager->get_key_type();
   aead_dem->set_type_url(dem_key_type);
   aead_dem->set_value(key_format.SerializeAsString());
@@ -324,8 +267,7 @@ EciesAeadHkdfPrivateKey GetEciesAesCtrHmacHkdfTestKey(
   auto params = ecies_key.mutable_public_key()->mutable_params();
   auto aead_dem = params->mutable_dem_params()->mutable_aead_dem();
 
-  std::unique_ptr<AesCtrHmacAeadKeyManager> key_manager(
-      new AesCtrHmacAeadKeyManager());
+  auto key_manager = std::make_unique<AesCtrHmacAeadKeyManager>();
   std::string dem_key_type = key_manager->get_key_type();
   aead_dem->set_type_url(dem_key_type);
   aead_dem->set_value(key_format.SerializeAsString());
@@ -342,8 +284,7 @@ EciesAeadHkdfPrivateKey GetEciesXChaCha20Poly1305HkdfTestKey(
 
   google::crypto::tink::XChaCha20Poly1305KeyFormat key_format;
   auto aead_dem = params->mutable_dem_params()->mutable_aead_dem();
-  std::unique_ptr<XChaCha20Poly1305KeyManager> key_manager(
-      new XChaCha20Poly1305KeyManager());
+  auto key_manager = std::make_unique<XChaCha20Poly1305KeyManager>();
   std::string dem_key_type = key_manager->get_key_type();
   aead_dem->set_type_url(dem_key_type);
   aead_dem->set_value(key_format.SerializeAsString());

@@ -30,12 +30,14 @@ import com.google.crypto.tink.KmsClient;
 import com.google.crypto.tink.KmsClients;
 import com.google.crypto.tink.Version;
 import com.google.crypto.tink.subtle.Validators;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.Locale;
 import java.util.Optional;
+import javax.annotation.Nullable;
 
 /**
  * An implementation of {@code KmsClient} for <a href="https://cloud.google.com/kms/">Google Cloud
@@ -51,23 +53,21 @@ public final class GcpKmsClient implements KmsClient {
   private static final String APPLICATION_NAME =
       "Tink/" + Version.TINK_VERSION + " Java/" + System.getProperty("java.version");
 
-  private CloudKMS client;
-  private String keyUri;
+  @Nullable private CloudKMS cloudKms;
+  @Nullable private String keyUri;
 
   /**
    * Constructs a generic GcpKmsClient that is not bound to any specific key.
    *
-   * @deprecated use {@link #register}
+   * We recommend users to instead register this object by calling {@link #register}.
    */
-  @Deprecated
   public GcpKmsClient() {}
 
   /**
    * Constructs a specific GcpKmsClient that is bound to a single key identified by {@code uri}.
    *
-   * @deprecated use {@link register}
+   * We recommend users to instead register this object by calling {@link #register}.
    */
-  @Deprecated
   public GcpKmsClient(String uri) {
     if (!uri.toLowerCase(Locale.US).startsWith(PREFIX)) {
       throw new IllegalArgumentException("key URI must starts with " + PREFIX);
@@ -95,6 +95,7 @@ public final class GcpKmsClient implements KmsClient {
    * href="https://developers.google.com/accounts/docs/application-default-credentials" default
    * Google Cloud credentials</a>.
    */
+  @CanIgnoreReturnValue
   @Override
   public KmsClient withCredentials(String credentialPath) throws GeneralSecurityException {
     if (credentialPath == null) {
@@ -110,11 +111,12 @@ public final class GcpKmsClient implements KmsClient {
   }
 
   /** Loads the provided credential with {@code GoogleCredential}. */
+  @CanIgnoreReturnValue
   public KmsClient withCredentials(GoogleCredential credential) {
     if (credential.createScopedRequired()) {
       credential = credential.createScoped(CloudKMSScopes.all());
     }
-    this.client =
+    this.cloudKms =
         new CloudKMS.Builder(new NetHttpTransport(), new GsonFactory(), credential)
             .setApplicationName(APPLICATION_NAME)
             .build();
@@ -122,12 +124,13 @@ public final class GcpKmsClient implements KmsClient {
   }
 
   /** Loads the provided credentials with {@code GoogleCredentials}. */
+  @CanIgnoreReturnValue
   public KmsClient withCredentials(GoogleCredentials credentials) throws GeneralSecurityException {
     if (credentials.createScopedRequired()) {
       credentials = credentials.createScoped(CloudKMSScopes.all());
     }
     try {
-      this.client =
+      this.cloudKms =
           new CloudKMS.Builder(
                   GoogleNetHttpTransport.newTrustedTransport(),
                   new GsonFactory(),
@@ -144,6 +147,7 @@ public final class GcpKmsClient implements KmsClient {
    * Loads <a href="https://developers.google.com/accounts/docs/application-default-credentials"
    * default Google Cloud credentials</a>.
    */
+  @CanIgnoreReturnValue
   @Override
   public KmsClient withDefaultCredentials() throws GeneralSecurityException {
     try {
@@ -154,6 +158,16 @@ public final class GcpKmsClient implements KmsClient {
     }
   }
 
+  /**
+   * Specifies the {@link com.google.api.services.cloudkms.v1.CloudKMS} object to be used. Only used
+   * for testing.
+   */
+  @CanIgnoreReturnValue
+  KmsClient withCloudKms(CloudKMS cloudKms) {
+      this.cloudKms = cloudKms;
+      return this;
+  }
+
   @Override
   public Aead getAead(String uri) throws GeneralSecurityException {
     if (this.keyUri != null && !this.keyUri.equals(uri)) {
@@ -161,7 +175,7 @@ public final class GcpKmsClient implements KmsClient {
           String.format("this client is bound to %s, cannot load keys bound to %s",
               this.keyUri, uri));
     }
-    return new GcpKmsAead(client, Validators.validateKmsKeyUriAndRemovePrefix(PREFIX, uri));
+    return new GcpKmsAead(cloudKms, Validators.validateKmsKeyUriAndRemovePrefix(PREFIX, uri));
   }
 
   /**
@@ -172,6 +186,12 @@ public final class GcpKmsClient implements KmsClient {
    *
    * <p>If {@code credentialPath} is present, load the credentials from that. Otherwise use the
    * default credentials.
+   *
+   * <p>In many cases, it is not necessary to register the client. For example, you can create the
+   * GcpKmsClient yourself and call {@link GcpKmsClient#getAead} to get a remote {@code Aead}. Use
+   * this {@code Aead} to encrypt a keyset for with {@code
+   * TinkProtoKeysetFormat.serializeEncryptedKeyset}, or to create an envelope {@code Aead} using
+   * {@code KmsEnvelopeAead.create}.
    */
   public static void register(Optional<String> keyUri, Optional<String> credentialPath)
       throws GeneralSecurityException {

@@ -20,6 +20,7 @@ import com.google.crypto.tink.Key;
 import com.google.crypto.tink.Parameters;
 import com.google.crypto.tink.SecretKeyAccess;
 import com.google.crypto.tink.util.Bytes;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.security.GeneralSecurityException;
 import java.util.HashMap;
 import java.util.Map;
@@ -28,7 +29,7 @@ import javax.annotation.Nullable;
 
 /**
  * Allows registering {@code KeySerializer}, {@code KeyParser}, {@code ParametersSerializer}, and
- * {@ParametersParser} objects, and parsing/serializing keys and key formats with such objects.
+ * {@link ParametersParser} objects, and parsing/serializing keys and key formats with such objects.
  */
 public final class SerializationRegistry {
   private final Map<SerializerIndex, KeySerializer<?, ?>> keySerializerMap;
@@ -65,6 +66,7 @@ public final class SerializationRegistry {
      * already been registered, this checks if they are the same. If they are, the call is ignored,
      * otherwise an exception is thrown.
      */
+    @CanIgnoreReturnValue
     public <KeyT extends Key, SerializationT extends Serialization> Builder registerKeySerializer(
         KeySerializer<KeyT, SerializationT> serializer) throws GeneralSecurityException {
       SerializerIndex index =
@@ -90,6 +92,7 @@ public final class SerializationRegistry {
      * parser.getObjectIdentifier())} has already been registered, this checks if they are the same.
      * If they are, the call is ignored, otherwise an exception is thrown.
      */
+    @CanIgnoreReturnValue
     public <SerializationT extends Serialization> Builder registerKeyParser(
         KeyParser<SerializationT> parser) throws GeneralSecurityException {
       ParserIndex index =
@@ -114,6 +117,7 @@ public final class SerializationRegistry {
      * already been registered, this checks if they are the same. If they are, the call is ignored,
      * otherwise an exception is thrown.
      */
+    @CanIgnoreReturnValue
     public <ParametersT extends Parameters, SerializationT extends Serialization>
         Builder registerParametersSerializer(
             ParametersSerializer<ParametersT, SerializationT> serializer)
@@ -141,6 +145,7 @@ public final class SerializationRegistry {
      * parser.getObjectIdentifier())} has already been registered, this checks if they are the same.
      * If they are, the call is ignored, otherwise an exception is thrown.
      */
+    @CanIgnoreReturnValue
     public <SerializationT extends Serialization> Builder registerParametersParser(
         ParametersParser<SerializationT> parser) throws GeneralSecurityException {
       ParserIndex index =
@@ -157,7 +162,7 @@ public final class SerializationRegistry {
       return this;
     }
 
-    SerializationRegistry build() {
+    public SerializationRegistry build() {
       return new SerializationRegistry(this);
     }
   }
@@ -235,6 +240,14 @@ public final class SerializationRegistry {
     }
   }
 
+  /** Returns true if a parser for this {@code serializedKey} has been registered. */
+  public <SerializationT extends Serialization> boolean hasParserForKey(
+      SerializationT serializedKey) {
+    ParserIndex index =
+        new ParserIndex(serializedKey.getClass(), serializedKey.getObjectIdentifier());
+    return keyParserMap.containsKey(index);
+  }
+
   /**
    * Parses the given serialization into a Key.
    *
@@ -257,6 +270,13 @@ public final class SerializationRegistry {
     return parser.parseKey(serializedKey, access);
   }
 
+  /** Returns true if a parser for this {@code serializedKey} has been registered. */
+  public <KeyT extends Key, SerializationT extends Serialization> boolean hasSerializerForKey(
+      KeyT key, Class<SerializationT> serializationClass) {
+    SerializerIndex index = new SerializerIndex(key.getClass(), serializationClass);
+    return keySerializerMap.containsKey(index);
+  }
+
   /**
    * Serializes a given Key into a "SerializationT" object.
    *
@@ -274,6 +294,15 @@ public final class SerializationRegistry {
     KeySerializer<KeyT, SerializationT> serializer =
         (KeySerializer<KeyT, SerializationT>) keySerializerMap.get(index);
     return serializer.serializeKey(key, access);
+  }
+
+  /** Returns true if a parser for this {@code serializedKey} has been registered. */
+  public <SerializationT extends Serialization> boolean hasParserForParameters(
+      SerializationT serializedParameters) {
+    ParserIndex index =
+        new ParserIndex(
+            serializedParameters.getClass(), serializedParameters.getObjectIdentifier());
+    return parametersParserMap.containsKey(index);
   }
 
   /**
@@ -297,6 +326,14 @@ public final class SerializationRegistry {
     ParametersParser<SerializationT> parser =
         (ParametersParser<SerializationT>) parametersParserMap.get(index);
     return parser.parseParameters(serializedParameters);
+  }
+
+  /** Returns true if a parser for this {@code serializedKey} has been registered. */
+  public <ParametersT extends Parameters, SerializationT extends Serialization>
+      boolean hasSerializerForParameters(
+          ParametersT parameters, Class<SerializationT> serializationClass) {
+    SerializerIndex index = new SerializerIndex(parameters.getClass(), serializationClass);
+    return parametersSerializerMap.containsKey(index);
   }
 
   /**

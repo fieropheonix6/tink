@@ -16,7 +16,6 @@
 
 package com.google.crypto.tink;
 
-import com.google.crypto.tink.annotations.Alpha;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.CheckReturnValue;
 import com.google.errorprone.annotations.Immutable;
@@ -44,7 +43,6 @@ import javax.annotation.Nullable;
  * via {@code InsecureSecretKeyAccess.get()}.
  */
 @CheckReturnValue
-@Alpha
 @Immutable
 public final class SecretKeyAccess {
   private SecretKeyAccess() {}
@@ -56,7 +54,17 @@ public final class SecretKeyAccess {
     return INSTANCE;
   }
 
-  /** Throws an exception if the passed in SecretKeyAccess is null, otherwise returns it. */
+  /**
+   * Throws an exception if the passed in {@link SecretKeyAccess} is null, otherwise returns it.
+   *
+   * <p>Note: Tink has two types of APIs, some which take a nullable {@code SecretKeyAccess}, and
+   * some which take a {@code SecretKeyAccess} without annotation. When an API takes a nullable
+   * {@code SecretKeyAccess}, this indicates that proper usage may call it with {@code null}, hence
+   * we typically want to throw a checked exception and {@code requireAccess} here is appropriate.
+   * Conversely, if an API takes an unannotated {@code SecretKeyAccess}, this indicates that the API
+   * always requires a non-null object. In this case, using it with null warrants should usually
+   * throw a null pointer exception (and one does not want to use {@code requireAccess}).
+   */
   @CanIgnoreReturnValue
   public static SecretKeyAccess requireAccess(@Nullable SecretKeyAccess access)
       throws GeneralSecurityException {

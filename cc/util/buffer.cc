@@ -16,6 +16,8 @@
 
 #include "tink/util/buffer.h"
 
+#include <memory>
+
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "tink/util/status.h"
@@ -54,7 +56,7 @@ class OwningBuffer : public Buffer {
     return OkStatus();
   }
 
-  ~OwningBuffer() override {}
+  ~OwningBuffer() override = default;
 
  private:
   std::unique_ptr<char[]> owned_mem_block_;
@@ -91,7 +93,7 @@ class NonOwningBuffer : public Buffer {
     return OkStatus();
   }
 
-  ~NonOwningBuffer() override {}
+  ~NonOwningBuffer() override = default;
 
  private:
   char* const mem_block_;

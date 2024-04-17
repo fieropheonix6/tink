@@ -15,6 +15,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 #include "tink/subtle/pem_parser_boringssl.h"
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <utility>
@@ -36,6 +37,7 @@
 #include "tink/internal/ssl_util.h"
 #include "tink/subtle/common_enums.h"
 #include "tink/subtle/subtle_util_boringssl.h"
+#include "tink/util/secret_data.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 
@@ -358,7 +360,7 @@ PemParser::ParseEcPublicKey(absl::string_view pem_serialized_key) {
                         "PEM Public Key parsing failed");
   }
   // No need to free bssl_ecdsa_key after use.
-  EC_KEY* bssl_ecdsa_key = EVP_PKEY_get0_EC_KEY(evp_ecdsa_key.get());
+  const EC_KEY* bssl_ecdsa_key = EVP_PKEY_get0_EC_KEY(evp_ecdsa_key.get());
   auto is_valid = VerifyEcdsaKey(bssl_ecdsa_key);
   if (!is_valid.ok()) {
     return is_valid;
@@ -413,7 +415,7 @@ PemParser::ParseEcPrivateKey(absl::string_view pem_serialized_key) {
   }
 
   // No need to free bssl_ecdsa_key after use.
-  EC_KEY* bssl_ecdsa_key = EVP_PKEY_get0_EC_KEY(evp_ecdsa_key.get());
+  const EC_KEY* bssl_ecdsa_key = EVP_PKEY_get0_EC_KEY(evp_ecdsa_key.get());
   util::Status verify_result = VerifyEcdsaKey(bssl_ecdsa_key);
   if (!verify_result.ok()) {
     return verify_result;

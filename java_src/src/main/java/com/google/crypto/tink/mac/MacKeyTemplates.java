@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2017 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,19 +27,33 @@ import com.google.crypto.tink.proto.OutputPrefixType;
 /**
  * Pre-generated {@link KeyTemplate} for {@link com.google.crypto.tink.Mac}.
  *
+ * <p>We recommend to avoid this class in order to keep dependencies small.
+ *
+ * <ul>
+ *   <li>Using this class adds a dependency on protobuf. We hope that eventually it is possible to
+ *       use Tink without a dependency on protobuf.
+ *   <li>Using this class adds a dependency on classes for all involved key types.
+ * </ul>
+ *
+ * These dependencies all come from static class member variables, which are initialized when the
+ * class is loaded. This implies that static analysis and code minimization tools (such as proguard)
+ * cannot remove the usages either.
+ *
+ * <p>Instead, we recommend to use {@code KeysetHandle.generateEntryFromParametersName} or {@code
+ * KeysetHandle.generateEntryFromParameters}.
+ *
  * <p>One can use these templates to generate new {@link com.google.crypto.tink.proto.Keyset} with
  * {@link com.google.crypto.tink.KeysetHandle}. To generate a new keyset that contains a single
  * {@link com.google.crypto.tink.proto.HmacKey}, one can do:
  *
  * <pre>{@code
- * Config.register(Mac.TINK_1_0_0);
+ * MacConfig.register();
  * KeysetHandle handle = KeysetHandle.generateNew(MacKeyTemplates.HMAC_SHA256_128BITTAG);
  * Mac mac = handle.getPrimitive(Mac.class);
  * }</pre>
  *
  * @since 1.0.0
- * @deprecated use {@link com.google.crypto.tink.KeyTemplates#get}, e.g.,
- *     KeyTemplates.get("HMAC_SHA256_128BITTAG")
+ * @deprecated Use PredefinedMacParameters instead.
  */
 @Deprecated
 public final class MacKeyTemplates {
@@ -115,8 +129,9 @@ public final class MacKeyTemplates {
               AesCmacKeyFormat.newBuilder()
                   .setKeySize(32)
                   .setParams(AesCmacParams.newBuilder().setTagSize(16).build())
-                  .build().toByteString())
-          .setTypeUrl(new AesCmacKeyManager().getKeyType())
+                  .build()
+                  .toByteString())
+          .setTypeUrl("type.googleapis.com/google.crypto.tink.AesCmacKey")
           .setOutputPrefixType(OutputPrefixType.TINK)
           .build();
 
@@ -135,7 +150,7 @@ public final class MacKeyTemplates {
         .build();
     return KeyTemplate.newBuilder()
         .setValue(format.toByteString())
-        .setTypeUrl(new HmacKeyManager().getKeyType())
+        .setTypeUrl(HmacKeyManager.getKeyType())
         .setOutputPrefixType(OutputPrefixType.TINK)
         .build();
   }

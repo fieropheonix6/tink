@@ -20,7 +20,6 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 
-import com.google.crypto.tink.testing.TestUtil;
 import java.security.GeneralSecurityException;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -138,8 +137,8 @@ public class HkdfTest {
    */
   private String computeHkdfHex(String macAlgorithm, String ikmHex, String saltHex, String infoHex,
       int size) throws GeneralSecurityException {
-    return TestUtil.hexEncode(
-        Hkdf.computeHkdf(macAlgorithm, TestUtil.hexDecode(ikmHex), TestUtil.hexDecode(saltHex),
-          TestUtil.hexDecode(infoHex), size));
+    return Hex.encode(
+        Hkdf.computeHkdf(
+            macAlgorithm, Hex.decode(ikmHex), Hex.decode(saltHex), Hex.decode(infoHex), size));
   }
 }

@@ -52,17 +52,15 @@ public final class AwsKmsClient implements KmsClient {
   /**
    * Constructs a generic AwsKmsClient that is not bound to any specific key.
    *
-   * @deprecated use {@link #register}
+   * This constructor should not be used. We recommend to register the client instead.
    */
-  @Deprecated
   public AwsKmsClient() {}
 
   /**
    * Constructs a specific AwsKmsClient that is bound to a single key identified by {@code uri}.
    *
-   * @deprecated use {@link #register}
+   * This constructor should not be used. We recommend to register the client instead.
    */
-  @Deprecated
   public AwsKmsClient(String uri) {
     if (!uri.toLowerCase(Locale.US).startsWith(PREFIX)) {
       throw new IllegalArgumentException("key URI must starts with " + PREFIX);
@@ -191,6 +189,12 @@ public final class AwsKmsClient implements KmsClient {
    *
    * <p>If {@code credentialPath} is present, load the credentials from that. Otherwise use the
    * default credentials.
+   *
+   * <p>In many cases, it is not necessary to register the client. For example, you can create the
+   * AwsKmsClient yourself and call {@link AwsKmsClient#getAead} to get a remote {@code Aead}. Use
+   * this {@code Aead} to encrypt a keyset for with {@code
+   * TinkProtoKeysetFormat.serializeEncryptedKeyset}, or to create an envelope {@code Aead} using
+   * {@code KmsEnvelopeAead.create}.
    */
   public static void register(Optional<String> keyUri, Optional<String> credentialPath)
       throws GeneralSecurityException {

@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package aead
 
@@ -43,7 +41,7 @@ var errInvalidChaCha20Poly1305KeyFormat = fmt.Errorf("chacha20poly1305_key_manag
 type chaCha20Poly1305KeyManager struct{}
 
 // Primitive creates an ChaCha20Poly1305 subtle for the given serialized ChaCha20Poly1305Key proto.
-func (km *chaCha20Poly1305KeyManager) Primitive(serializedKey []byte) (interface{}, error) {
+func (km *chaCha20Poly1305KeyManager) Primitive(serializedKey []byte) (any, error) {
 	if len(serializedKey) == 0 {
 		return nil, errInvalidChaCha20Poly1305Key
 	}

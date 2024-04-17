@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2017 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@ import com.google.crypto.tink.proto.RsaSsaPssParams;
 import com.google.crypto.tink.proto.RsaSsaPssPublicKey;
 import com.google.crypto.tink.signature.internal.SigUtil;
 import com.google.crypto.tink.subtle.Random;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.StringReader;
@@ -42,10 +43,15 @@ import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
 import java.util.ArrayList;
 import java.util.List;
+import javax.annotation.Nullable;
 
 /**
  * SignaturePemKeysetReader is a {@link KeysetReader} that can read digital signature keys in PEM
  * format (RFC 7468).
+ *
+ * <p>Only supports public keys.
+ *
+ * <p>Private, unknown or invalid keys are ignored.
  *
  * <h3>Usage</h3>
  *
@@ -64,7 +70,7 @@ public final class SignaturePemKeysetReader implements KeysetReader {
     this.pemKeys = pemKeys;
   }
 
-  /** @return a {@link Builder} for {@link SignaturePemKeysetReader}. */
+  /** Returns a {@link Builder} for {@link SignaturePemKeysetReader}. */
   public static Builder newBuilder() {
     return new Builder();
   }
@@ -87,6 +93,7 @@ public final class SignaturePemKeysetReader implements KeysetReader {
      *
      * <p>The first key in the first added PEM is the primary key.
      */
+    @CanIgnoreReturnValue
     public Builder addPem(String pem, PemKeyType keyType) {
       PemKey pemKey = new PemKey();
       pemKey.reader = new BufferedReader(new StringReader(pem));
@@ -126,6 +133,7 @@ public final class SignaturePemKeysetReader implements KeysetReader {
   }
 
   /** Reads a single PEM key from {@code reader}. Invalid or unparsable PEM would be ignored */
+  @Nullable
   private static Keyset.Key readKey(BufferedReader reader, PemKeyType pemKeyType)
       throws IOException {
     Key key = pemKeyType.readKey(reader);
@@ -139,7 +147,7 @@ public final class SignaturePemKeysetReader implements KeysetReader {
     } else if (key instanceof ECPublicKey) {
       keyData = convertEcPublicKey(pemKeyType, (ECPublicKey) key);
     } else {
-      // TODO(thaidn): support RSA and EC private keys.
+      // Private keys are ignored.
       return null;
     }
 
@@ -158,13 +166,13 @@ public final class SignaturePemKeysetReader implements KeysetReader {
           RsaSsaPkcs1Params.newBuilder().setHashType(getHashType(pemKeyType)).build();
       RsaSsaPkcs1PublicKey pkcs1PubKey =
           RsaSsaPkcs1PublicKey.newBuilder()
-              .setVersion(new RsaSsaPkcs1VerifyKeyManager().getVersion())
+              .setVersion(0)
               .setParams(params)
               .setE(SigUtil.toUnsignedIntByteString(key.getPublicExponent()))
               .setN(SigUtil.toUnsignedIntByteString(key.getModulus()))
               .build();
       return KeyData.newBuilder()
-          .setTypeUrl(new RsaSsaPkcs1VerifyKeyManager().getKeyType())
+          .setTypeUrl(RsaSsaPkcs1VerifyKeyManager.getKeyType())
           .setValue(pkcs1PubKey.toByteString())
           .setKeyMaterialType(KeyData.KeyMaterialType.ASYMMETRIC_PUBLIC)
           .build();
@@ -177,13 +185,13 @@ public final class SignaturePemKeysetReader implements KeysetReader {
               .build();
       RsaSsaPssPublicKey pssPubKey =
           RsaSsaPssPublicKey.newBuilder()
-              .setVersion(new RsaSsaPssVerifyKeyManager().getVersion())
+              .setVersion(0)
               .setParams(params)
               .setE(SigUtil.toUnsignedIntByteString(key.getPublicExponent()))
               .setN(SigUtil.toUnsignedIntByteString(key.getModulus()))
               .build();
       return KeyData.newBuilder()
-          .setTypeUrl(new RsaSsaPssVerifyKeyManager().getKeyType())
+          .setTypeUrl(RsaSsaPssVerifyKeyManager.getKeyType())
           .setValue(pssPubKey.toByteString())
           .setKeyMaterialType(KeyData.KeyMaterialType.ASYMMETRIC_PUBLIC)
           .build();
@@ -202,14 +210,14 @@ public final class SignaturePemKeysetReader implements KeysetReader {
               .build();
       EcdsaPublicKey ecdsaPubKey =
           EcdsaPublicKey.newBuilder()
-              .setVersion(new EcdsaVerifyKeyManager().getVersion())
+              .setVersion(0)
               .setParams(params)
               .setX(SigUtil.toUnsignedIntByteString(key.getW().getAffineX()))
               .setY(SigUtil.toUnsignedIntByteString(key.getW().getAffineY()))
               .build();
 
       return KeyData.newBuilder()
-          .setTypeUrl(new EcdsaVerifyKeyManager().getKeyType())
+          .setTypeUrl(EcdsaVerifyKeyManager.getKeyType())
           .setValue(ecdsaPubKey.toByteString())
           .setKeyMaterialType(KeyData.KeyMaterialType.ASYMMETRIC_PUBLIC)
           .build();

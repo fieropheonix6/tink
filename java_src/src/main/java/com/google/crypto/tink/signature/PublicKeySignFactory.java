@@ -18,7 +18,6 @@ package com.google.crypto.tink.signature;
 
 import com.google.crypto.tink.KeysetHandle;
 import com.google.crypto.tink.PublicKeySign;
-import com.google.crypto.tink.Registry;
 import java.security.GeneralSecurityException;
 
 /**
@@ -44,9 +43,9 @@ public final class PublicKeySignFactory {
    *     {@code PublicKeySignWrapper} instead.
    */
   @Deprecated
-  public static PublicKeySign getPrimitive(KeysetHandle keysetHandle)
+  public  static PublicKeySign getPrimitive(KeysetHandle keysetHandle)
       throws GeneralSecurityException {
-    Registry.registerPrimitiveWrapper(new PublicKeySignWrapper());
+    PublicKeySignWrapper.register();
     return keysetHandle.getPrimitive(PublicKeySign.class);
   }
 

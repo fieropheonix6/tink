@@ -17,16 +17,21 @@
 #include "tink/jwt/verified_jwt.h"
 
 #include <string>
+#include <vector>
 
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_format.h"
+#include "absl/strings/string_view.h"
 #include "absl/strings/substitute.h"
+#include "absl/time/time.h"
 #include "tink/jwt/internal/json_util.h"
+#include "tink/jwt/raw_jwt.h"
+#include "tink/util/statusor.h"
 
 namespace crypto {
 namespace tink {
 
-VerifiedJwt::VerifiedJwt() {}
+VerifiedJwt::VerifiedJwt() = default;
 
 VerifiedJwt::VerifiedJwt(const RawJwt& raw_jwt) {
   raw_jwt_ = raw_jwt;

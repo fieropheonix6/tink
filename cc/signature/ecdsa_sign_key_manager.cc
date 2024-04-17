@@ -16,6 +16,7 @@
 
 #include "tink/signature/ecdsa_sign_key_manager.h"
 
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -23,6 +24,7 @@
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "tink/config/tink_fips.h"
+#include "tink/input_stream.h"
 #include "tink/internal/ec_util.h"
 #include "tink/public_key_sign.h"
 #include "tink/signature/ecdsa_verify_key_manager.h"
@@ -74,6 +76,12 @@ StatusOr<EcdsaPrivateKey> EcdsaSignKeyManager::DeriveKey(
     return crypto::tink::util::Status(
         absl::StatusCode::kInternal,
         "Deriving EC keys is not allowed in FIPS mode.");
+  }
+
+  util::Status status =
+      ValidateVersion(ecdsa_key_format.version(), get_version());
+  if (!status.ok()) {
+    return status;
   }
 
   // Extract enough random bytes from the input_stream to match the security

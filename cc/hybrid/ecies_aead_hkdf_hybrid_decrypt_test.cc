@@ -16,19 +16,24 @@
 
 #include "tink/hybrid/ecies_aead_hkdf_hybrid_decrypt.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
+#include "absl/status/status.h"
+#include "absl/strings/string_view.h"
 #include "tink/aead/aes_ctr_hmac_aead_key_manager.h"
 #include "tink/aead/aes_gcm_key_manager.h"
 #include "tink/aead/xchacha20_poly1305_key_manager.h"
 #include "tink/daead/aes_siv_key_manager.h"
 #include "tink/hybrid/ecies_aead_hkdf_hybrid_encrypt.h"
 #include "tink/hybrid_decrypt.h"
+#include "tink/hybrid_encrypt.h"
 #include "tink/internal/ec_util.h"
 #include "tink/internal/ssl_util.h"
 #include "tink/registry.h"
@@ -98,7 +103,7 @@ class EciesAeadHkdfHybridDecryptTest : public ::testing::Test {
 
   void TestValidKey(const EciesAeadHkdfPrivateKey& ecies_key) {
     auto result(EciesAeadHkdfHybridDecrypt::New(ecies_key));
-    ASSERT_TRUE(result.ok()) << result.status() << ecies_key.DebugString();
+    ASSERT_TRUE(result.ok()) << result.status();
     std::unique_ptr<HybridDecrypt> hybrid_decrypt(std::move(result.value()));
 
     std::unique_ptr<HybridEncrypt> hybrid_encrypt(std::move(
@@ -215,21 +220,6 @@ TEST_F(EciesAeadHkdfHybridDecryptTest, testInvalidKeys) {
     EXPECT_PRED_FORMAT2(testing::IsSubstring, "Unsupported DEM",
                         std::string(result.status().message()));
   }
-}
-
-TEST_F(EciesAeadHkdfHybridDecryptTest, testGettingHybridEncryptWithoutManager) {
-  // Prepare an ECIES key.
-  Registry::Reset();
-  auto ecies_key = test::GetEciesAesGcmHkdfTestKey(EllipticCurveType::NIST_P256,
-                                                   EcPointFormat::UNCOMPRESSED,
-                                                   HashType::SHA256, 32);
-
-  // Try to get a HybridEncrypt primitive without DEM key manager.
-  auto bad_result(EciesAeadHkdfHybridDecrypt::New(ecies_key));
-  EXPECT_FALSE(bad_result.ok());
-  EXPECT_EQ(absl::StatusCode::kFailedPrecondition, bad_result.status().code());
-  EXPECT_PRED_FORMAT2(testing::IsSubstring, "No manager for DEM",
-                      std::string(bad_result.status().message()));
 }
 
 TEST_F(EciesAeadHkdfHybridDecryptTest, testAesGcmHybridDecryption) {

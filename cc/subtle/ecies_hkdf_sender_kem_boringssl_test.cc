@@ -16,10 +16,14 @@
 
 #include "tink/subtle/ecies_hkdf_sender_kem_boringssl.h"
 
+#include <cstdint>
 #include <iostream>
+#include <ostream>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
 #include "absl/strings/escaping.h"
@@ -103,7 +107,7 @@ TEST_F(EciesHkdfSenderKemBoringSslTest, TestSenderRecipientBasic) {
         absl::HexStringToBytes(test.salt_hex),
         absl::HexStringToBytes(test.info_hex),
         test.out_len, test.point_format);
-    std::cout << absl::BytesToHexString(kem_key->get_kem_bytes()) << std::endl;
+    std::cout << absl::BytesToHexString(kem_key->get_kem_bytes()) << '\n';
     EXPECT_EQ(absl::BytesToHexString(
                   util::SecretDataAsStringView(kem_key->get_symmetric_key())),
               absl::BytesToHexString(util::SecretDataAsStringView(

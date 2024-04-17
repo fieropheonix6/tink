@@ -24,15 +24,18 @@
 #include <string>
 #include <utility>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/status/status.h"
 #include "absl/strings/escaping.h"
 #include "absl/strings/substitute.h"
-#include "tink/util/protobuf_helper.h"
+#include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 #include "tink/util/test_util.h"
 #include "proto/aes_eax.pb.h"
 #include "proto/aes_gcm.pb.h"
 #include "proto/tink.pb.h"
+#include "tink/keyset_reader.h"
 
 namespace crypto {
 namespace tink {
@@ -194,6 +197,15 @@ TEST_F(JsonKeysetReaderTest, testReadFromString) {
     EXPECT_FALSE(read_result.ok());
     EXPECT_EQ(absl::StatusCode::kInvalidArgument, read_result.status().code());
   }
+
+  {  // A valid JSON value, but not a JSON object.
+    auto reader_result = JsonKeysetReader::New("124");
+    EXPECT_TRUE(reader_result.ok()) << reader_result.status();
+    auto reader = std::move(reader_result.value());
+    auto read_result = reader->Read();
+    EXPECT_FALSE(read_result.ok());
+    EXPECT_EQ(absl::StatusCode::kInvalidArgument, read_result.status().code());
+  }
 }
 
 TEST_F(JsonKeysetReaderTest, testReadFromStream) {
@@ -312,11 +324,11 @@ TEST_F(JsonKeysetReaderTest, ReadLargeKeyId) {
   EXPECT_THAT(keyset->primary_key_id(), Eq(4294967275));
 }
 
-TEST_F(JsonKeysetReaderTest, ReadNegativeKeyId) {
+TEST_F(JsonKeysetReaderTest, RejectsNegativeKeyIds) {
   std::string json_serialization =
       absl::Substitute(R"(
       {
-         "primaryKeyId": -21,
+         "primaryKeyId": 711,
          "key":[
             {
                "keyData":{
@@ -347,6 +359,61 @@ TEST_F(JsonKeysetReaderTest, ReadNegativeKeyId) {
   auto reader = std::move(reader_result.value());
   auto read_result = reader->Read();
   EXPECT_THAT(read_result, Not(IsOk()));
+}
+
+TEST_F(JsonKeysetReaderTest, RejectsKeyIdLargerThanUint32) {
+  // 4294967296 = 2^32, which is too large for uint32.
+  std::string json_serialization =
+      absl::Substitute(R"(
+      {
+         "primaryKeyId": 711,
+         "key":[
+            {
+               "keyData":{
+                  "typeUrl":"type.googleapis.com/google.crypto.tink.AesGcmKey",
+                  "keyMaterialType":"SYMMETRIC",
+                  "value": "$0"
+               },
+               "outputPrefixType":"TINK",
+               "keyId": 4294967296,
+               "status":"ENABLED"
+            },
+            {
+               "keyData":{
+                  "typeUrl":"type.googleapis.com/google.crypto.tink.AesEaxKey",
+                  "keyMaterialType":"SYMMETRIC",
+                  "value":"$1"
+               },
+               "outputPrefixType":"RAW",
+               "keyId":711,
+               "status":"ENABLED"
+            }
+         ]
+      })",
+                       absl::Base64Escape(gcm_key_.SerializeAsString()),
+                       absl::Base64Escape(eax_key_.SerializeAsString()));
+  auto reader_result = JsonKeysetReader::New(json_serialization);
+  ASSERT_THAT(reader_result, IsOk());
+  auto reader = std::move(reader_result.value());
+  auto read_result = reader->Read();
+  EXPECT_THAT(read_result, Not(IsOk()));
+}
+
+
+TEST_F(JsonKeysetReaderTest, parseRecursiveJsonStringFails) {
+  std::string recursive_json;
+  for (int i = 0; i < 1000000; i++) {
+    recursive_json.append("{\"a\":");
+  }
+  recursive_json.append("1");
+  for (int i = 0; i < 1000000; i++) {
+    recursive_json.append("}");
+  }
+  util::StatusOr<std::unique_ptr<KeysetReader>> reader =
+      JsonKeysetReader::New(recursive_json);
+  ASSERT_THAT(reader, IsOk());
+  util::StatusOr<std::unique_ptr<Keyset>> keyset = (*reader)->Read();
+  EXPECT_THAT(keyset, Not(IsOk()));
 }
 
 }  // namespace

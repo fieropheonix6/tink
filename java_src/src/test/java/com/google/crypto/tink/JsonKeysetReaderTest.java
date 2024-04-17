@@ -20,11 +20,11 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.fail;
 
-import com.google.crypto.tink.aead.AeadKeyTemplates;
+import com.google.crypto.tink.aead.PredefinedAeadParameters;
 import com.google.crypto.tink.config.TinkConfig;
-import com.google.crypto.tink.mac.MacKeyTemplates;
-import com.google.crypto.tink.proto.KeyTemplate;
+import com.google.crypto.tink.mac.PredefinedMacParameters;
 import com.google.crypto.tink.proto.Keyset;
+import com.google.crypto.tink.subtle.Hex;
 import com.google.crypto.tink.subtle.Random;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -77,7 +77,7 @@ public class JsonKeysetReaderTest {
 
   @BeforeClass
   public static void setUp() throws GeneralSecurityException {
-    Config.register(TinkConfig.TINK_1_0_0);
+    TinkConfig.register();
   }
 
   private void assertKeysetHandle(KeysetHandle handle1, KeysetHandle handle2) throws Exception {
@@ -91,8 +91,7 @@ public class JsonKeysetReaderTest {
 
   @Test
   public void testRead_singleKey_shouldWork() throws Exception {
-    KeyTemplate template = MacKeyTemplates.HMAC_SHA256_128BITTAG;
-    KeysetHandle handle1 = KeysetHandle.generateNew(template);
+    KeysetHandle handle1 = KeysetHandle.generateNew(PredefinedMacParameters.HMAC_SHA256_128BITTAG);
     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
     CleartextKeysetHandle.write(handle1, JsonKeysetWriter.withOutputStream(outputStream));
     KeysetHandle handle2 =
@@ -125,6 +124,47 @@ public class JsonKeysetReaderTest {
 
     assertKeysetHandle(handle1, handle2);
   }
+
+  @Test
+  public void readTestKeysetVerifyTestTag() throws Exception {
+    KeysetHandle handle = CleartextKeysetHandle.read(JsonKeysetReader.withString(JSON_KEYSET));
+    byte[] data = "data".getBytes(UTF_8);
+    Mac mac = handle.getPrimitive(Mac.class);
+    byte[] tag = Hex.decode("0120a4107f3549e4fb3137415a63f5c8a0524f8ca7");
+    mac.verifyMac(tag, data);
+  }
+
+  @Test
+  public void readEncryptedTestKeysetVerifyTestTag() throws Exception {
+    // This is the same test vector as in KeysetHandleTest.
+    // An AEAD key, with which we encrypted the mac keyset below.
+    byte[] serializedKeysetEncryptionKeyset =
+        Hex.decode(
+            "08b891f5a20412580a4c0a30747970652e676f6f676c65617069732e636f6d2f676f6f676c652e6372797"
+                + "0746f2e74696e6b2e4165734561784b65791216120208101a10e5d7d0cdd649e81e7952260689b2"
+                + "e1971801100118b891f5a2042001");
+    KeysetHandle keysetEncryptionHandle = TinkProtoKeysetFormat.parseKeyset(
+        serializedKeysetEncryptionKeyset, InsecureSecretKeyAccess.get());
+    Aead keysetEncryptionAead = keysetEncryptionHandle.getPrimitive(Aead.class);
+    byte[] associatedData = Hex.decode("abcdef330012");
+
+    String encryptedKeyset =
+        "{\"encryptedKeyset\":"
+            + "\"AURdSLhZcFEgMBptDyi4/D8hL3h+Iz7ICgLrdeVRH26Fi3uSeewFoFA5cV5wfNueme3/BBR60yJ4hGpQ"
+            + "p+/248ZIgfuWyfmAGZ4dmYnYC1qd/IWkZZfVr3aOsx4j4kFZHkkvA+XIZUh/INbdPsMUNJy9cmu6s8osdH"
+            + "zu0XzP2ltWUowbr0fLQJwy92eAvU6gv91k6Tc=\","
+            + "\"keysetInfo\":{\"primaryKeyId\":547623039,\"keyInfo\":[{\"typeUrl\":"
+            + "\"type.googleapis.com/google.crypto.tink.HmacKey\",\"status\":\"ENABLED\","
+            + "\"keyId\":547623039,\"outputPrefixType\":\"TINK\"}]}}";
+
+    KeysetHandle handle = KeysetHandle.readWithAssociatedData(
+        JsonKeysetReader.withString(encryptedKeyset), keysetEncryptionAead, associatedData);
+    byte[] data = "data".getBytes(UTF_8);
+    Mac mac = handle.getPrimitive(Mac.class);
+    byte[] tag = Hex.decode("0120a4107f3549e4fb3137415a63f5c8a0524f8ca7");
+    mac.verifyMac(tag, data);
+  }
+
 
   @Test
   public void testRead_urlSafeKeyset_shouldWork() throws Exception {
@@ -241,8 +281,7 @@ public class JsonKeysetReaderTest {
 
   @Test
   public void testRead_jsonKeysetWriter_shouldWork() throws Exception {
-    KeyTemplate template = MacKeyTemplates.HMAC_SHA256_128BITTAG;
-    KeysetHandle handle1 = KeysetHandle.generateNew(template);
+    KeysetHandle handle1 = KeysetHandle.generateNew(PredefinedMacParameters.HMAC_SHA256_128BITTAG);
     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
     CleartextKeysetHandle.write(handle1, JsonKeysetWriter.withOutputStream(outputStream));
     KeysetHandle handle2 =
@@ -271,9 +310,9 @@ public class JsonKeysetReaderTest {
 
   @Test
   public void testReadEncrypted_singleKey_shouldWork() throws Exception {
-    KeyTemplate masterKeyTemplate = AeadKeyTemplates.AES128_EAX;
-    Aead masterKey = Registry.getPrimitive(Registry.newKeyData(masterKeyTemplate));
-    KeysetHandle handle1 = KeysetHandle.generateNew(MacKeyTemplates.HMAC_SHA256_128BITTAG);
+    Aead masterKey =
+        KeysetHandle.generateNew(PredefinedAeadParameters.AES128_EAX).getPrimitive(Aead.class);
+    KeysetHandle handle1 = KeysetHandle.generateNew(PredefinedMacParameters.HMAC_SHA256_128BITTAG);
     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
     handle1.write(JsonKeysetWriter.withOutputStream(outputStream), masterKey);
     KeysetHandle handle2 =
@@ -343,10 +382,10 @@ public class JsonKeysetReaderTest {
 
   @Test
   public void testReadEncrypted_missingEncryptedKeyset_shouldThrowException() throws Exception {
-    KeyTemplate masterKeyTemplate = AeadKeyTemplates.AES128_EAX;
-    Aead masterKey = Registry.getPrimitive(Registry.newKeyData(masterKeyTemplate));
+    Aead masterKey =
+        KeysetHandle.generateNew(PredefinedAeadParameters.AES128_EAX).getPrimitive(Aead.class);
     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-    KeysetHandle handle = KeysetHandle.generateNew(MacKeyTemplates.HMAC_SHA256_128BITTAG);
+    KeysetHandle handle = KeysetHandle.generateNew(PredefinedMacParameters.HMAC_SHA256_128BITTAG);
     handle.write(JsonKeysetWriter.withOutputStream(outputStream), masterKey);
     JsonObject json =
         JsonParser.parseString(new String(outputStream.toByteArray(), UTF_8)).getAsJsonObject();
@@ -360,9 +399,9 @@ public class JsonKeysetReaderTest {
 
   @Test
   public void testReadEncrypted_jsonKeysetWriter_shouldWork() throws Exception {
-    KeyTemplate masterKeyTemplate = AeadKeyTemplates.AES128_EAX;
-    Aead masterKey = Registry.getPrimitive(Registry.newKeyData(masterKeyTemplate));
-    KeysetHandle handle1 = KeysetHandle.generateNew(MacKeyTemplates.HMAC_SHA256_128BITTAG);
+    Aead masterKey =
+        KeysetHandle.generateNew(PredefinedAeadParameters.AES128_EAX).getPrimitive(Aead.class);
+    KeysetHandle handle1 = KeysetHandle.generateNew(PredefinedMacParameters.HMAC_SHA256_128BITTAG);
     ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
     handle1.write(JsonKeysetWriter.withOutputStream(outputStream), masterKey);
     KeysetHandle handle2 =
@@ -372,22 +411,90 @@ public class JsonKeysetReaderTest {
   }
 
   @Test
-  public void testReadKeyset_negativeKeyId_works() throws Exception {
+  public void readKeyset_negativeKeyId_works() throws Exception {
     String jsonKeysetString = createJsonKeysetWithId("-21");
     Keyset keyset = JsonKeysetReader.withString(jsonKeysetString).read();
     assertThat(keyset.getPrimaryKeyId()).isEqualTo(-21);
   }
 
   @Test
-  public void testReadKeyset_hugeKeyId_convertsIntoSignedInt32() throws Exception {
+  public void readKeyset_convertsUnsignedUint32IntoSignedInt32() throws Exception {
     String jsonKeysetString = createJsonKeysetWithId("4294967275"); // 2^32 - 21
     Keyset keyset = JsonKeysetReader.withString(jsonKeysetString).read();
     assertThat(keyset.getPrimaryKeyId()).isEqualTo(-21);
   }
 
   @Test
+  public void readKeyset_acceptsMaxUint32() throws Exception {
+    String jsonKeysetString = createJsonKeysetWithId("4294967295"); // 2^32 - 1 = 0xffffffff
+    Keyset keyset = JsonKeysetReader.withString(jsonKeysetString).read();
+    assertThat(keyset.getPrimaryKeyId()).isEqualTo(-1);
+  }
+
+  @Test
+  public void readKeyset_acceptsMinInt32() throws Exception {
+    String jsonKeysetString = createJsonKeysetWithId("-2147483648"); // - 2^31
+    Keyset keyset = JsonKeysetReader.withString(jsonKeysetString).read();
+    assertThat(keyset.getPrimaryKeyId()).isEqualTo(-2147483648);
+  }
+
+  @Test
+  public void readKeyset_rejectsKeyIdLargerThanUint32() throws Exception {
+    String jsonKeysetString = createJsonKeysetWithId("4294967296"); // 2^32
+    assertThrows(IOException.class, () -> JsonKeysetReader.withString(jsonKeysetString).read());
+  }
+
+  @Test
+  public void readKeyset_rejectsKeyIdLargerThanUint64() throws Exception {
+    String jsonKeysetString = createJsonKeysetWithId("18446744073709551658"); // 2^64 + 42
+    assertThrows(IOException.class, () -> JsonKeysetReader.withString(jsonKeysetString).read());
+  }
+
+  @Test
+  public void readKeyset_rejectsKeyIdSmallerThanInt32() throws Exception {
+    String jsonKeysetString = createJsonKeysetWithId("-2147483649"); // - 2^31 - 1
+    assertThrows(IOException.class, () -> JsonKeysetReader.withString(jsonKeysetString).read());
+  }
+
+  @Test
   public void testReadKeyset_keyIdWithComment_throws() throws Exception {
     String jsonKeysetString = createJsonKeysetWithId("123 /* comment on key ID */");
+    assertThrows(IOException.class, () -> JsonKeysetReader.withString(jsonKeysetString).read());
+  }
+
+  @Test
+  public void testReadKeyset_withDuplicatedMapKey_throws() throws Exception {
+    String jsonKeysetString = "{"
+        + "\"primaryKeyId\": 123,"
+        + "\"key\": [{"
+        + "\"keyData\": {"
+        + "\"typeUrl\": \"type.googleapis.com/google.crypto.tink.HmacKey\","
+        + "\"keyMaterialType\": \"SYMMETRIC\","
+        + "\"keyMaterialType\": \"SYMMETRIC\","
+        + "\"value\": \"EgQIAxAQGiBYhMkitTWFVefTIBg6kpvac+bwFOGSkENGmU+1EYgocg==\""
+        + "},"
+        + "\"outputPrefixType\": \"TINK\","
+        + "\"keyId\": 123,"
+        + "\"status\": \"ENABLED\""
+        + "}]}";
+    assertThrows(IOException.class, () -> JsonKeysetReader.withString(jsonKeysetString).read());
+  }
+
+  @Test
+  public void testReadKeyset_withInvalidCharacterInTypeUrl_throws() throws Exception {
+    String jsonKeysetString =
+        "{"
+            + "\"primaryKeyId\": 123,"
+            + "\"key\": [{"
+            + "\"keyData\": {"
+            + "\"typeUrl\": \"type.googleapis.com/google.crypto.tink.HmacKey\\uD834\","
+            + "\"keyMaterialType\": \"SYMMETRIC\","
+            + "\"value\": \"EgQIAxAQGiBYhMkitTWFVefTIBg6kpvac+bwFOGSkENGmU+1EYgocg==\""
+            + "},"
+            + "\"outputPrefixType\": \"TINK\","
+            + "\"keyId\": 123,"
+            + "\"status\": \"ENABLED\""
+            + "}]}";
     assertThrows(IOException.class, () -> JsonKeysetReader.withString(jsonKeysetString).read());
   }
 

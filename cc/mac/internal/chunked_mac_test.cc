@@ -14,13 +14,16 @@
 //
 ///////////////////////////////////////////////////////////////////////////////
 
+#include "tink/chunked_mac.h"
+
 #include <memory>
 #include <string>
 #include <tuple>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "tink/chunked_mac.h"
+#include "absl/status/status.h"
+#include "tink/config/global_registry.h"
 #include "tink/keyset_handle.h"
 #include "tink/mac.h"
 #include "tink/mac/mac_config.h"
@@ -64,14 +67,15 @@ TEST_P(ChunkedMacCompatibilityTest, ComputeAndVerify) {
   ASSERT_THAT(MacConfig::Register(), IsOk());
 
   util::StatusOr<std::unique_ptr<KeysetHandle>> key =
-      KeysetHandle::GenerateNew(key_template);
+      KeysetHandle::GenerateNew(key_template, KeyGenConfigGlobalRegistry());
   ASSERT_THAT(key, IsOk());
 
-  util::StatusOr<std::unique_ptr<Mac>> mac = (*key)->GetPrimitive<Mac>();
+  util::StatusOr<std::unique_ptr<Mac>> mac =
+      (*key)->GetPrimitive<crypto::tink::Mac>(ConfigGlobalRegistry());
   ASSERT_THAT(mac, IsOk());
 
   util::StatusOr<std::unique_ptr<ChunkedMac>> chunked_mac =
-      (*key)->GetPrimitive<ChunkedMac>();
+      (*key)->GetPrimitive<crypto::tink::ChunkedMac>(ConfigGlobalRegistry());
   ASSERT_THAT(chunked_mac, IsOk());
 
   // Compute tag with chunked MAC.
@@ -103,12 +107,12 @@ TEST_P(ChunkedMacCompatibilityTest, ComputeAndVerify) {
 TEST(ChunkedMacSlicingTest, DifferentChunkSizes) {
   ASSERT_THAT(MacConfig::Register(), IsOk());
 
-  util::StatusOr<std::unique_ptr<KeysetHandle>> key =
-      KeysetHandle::GenerateNew(MacKeyTemplates::HmacSha256());
+  util::StatusOr<std::unique_ptr<KeysetHandle>> key = KeysetHandle::GenerateNew(
+      MacKeyTemplates::HmacSha256(), KeyGenConfigGlobalRegistry());
   ASSERT_THAT(key, IsOk());
 
   util::StatusOr<std::unique_ptr<ChunkedMac>> chunked_mac =
-      (*key)->GetPrimitive<ChunkedMac>();
+      (*key)->GetPrimitive<crypto::tink::ChunkedMac>(ConfigGlobalRegistry());
   ASSERT_THAT(chunked_mac, IsOk());
 
   // Update three input chunks.
@@ -133,12 +137,12 @@ TEST(ChunkedMacSlicingTest, DifferentChunkSizes) {
 TEST(ChunkedMacTest, VerifyPrefixFails) {
   ASSERT_THAT(MacConfig::Register(), IsOk());
 
-  util::StatusOr<std::unique_ptr<KeysetHandle>> key =
-      KeysetHandle::GenerateNew(MacKeyTemplates::HmacSha256());
+  util::StatusOr<std::unique_ptr<KeysetHandle>> key = KeysetHandle::GenerateNew(
+      MacKeyTemplates::HmacSha256(), KeyGenConfigGlobalRegistry());
   ASSERT_THAT(key, IsOk());
 
   util::StatusOr<std::unique_ptr<ChunkedMac>> chunked_mac =
-      (*key)->GetPrimitive<ChunkedMac>();
+      (*key)->GetPrimitive<crypto::tink::ChunkedMac>(ConfigGlobalRegistry());
   ASSERT_THAT(chunked_mac, IsOk());
 
   util::StatusOr<std::unique_ptr<ChunkedMacComputation>> computation =
@@ -159,12 +163,12 @@ TEST(ChunkedMacTest, VerifyPrefixFails) {
 TEST(ChunkedMacTest, UpdateWrongOrderFails) {
   ASSERT_THAT(MacConfig::Register(), IsOk());
 
-  util::StatusOr<std::unique_ptr<KeysetHandle>> key =
-      KeysetHandle::GenerateNew(MacKeyTemplates::HmacSha256());
+  util::StatusOr<std::unique_ptr<KeysetHandle>> key = KeysetHandle::GenerateNew(
+      MacKeyTemplates::HmacSha256(), KeyGenConfigGlobalRegistry());
   ASSERT_THAT(key, IsOk());
 
   util::StatusOr<std::unique_ptr<ChunkedMac>> chunked_mac =
-      (*key)->GetPrimitive<ChunkedMac>();
+      (*key)->GetPrimitive<crypto::tink::ChunkedMac>(ConfigGlobalRegistry());
   ASSERT_THAT(chunked_mac, IsOk());
 
   util::StatusOr<std::unique_ptr<ChunkedMacComputation>> computation =
@@ -187,12 +191,12 @@ TEST(ChunkedMacTest, UpdateWrongOrderFails) {
 TEST(ChunkedMacTest, OperationsFailAfterComputeVerifyMac) {
   ASSERT_THAT(MacConfig::Register(), IsOk());
 
-  util::StatusOr<std::unique_ptr<KeysetHandle>> key =
-      KeysetHandle::GenerateNew(MacKeyTemplates::HmacSha256());
+  util::StatusOr<std::unique_ptr<KeysetHandle>> key = KeysetHandle::GenerateNew(
+      MacKeyTemplates::HmacSha256(), KeyGenConfigGlobalRegistry());
   ASSERT_THAT(key, IsOk());
 
   util::StatusOr<std::unique_ptr<ChunkedMac>> chunked_mac =
-      (*key)->GetPrimitive<ChunkedMac>();
+      (*key)->GetPrimitive<crypto::tink::ChunkedMac>(ConfigGlobalRegistry());
   ASSERT_THAT(chunked_mac, IsOk());
 
   util::StatusOr<std::unique_ptr<ChunkedMacComputation>> computation =

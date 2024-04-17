@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 // Package subtle provides subtle implementations of the DeterministicAEAD
 // primitive.
@@ -52,11 +50,11 @@ import (
 // and RFC 5297 only supports same size encryption and MAC keys this
 // implies that keys must be 64 bytes (2*256 bits) long.
 type AESSIV struct {
-	K1     []byte
-	K2     []byte
-	CmacK1 []byte
-	CmacK2 []byte
-	Cipher cipher.Block
+	k1     []byte
+	k2     []byte
+	cmacK1 []byte
+	cmacK2 []byte
+	cipher cipher.Block
 }
 
 const (
@@ -77,7 +75,7 @@ func NewAESSIV(key []byte) (*AESSIV, error) {
 	k2 := key[32:]
 	c, err := aes.NewCipher(k1)
 	if err != nil {
-		return nil, fmt.Errorf("aes_siv: aes.NewCipher(%s) failed, %v", k1, err)
+		return nil, fmt.Errorf("aes_siv: aes.NewCipher() failed: %v", err)
 	}
 
 	block := make([]byte, aes.BlockSize)
@@ -90,11 +88,11 @@ func NewAESSIV(key []byte) (*AESSIV, error) {
 	copy(cmacK2, block)
 
 	return &AESSIV{
-		K1:     k1,
-		K2:     k2,
-		CmacK1: cmacK1,
-		CmacK2: cmacK2,
-		Cipher: c,
+		k1:     k1,
+		k2:     k2,
+		cmacK1: cmacK1,
+		cmacK2: cmacK2,
+		cipher: c,
 	}, nil
 }
 
@@ -159,9 +157,9 @@ func (asc *AESSIV) ctrCrypt(siv, in, out []byte) error {
 	iv[8] &= 0x7f
 	iv[12] &= 0x7f
 
-	c, err := aes.NewCipher(asc.K2)
+	c, err := aes.NewCipher(asc.k2)
 	if err != nil {
-		return fmt.Errorf("aes_siv: aes.NewCipher(%s) failed, %v", asc.K2, err)
+		return fmt.Errorf("aes_siv: aes.NewCipher() failed: %v", err)
 	}
 
 	steam := cipher.NewCTR(c, iv)
@@ -202,7 +200,7 @@ func (asc *AESSIV) cmacLong(data, last, mac []byte) {
 
 	idx := aes.BlockSize
 	for aes.BlockSize <= len(data)-idx {
-		asc.Cipher.Encrypt(block, block)
+		asc.cipher.Encrypt(block, block)
 		xorBlock(data[idx:idx+aes.BlockSize], block)
 		idx += aes.BlockSize
 	}
@@ -212,18 +210,18 @@ func (asc *AESSIV) cmacLong(data, last, mac []byte) {
 		block[remaining+i] ^= last[i]
 	}
 	if remaining == 0 {
-		xorBlock(asc.CmacK1, block)
+		xorBlock(asc.cmacK1, block)
 	} else {
-		asc.Cipher.Encrypt(block, block)
+		asc.cipher.Encrypt(block, block)
 		for i := 0; i < remaining; i++ {
 			block[i] ^= last[aes.BlockSize-remaining+i]
 			block[i] ^= data[idx+i]
 		}
 		block[remaining] ^= 0x80
-		xorBlock(asc.CmacK2, block)
+		xorBlock(asc.cmacK2, block)
 	}
 
-	asc.Cipher.Encrypt(mac, block)
+	asc.cipher.Encrypt(mac, block)
 }
 
 // cmac computes a CMAC of some data.
@@ -238,7 +236,7 @@ func (asc *AESSIV) cmac(data, mac []byte) {
 	idx := 0
 	for i := 0; i < numBs-1; i++ {
 		xorBlock(data[idx:idx+aes.BlockSize], block)
-		asc.Cipher.Encrypt(block, block)
+		asc.cipher.Encrypt(block, block)
 		idx += aes.BlockSize
 	}
 	for j := 0; j < lastBSize; j++ {
@@ -246,13 +244,13 @@ func (asc *AESSIV) cmac(data, mac []byte) {
 	}
 
 	if lastBSize == aes.BlockSize {
-		xorBlock(asc.CmacK1, block)
+		xorBlock(asc.cmacK1, block)
 	} else {
 		block[lastBSize] ^= 0x80
-		xorBlock(asc.CmacK2, block)
+		xorBlock(asc.cmacK2, block)
 	}
 
-	asc.Cipher.Encrypt(mac, block)
+	asc.cipher.Encrypt(mac, block)
 }
 
 // xorBlock sets block[i] = x[i] ^ block[i].

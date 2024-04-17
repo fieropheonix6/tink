@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2017 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,17 +16,22 @@
 
 package com.google.crypto.tink.hybrid;
 
+import static com.google.common.truth.Truth.assertThat;
+import static com.google.crypto.tink.internal.TinkBugException.exceptionIsBug;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertThrows;
 
-import com.google.crypto.tink.Config;
 import com.google.crypto.tink.HybridDecrypt;
 import com.google.crypto.tink.HybridEncrypt;
-import com.google.crypto.tink.aead.AeadKeyTemplates;
-import com.google.crypto.tink.daead.DeterministicAeadKeyTemplates;
-import com.google.crypto.tink.proto.HashType;
-import com.google.crypto.tink.proto.KeyTemplate;
+import com.google.crypto.tink.InsecureSecretKeyAccess;
+import com.google.crypto.tink.Parameters;
+import com.google.crypto.tink.aead.AesCtrHmacAeadParameters;
+import com.google.crypto.tink.aead.AesGcmParameters;
+import com.google.crypto.tink.daead.AesSivParameters;
+import com.google.crypto.tink.hybrid.internal.testing.EciesAeadHkdfTestUtil;
+import com.google.crypto.tink.hybrid.internal.testing.HybridTestVector;
+import com.google.crypto.tink.internal.EllipticCurvesUtil;
 import com.google.crypto.tink.subtle.EciesAeadHkdfHybridDecrypt;
 import com.google.crypto.tink.subtle.EciesAeadHkdfHybridEncrypt;
 import com.google.crypto.tink.subtle.EllipticCurves;
@@ -35,47 +40,101 @@ import com.google.crypto.tink.subtle.Hex;
 import com.google.crypto.tink.subtle.Random;
 import com.google.crypto.tink.testing.TestUtil;
 import com.google.crypto.tink.testing.TestUtil.BytesMutation;
+import com.google.crypto.tink.util.Bytes;
+import com.google.crypto.tink.util.SecretBigInteger;
 import java.security.GeneralSecurityException;
 import java.security.KeyPair;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
+import java.security.spec.ECParameterSpec;
+import java.security.spec.ECPoint;
 import java.util.Arrays;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.experimental.theories.DataPoints;
+import org.junit.experimental.theories.FromDataPoints;
+import org.junit.experimental.theories.Theories;
+import org.junit.experimental.theories.Theory;
 import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
 
 /** Unit tests for {@link EciesAeadHkdfHybridDecrypt}. */
-@RunWith(JUnit4.class)
+@RunWith(Theories.class)
 public class EciesAeadHkdfHybridDecryptTest {
   @Before
   public void setUp() throws GeneralSecurityException {
-    Config.register(HybridConfig.TINK_1_0_0);
+    HybridConfig.register();
   }
 
-  private static void testEncryptDecrypt(CurveType curveType, KeyTemplate keyTemplate)
+  private static final AesCtrHmacAeadParameters AES128_CTR_HMAC_SHA256_RAW =
+      exceptionIsBug(
+          () ->
+              AesCtrHmacAeadParameters.builder()
+                  .setAesKeySizeBytes(16)
+                  .setHmacKeySizeBytes(32)
+                  .setTagSizeBytes(16)
+                  .setIvSizeBytes(16)
+                  .setHashType(AesCtrHmacAeadParameters.HashType.SHA256)
+                  .setVariant(AesCtrHmacAeadParameters.Variant.NO_PREFIX)
+                  .build());
+  private static final AesGcmParameters AES128_GCM_RAW =
+      exceptionIsBug(
+          () ->
+              AesGcmParameters.builder()
+                  .setIvSizeBytes(12)
+                  .setKeySizeBytes(16)
+                  .setTagSizeBytes(16)
+                  .setVariant(AesGcmParameters.Variant.NO_PREFIX)
+                  .build());
+  private static final AesSivParameters AES256_SIV_RAW =
+      exceptionIsBug(
+          () ->
+              AesSivParameters.builder()
+                  .setKeySizeBytes(64)
+                  .setVariant(AesSivParameters.Variant.NO_PREFIX)
+                  .build());
+
+  private static final ECParameterSpec toParameterSpec(EciesParameters.CurveType curveType)
+      throws GeneralSecurityException {
+    if (curveType == EciesParameters.CurveType.NIST_P256) {
+      return EllipticCurvesUtil.NIST_P256_PARAMS;
+    }
+    if (curveType == EciesParameters.CurveType.NIST_P384) {
+      return EllipticCurvesUtil.NIST_P384_PARAMS;
+    }
+    if (curveType == EciesParameters.CurveType.NIST_P521) {
+      return EllipticCurvesUtil.NIST_P521_PARAMS;
+    }
+    throw new GeneralSecurityException("Unsupported curve type: " + curveType);
+  }
+
+  private static void testEncryptDecrypt(EciesParameters.CurveType curveType, Parameters parameters)
       throws Exception {
-    KeyPair recipientKey = EllipticCurves.generateKeyPair(curveType);
+    KeyPair recipientKey = EllipticCurves.generateKeyPair(toParameterSpec(curveType));
     ECPublicKey recipientPublicKey = (ECPublicKey) recipientKey.getPublic();
     ECPrivateKey recipientPrivateKey = (ECPrivateKey) recipientKey.getPrivate();
     byte[] salt = Random.randBytes(8);
-    String hmacAlgo = HybridUtil.toHmacAlgo(HashType.SHA256);
     byte[] plaintext = Random.randBytes(4);
     byte[] context = Random.randBytes(4);
-    HybridEncrypt hybridEncrypt =
-        new EciesAeadHkdfHybridEncrypt(
-            recipientPublicKey,
-            salt,
-            hmacAlgo,
-            EllipticCurves.PointFormatType.UNCOMPRESSED,
-            new RegistryEciesAeadHkdfDemHelper(keyTemplate));
-    HybridDecrypt hybridDecrypt =
-        new EciesAeadHkdfHybridDecrypt(
-            recipientPrivateKey,
-            salt,
-            hmacAlgo,
-            EllipticCurves.PointFormatType.UNCOMPRESSED,
-            new RegistryEciesAeadHkdfDemHelper(keyTemplate));
+    EciesParameters eciesParameters =
+        EciesParameters.builder()
+            .setCurveType(curveType)
+            .setHashType(EciesParameters.HashType.SHA256)
+            .setNistCurvePointFormat(EciesParameters.PointFormat.UNCOMPRESSED)
+            .setDemParameters(parameters)
+            .setSalt(Bytes.copyFrom(salt))
+            .setVariant(EciesParameters.Variant.NO_PREFIX)
+            .build();
+    EciesPublicKey eciesPublicKey =
+        EciesPublicKey.createForNistCurve(
+            eciesParameters, recipientPublicKey.getW(), /* idRequirement= */ null);
+    EciesPrivateKey eciesPrivateKey =
+        EciesPrivateKey.createForNistCurve(
+            eciesPublicKey,
+            SecretBigInteger.fromBigInteger(
+                recipientPrivateKey.getS(), InsecureSecretKeyAccess.get()));
+
+    HybridEncrypt hybridEncrypt = EciesAeadHkdfHybridEncrypt.create(eciesPublicKey);
+    HybridDecrypt hybridDecrypt = EciesAeadHkdfHybridDecrypt.create(eciesPrivateKey);
     byte[] ciphertext = hybridEncrypt.encrypt(plaintext, context);
     byte[] decrypted = hybridDecrypt.decrypt(ciphertext, context);
     assertArrayEquals(plaintext, decrypted);
@@ -83,78 +142,84 @@ public class EciesAeadHkdfHybridDecryptTest {
 
   @Test
   public void testEncryptDecryptP256CtrHmac() throws Exception {
-    testEncryptDecrypt(CurveType.NIST_P256, AeadKeyTemplates.AES128_CTR_HMAC_SHA256);
+    testEncryptDecrypt(EciesParameters.CurveType.NIST_P256, AES128_CTR_HMAC_SHA256_RAW);
   }
 
   @Test
   public void testEncryptDecryptP384CtrHmac() throws Exception {
-    testEncryptDecrypt(CurveType.NIST_P384, AeadKeyTemplates.AES128_CTR_HMAC_SHA256);
+    testEncryptDecrypt(EciesParameters.CurveType.NIST_P384, AES128_CTR_HMAC_SHA256_RAW);
   }
 
   @Test
   public void testEncryptDecryptP521CtrHmac() throws Exception {
-    testEncryptDecrypt(CurveType.NIST_P521, AeadKeyTemplates.AES128_CTR_HMAC_SHA256);
+    testEncryptDecrypt(EciesParameters.CurveType.NIST_P521, AES128_CTR_HMAC_SHA256_RAW);
   }
 
   @Test
   public void testEncryptDecryptP256Gcm() throws Exception {
-    testEncryptDecrypt(CurveType.NIST_P256, AeadKeyTemplates.AES128_GCM);
+    testEncryptDecrypt(EciesParameters.CurveType.NIST_P256, AES128_GCM_RAW);
   }
 
   @Test
   public void testEncryptDecryptP384Gcm() throws Exception {
-    testEncryptDecrypt(CurveType.NIST_P384, AeadKeyTemplates.AES128_GCM);
+    testEncryptDecrypt(EciesParameters.CurveType.NIST_P384, AES128_GCM_RAW);
   }
 
   @Test
   public void testEncryptDecryptP512Gcm() throws Exception {
-    testEncryptDecrypt(CurveType.NIST_P521, AeadKeyTemplates.AES128_GCM);
+    testEncryptDecrypt(EciesParameters.CurveType.NIST_P521, AES128_GCM_RAW);
   }
 
   @Test
   public void testEncryptDecryptP256AesSiv() throws Exception {
-    testEncryptDecrypt(CurveType.NIST_P256, DeterministicAeadKeyTemplates.AES256_SIV);
+    testEncryptDecrypt(EciesParameters.CurveType.NIST_P256, AES256_SIV_RAW);
   }
 
   @Test
   public void testEncryptDecryptP384AesSiv() throws Exception {
-    testEncryptDecrypt(CurveType.NIST_P384, DeterministicAeadKeyTemplates.AES256_SIV);
+    testEncryptDecrypt(EciesParameters.CurveType.NIST_P384, AES256_SIV_RAW);
   }
 
   @Test
   public void testEncryptDecryptP512AesSiv() throws Exception {
-    testEncryptDecrypt(CurveType.NIST_P521, DeterministicAeadKeyTemplates.AES256_SIV);
+    testEncryptDecrypt(EciesParameters.CurveType.NIST_P521, AES256_SIV_RAW);
   }
 
   private static void testEncryptDecrypt_mutatedCiphertext_throws(
-      CurveType curveType, KeyTemplate keyTemplate) throws Exception {
-    KeyPair recipientKey = EllipticCurves.generateKeyPair(curveType);
+      EciesParameters.CurveType curveType, Parameters parameters) throws Exception {
+    KeyPair recipientKey = EllipticCurves.generateKeyPair(toParameterSpec(curveType));
     ECPublicKey recipientPublicKey = (ECPublicKey) recipientKey.getPublic();
     ECPrivateKey recipientPrivateKey = (ECPrivateKey) recipientKey.getPrivate();
     byte[] salt = Random.randBytes(8);
-    String hmacAlgo = HybridUtil.toHmacAlgo(HashType.SHA256);
     byte[] plaintext = Random.randBytes(4);
     byte[] context = Random.randBytes(4);
-    HybridEncrypt hybridEncrypt =
-        new EciesAeadHkdfHybridEncrypt(
-            recipientPublicKey,
-            salt,
-            hmacAlgo,
-            EllipticCurves.PointFormatType.UNCOMPRESSED,
-            new RegistryEciesAeadHkdfDemHelper(keyTemplate));
-    HybridDecrypt hybridDecrypt =
-        new EciesAeadHkdfHybridDecrypt(
-            recipientPrivateKey,
-            salt,
-            hmacAlgo,
-            EllipticCurves.PointFormatType.UNCOMPRESSED,
-            new RegistryEciesAeadHkdfDemHelper(keyTemplate));
+    EciesParameters eciesParameters =
+        EciesParameters.builder()
+            .setCurveType(curveType)
+            .setHashType(EciesParameters.HashType.SHA256)
+            .setNistCurvePointFormat(EciesParameters.PointFormat.UNCOMPRESSED)
+            .setDemParameters(parameters)
+            .setSalt(Bytes.copyFrom(salt))
+            .setVariant(EciesParameters.Variant.NO_PREFIX)
+            .build();
+    EciesPublicKey eciesPublicKey =
+        EciesPublicKey.createForNistCurve(
+            eciesParameters, recipientPublicKey.getW(), /* idRequirement= */ null);
+    EciesPrivateKey eciesPrivateKey =
+        EciesPrivateKey.createForNistCurve(
+            eciesPublicKey,
+            SecretBigInteger.fromBigInteger(
+                recipientPrivateKey.getS(), InsecureSecretKeyAccess.get()));
+
+    HybridEncrypt hybridEncrypt = EciesAeadHkdfHybridEncrypt.create(eciesPublicKey);
+    HybridDecrypt hybridDecrypt = EciesAeadHkdfHybridDecrypt.create(eciesPrivateKey);
+
     byte[] ciphertext = hybridEncrypt.encrypt(plaintext, context);
     for (BytesMutation mutation : TestUtil.generateMutations(ciphertext)) {
       assertThrows(
           GeneralSecurityException.class, () -> hybridDecrypt.decrypt(mutation.value, context));
-      // The test takes too long in TSan, so we stop after the first case.
-      if (TestUtil.isTsan()) {
+      // The test takes too long in TSan and on Android, so we stop after the first case.
+      if (TestUtil.isTsan() || TestUtil.isAndroid()) {
         return;
       }
     }
@@ -163,83 +228,92 @@ public class EciesAeadHkdfHybridDecryptTest {
   @Test
   public void testEncryptDecryptP256CtrHmac_mutatedCiphertext_throws() throws Exception {
     testEncryptDecrypt_mutatedCiphertext_throws(
-        CurveType.NIST_P256, AeadKeyTemplates.AES128_CTR_HMAC_SHA256);
+        EciesParameters.CurveType.NIST_P256, AES128_CTR_HMAC_SHA256_RAW);
   }
 
   @Test
   public void testEncryptDecryptP384CtrHmac_mutatedCiphertext_throws() throws Exception {
     testEncryptDecrypt_mutatedCiphertext_throws(
-        CurveType.NIST_P384, AeadKeyTemplates.AES128_CTR_HMAC_SHA256);
+        EciesParameters.CurveType.NIST_P384, AES128_CTR_HMAC_SHA256_RAW);
   }
 
   @Test
   public void testEncryptDecryptP521CtrHmac_mutatedCiphertext_throws() throws Exception {
     testEncryptDecrypt_mutatedCiphertext_throws(
-        CurveType.NIST_P521, AeadKeyTemplates.AES128_CTR_HMAC_SHA256);
+        EciesParameters.CurveType.NIST_P521, AES128_CTR_HMAC_SHA256_RAW);
   }
 
   @Test
   public void testEncryptDecryptP256Gcm_mutatedCiphertext_throws() throws Exception {
-    testEncryptDecrypt_mutatedCiphertext_throws(CurveType.NIST_P256, AeadKeyTemplates.AES128_GCM);
+    testEncryptDecrypt_mutatedCiphertext_throws(
+        EciesParameters.CurveType.NIST_P256, AES128_GCM_RAW);
   }
 
   @Test
   public void testEncryptDecryptP384Gcm_mutatedCiphertext_throws() throws Exception {
-    testEncryptDecrypt_mutatedCiphertext_throws(CurveType.NIST_P384, AeadKeyTemplates.AES128_GCM);
+    testEncryptDecrypt_mutatedCiphertext_throws(
+        EciesParameters.CurveType.NIST_P384, AES128_GCM_RAW);
   }
 
   @Test
   public void testEncryptDecryptP512Gcm_mutatedCiphertext_throws() throws Exception {
-    testEncryptDecrypt_mutatedCiphertext_throws(CurveType.NIST_P521, AeadKeyTemplates.AES128_GCM);
+    testEncryptDecrypt_mutatedCiphertext_throws(
+        EciesParameters.CurveType.NIST_P521, AES128_GCM_RAW);
   }
 
   @Test
   public void testEncryptDecryptP256AesSiv_mutatedCiphertext_throws() throws Exception {
     testEncryptDecrypt_mutatedCiphertext_throws(
-        CurveType.NIST_P256, DeterministicAeadKeyTemplates.AES256_SIV);
+        EciesParameters.CurveType.NIST_P256, AES256_SIV_RAW);
   }
 
   @Test
   public void testEncryptDecryptP384AesSiv_mutatedCiphertext_throws() throws Exception {
     testEncryptDecrypt_mutatedCiphertext_throws(
-        CurveType.NIST_P384, DeterministicAeadKeyTemplates.AES256_SIV);
+        EciesParameters.CurveType.NIST_P384, AES256_SIV_RAW);
   }
 
   @Test
   public void testEncryptDecryptP512AesSiv_mutatedCiphertext_throws() throws Exception {
     testEncryptDecrypt_mutatedCiphertext_throws(
-        CurveType.NIST_P521, DeterministicAeadKeyTemplates.AES256_SIV);
+        EciesParameters.CurveType.NIST_P521, AES256_SIV_RAW);
   }
 
   private static void testEncryptDecrypt_mutatedContext_throws(
-      CurveType curveType, KeyTemplate keyTemplate) throws Exception {
-    KeyPair recipientKey = EllipticCurves.generateKeyPair(curveType);
+      EciesParameters.CurveType curveType, Parameters parameters) throws Exception {
+    KeyPair recipientKey = EllipticCurves.generateKeyPair(toParameterSpec(curveType));
     ECPublicKey recipientPublicKey = (ECPublicKey) recipientKey.getPublic();
     ECPrivateKey recipientPrivateKey = (ECPrivateKey) recipientKey.getPrivate();
     byte[] salt = Random.randBytes(8);
-    String hmacAlgo = HybridUtil.toHmacAlgo(HashType.SHA256);
     byte[] plaintext = Random.randBytes(4);
     byte[] context = Random.randBytes(4);
-    HybridEncrypt hybridEncrypt =
-        new EciesAeadHkdfHybridEncrypt(
-            recipientPublicKey,
-            salt,
-            hmacAlgo,
-            EllipticCurves.PointFormatType.UNCOMPRESSED,
-            new RegistryEciesAeadHkdfDemHelper(keyTemplate));
-    HybridDecrypt hybridDecrypt =
-        new EciesAeadHkdfHybridDecrypt(
-            recipientPrivateKey,
-            salt,
-            hmacAlgo,
-            EllipticCurves.PointFormatType.UNCOMPRESSED,
-            new RegistryEciesAeadHkdfDemHelper(keyTemplate));
+    EciesParameters eciesParameters =
+        EciesParameters.builder()
+            .setCurveType(curveType)
+            .setHashType(EciesParameters.HashType.SHA256)
+            .setNistCurvePointFormat(EciesParameters.PointFormat.UNCOMPRESSED)
+            .setDemParameters(parameters)
+            .setSalt(Bytes.copyFrom(salt))
+            .setVariant(EciesParameters.Variant.NO_PREFIX)
+            .build();
+    EciesPublicKey eciesPublicKey =
+        EciesPublicKey.createForNistCurve(
+            eciesParameters, recipientPublicKey.getW(), /* idRequirement= */ null);
+    EciesPrivateKey eciesPrivateKey =
+        EciesPrivateKey.createForNistCurve(
+            eciesPublicKey,
+            SecretBigInteger.fromBigInteger(
+                recipientPrivateKey.getS(), InsecureSecretKeyAccess.get()));
+
+    HybridEncrypt hybridEncrypt = EciesAeadHkdfHybridEncrypt.create(eciesPublicKey);
+    HybridDecrypt hybridDecrypt = EciesAeadHkdfHybridDecrypt.create(eciesPrivateKey);
+
     byte[] ciphertext = hybridEncrypt.encrypt(plaintext, context);
     for (BytesMutation mutation : TestUtil.generateMutations(context)) {
-      // The test takes too long in TSan, so we stop after the first case.
+      // The test takes too long in TSan and on Android, so we stop after the first case.
       assertThrows(
           GeneralSecurityException.class, () -> hybridDecrypt.decrypt(ciphertext, mutation.value));
-      if (TestUtil.isTsan()) {
+      if (TestUtil.isTsan() || TestUtil.isAndroid()) {
         return;
       }
     }
@@ -248,86 +322,101 @@ public class EciesAeadHkdfHybridDecryptTest {
   @Test
   public void testEncryptDecryptP256CtrHmac_mutatedContext_throws() throws Exception {
     testEncryptDecrypt_mutatedContext_throws(
-        CurveType.NIST_P256, AeadKeyTemplates.AES128_CTR_HMAC_SHA256);
+        EciesParameters.CurveType.NIST_P256, AES128_CTR_HMAC_SHA256_RAW);
   }
 
   @Test
   public void testEncryptDecryptP384CtrHmac_mutatedContext_throws() throws Exception {
     testEncryptDecrypt_mutatedContext_throws(
-        CurveType.NIST_P384, AeadKeyTemplates.AES128_CTR_HMAC_SHA256);
+        EciesParameters.CurveType.NIST_P384, AES128_CTR_HMAC_SHA256_RAW);
   }
 
   @Test
   public void testEncryptDecryptP521CtrHmac_mutatedContext_throws() throws Exception {
-    testEncryptDecrypt_mutatedContext_throws(CurveType.NIST_P521, AeadKeyTemplates.AES128_GCM);
+    testEncryptDecrypt_mutatedContext_throws(EciesParameters.CurveType.NIST_P521, AES128_GCM_RAW);
   }
 
   @Test
   public void testEncryptDecryptP256Gcm_mutatedContext_throws() throws Exception {
-    testEncryptDecrypt_mutatedContext_throws(CurveType.NIST_P256, AeadKeyTemplates.AES128_GCM);
+    testEncryptDecrypt_mutatedContext_throws(EciesParameters.CurveType.NIST_P256, AES128_GCM_RAW);
   }
 
   @Test
   public void testEncryptDecryptP384Gcm_mutatedContext_throws() throws Exception {
-    testEncryptDecrypt_mutatedContext_throws(CurveType.NIST_P384, AeadKeyTemplates.AES128_GCM);
+    testEncryptDecrypt_mutatedContext_throws(EciesParameters.CurveType.NIST_P384, AES128_GCM_RAW);
   }
 
   @Test
   public void testEncryptDecryptP512Gcm_mutatedContext_throws() throws Exception {
-    testEncryptDecrypt_mutatedContext_throws(CurveType.NIST_P521, AeadKeyTemplates.AES128_GCM);
+    testEncryptDecrypt_mutatedContext_throws(EciesParameters.CurveType.NIST_P521, AES128_GCM_RAW);
   }
 
   @Test
   public void testEncryptDecryptP256AesSiv_mutatedContext_throws() throws Exception {
-    testEncryptDecrypt_mutatedContext_throws(
-        CurveType.NIST_P256, DeterministicAeadKeyTemplates.AES256_SIV);
+    testEncryptDecrypt_mutatedContext_throws(EciesParameters.CurveType.NIST_P256, AES256_SIV_RAW);
   }
 
   @Test
   public void testEncryptDecryptP384AesSiv_mutatedContext_throws() throws Exception {
-    testEncryptDecrypt_mutatedContext_throws(
-        CurveType.NIST_P384, DeterministicAeadKeyTemplates.AES256_SIV);
+    testEncryptDecrypt_mutatedContext_throws(EciesParameters.CurveType.NIST_P384, AES256_SIV_RAW);
   }
 
   @Test
   public void testEncryptDecryptP512AesSiv_mutatedContext_throws() throws Exception {
-    testEncryptDecrypt_mutatedContext_throws(
-        CurveType.NIST_P521, DeterministicAeadKeyTemplates.AES256_SIV);
+    testEncryptDecrypt_mutatedContext_throws(EciesParameters.CurveType.NIST_P521, AES256_SIV_RAW);
   }
 
   private static void testEncryptDecrypt_mutatedSalt_throws(
-      CurveType curveType, KeyTemplate keyTemplate) throws Exception {
-    KeyPair recipientKey = EllipticCurves.generateKeyPair(curveType);
+      EciesParameters.CurveType curveType, Parameters parameters) throws Exception {
+    KeyPair recipientKey = EllipticCurves.generateKeyPair(toParameterSpec(curveType));
     ECPublicKey recipientPublicKey = (ECPublicKey) recipientKey.getPublic();
     ECPrivateKey recipientPrivateKey = (ECPrivateKey) recipientKey.getPrivate();
     byte[] salt = Random.randBytes(8);
-    String hmacAlgo = HybridUtil.toHmacAlgo(HashType.SHA256);
     byte[] plaintext = Random.randBytes(4);
     byte[] context = Random.randBytes(4);
-    HybridEncrypt hybridEncrypt =
-        new EciesAeadHkdfHybridEncrypt(
-            recipientPublicKey,
-            salt,
-            hmacAlgo,
-            EllipticCurves.PointFormatType.UNCOMPRESSED,
-            new RegistryEciesAeadHkdfDemHelper(keyTemplate));
+    EciesParameters eciesParameters =
+        EciesParameters.builder()
+            .setCurveType(curveType)
+            .setHashType(EciesParameters.HashType.SHA256)
+            .setNistCurvePointFormat(EciesParameters.PointFormat.UNCOMPRESSED)
+            .setDemParameters(parameters)
+            .setSalt(Bytes.copyFrom(salt))
+            .setVariant(EciesParameters.Variant.NO_PREFIX)
+            .build();
+    EciesPublicKey eciesPublicKey =
+        EciesPublicKey.createForNistCurve(
+            eciesParameters, recipientPublicKey.getW(), /* idRequirement= */ null);
+
+    HybridEncrypt hybridEncrypt = EciesAeadHkdfHybridEncrypt.create(eciesPublicKey);
     byte[] ciphertext = hybridEncrypt.encrypt(plaintext, context);
 
     for (int bytes = 0; bytes < salt.length; bytes++) {
       for (int bit = 0; bit < 8; bit++) {
         byte[] modifiedSalt = Arrays.copyOf(salt, salt.length);
         modifiedSalt[bytes] ^= (byte) (1 << bit);
-        HybridDecrypt hybridDecrypt =
-            new EciesAeadHkdfHybridDecrypt(
-                recipientPrivateKey,
-                modifiedSalt,
-                hmacAlgo,
-                EllipticCurves.PointFormatType.UNCOMPRESSED,
-                new RegistryEciesAeadHkdfDemHelper(keyTemplate));
+        EciesParameters modifiedEciesParameters =
+            EciesParameters.builder()
+                .setCurveType(curveType)
+                .setHashType(EciesParameters.HashType.SHA256)
+                .setNistCurvePointFormat(EciesParameters.PointFormat.UNCOMPRESSED)
+                .setDemParameters(parameters)
+                .setSalt(Bytes.copyFrom(modifiedSalt))
+                .setVariant(EciesParameters.Variant.NO_PREFIX)
+                .build();
+        EciesPublicKey modifiedEciesPublicKey =
+            EciesPublicKey.createForNistCurve(
+                modifiedEciesParameters, recipientPublicKey.getW(), /* idRequirement= */ null);
+        EciesPrivateKey modifiedEciesPrivateKey =
+            EciesPrivateKey.createForNistCurve(
+                modifiedEciesPublicKey,
+                SecretBigInteger.fromBigInteger(
+                    recipientPrivateKey.getS(), InsecureSecretKeyAccess.get()));
+
+        HybridDecrypt hybridDecrypt = EciesAeadHkdfHybridDecrypt.create(modifiedEciesPrivateKey);
         assertThrows(
-            GeneralSecurityException.class, () -> hybridDecrypt.decrypt(ciphertext, modifiedSalt));
-        // The test takes too long in TSan, so we stop after the first case.
-        if (TestUtil.isTsan()) {
+            GeneralSecurityException.class, () -> hybridDecrypt.decrypt(ciphertext, context));
+        // The test takes too long in TSan and on Android, so we stop after the first case.
+        if (TestUtil.isTsan() || TestUtil.isAndroid()) {
           return;
         }
       }
@@ -337,52 +426,49 @@ public class EciesAeadHkdfHybridDecryptTest {
   @Test
   public void testEncryptDecryptP256CtrHmac_mutatedSalt_throws() throws Exception {
     testEncryptDecrypt_mutatedSalt_throws(
-        CurveType.NIST_P256, AeadKeyTemplates.AES128_CTR_HMAC_SHA256);
+        EciesParameters.CurveType.NIST_P256, AES128_CTR_HMAC_SHA256_RAW);
   }
 
   @Test
   public void testEncryptDecryptP384CtrHmac_mutatedSalt_throws() throws Exception {
     testEncryptDecrypt_mutatedSalt_throws(
-        CurveType.NIST_P384, AeadKeyTemplates.AES128_CTR_HMAC_SHA256);
+        EciesParameters.CurveType.NIST_P384, AES128_CTR_HMAC_SHA256_RAW);
   }
 
   @Test
   public void testEncryptDecryptP521CtrHmac_mutatedSalt_throws() throws Exception {
     testEncryptDecrypt_mutatedSalt_throws(
-        CurveType.NIST_P521, AeadKeyTemplates.AES128_CTR_HMAC_SHA256);
+        EciesParameters.CurveType.NIST_P521, AES128_CTR_HMAC_SHA256_RAW);
   }
 
   @Test
   public void testEncryptDecryptP256Gcm_mutatedSalt_throws() throws Exception {
-    testEncryptDecrypt_mutatedSalt_throws(CurveType.NIST_P256, AeadKeyTemplates.AES128_GCM);
+    testEncryptDecrypt_mutatedSalt_throws(EciesParameters.CurveType.NIST_P256, AES128_GCM_RAW);
   }
 
   @Test
   public void testEncryptDecryptP384Gcm_mutatedSalt_throws() throws Exception {
-    testEncryptDecrypt_mutatedSalt_throws(CurveType.NIST_P384, AeadKeyTemplates.AES128_GCM);
+    testEncryptDecrypt_mutatedSalt_throws(EciesParameters.CurveType.NIST_P384, AES128_GCM_RAW);
   }
 
   @Test
   public void testEncryptDecryptP512Gcm_mutatedSalt_throws() throws Exception {
-    testEncryptDecrypt_mutatedSalt_throws(CurveType.NIST_P521, AeadKeyTemplates.AES128_GCM);
+    testEncryptDecrypt_mutatedSalt_throws(EciesParameters.CurveType.NIST_P521, AES128_GCM_RAW);
   }
 
   @Test
   public void testEncryptDecryptP256AesSiv_mutatedSalt_throws() throws Exception {
-    testEncryptDecrypt_mutatedSalt_throws(
-        CurveType.NIST_P256, DeterministicAeadKeyTemplates.AES256_SIV);
+    testEncryptDecrypt_mutatedSalt_throws(EciesParameters.CurveType.NIST_P256, AES256_SIV_RAW);
   }
 
   @Test
   public void testEncryptDecryptP384AesSiv_mutatedSalt_throws() throws Exception {
-    testEncryptDecrypt_mutatedSalt_throws(
-        CurveType.NIST_P384, DeterministicAeadKeyTemplates.AES256_SIV);
+    testEncryptDecrypt_mutatedSalt_throws(EciesParameters.CurveType.NIST_P384, AES256_SIV_RAW);
   }
 
   @Test
   public void testEncryptDecryptP512AesSiv_mutatedSalt_throws() throws Exception {
-    testEncryptDecrypt_mutatedSalt_throws(
-        CurveType.NIST_P521, DeterministicAeadKeyTemplates.AES256_SIV);
+    testEncryptDecrypt_mutatedSalt_throws(EciesParameters.CurveType.NIST_P521, AES256_SIV_RAW);
   }
 
   /** Test vector for hybrid decryption. */
@@ -422,22 +508,78 @@ public class EciesAeadHkdfHybridDecryptTest {
   };
 
   @Test
-  public void decryptWithTestVectors() throws GeneralSecurityException {
+  public void decryptWithTestVectors() throws Exception {
     for (HybridDecryptionTestVector vector : aesSivDemHybridTestVectors) {
-      CurveType curveType = CurveType.NIST_P256;
-      byte[] salt = new byte[0];
 
-      ECPrivateKey recipientPrivateKey = EllipticCurves.getEcPrivateKey(curveType, vector.key);
-      HybridDecrypt hybridDecrypt =
-          new EciesAeadHkdfHybridDecrypt(
-              recipientPrivateKey,
-              salt,
-              HybridUtil.toHmacAlgo(HashType.SHA256),
-              EllipticCurves.PointFormatType.UNCOMPRESSED,
-              new RegistryEciesAeadHkdfDemHelper(DeterministicAeadKeyTemplates.AES256_SIV));
+      ECPrivateKey recipientPrivateKey =
+          EllipticCurves.getEcPrivateKey(CurveType.NIST_P256, vector.key);
+      EciesParameters eciesParameters =
+          EciesParameters.builder()
+              .setCurveType(EciesParameters.CurveType.NIST_P256)
+              .setHashType(EciesParameters.HashType.SHA256)
+              .setNistCurvePointFormat(EciesParameters.PointFormat.UNCOMPRESSED)
+              .setVariant(EciesParameters.Variant.NO_PREFIX)
+              .setDemParameters(AES256_SIV_RAW)
+              .build();
+      ECPoint publicPoint =
+          EllipticCurvesUtil.multiplyByGenerator(
+              recipientPrivateKey.getS(), EllipticCurvesUtil.NIST_P256_PARAMS);
+
+      EciesPublicKey eciesPublicKey =
+          EciesPublicKey.createForNistCurve(
+              eciesParameters, publicPoint, /* idRequirement= */ null);
+      EciesPrivateKey privateKey =
+          EciesPrivateKey.createForNistCurve(
+              eciesPublicKey,
+              SecretBigInteger.fromBigInteger(
+                  recipientPrivateKey.getS(), InsecureSecretKeyAccess.get()));
+
+      HybridDecrypt hybridDecrypt = EciesAeadHkdfHybridDecrypt.create(privateKey);
 
       byte[] decrypted = hybridDecrypt.decrypt(vector.ciphertext, vector.context);
       assertArrayEquals(vector.plaintext, decrypted);
     }
-}
+  }
+
+  @DataPoints("testVectors")
+  public static final HybridTestVector[] HYBRID_TEST_VECTORS =
+      EciesAeadHkdfTestUtil.createEciesTestVectors();
+
+  @Theory
+  public void test_decryptCiphertext_works(@FromDataPoints("testVectors") HybridTestVector v)
+      throws Exception {
+    HybridDecrypt hybridDecrypt =
+        EciesAeadHkdfHybridDecrypt.create((EciesPrivateKey) v.getPrivateKey());
+    byte[] plaintext = hybridDecrypt.decrypt(v.getCiphertext(), v.getContextInfo());
+    assertThat(Hex.encode(plaintext)).isEqualTo(Hex.encode(v.getPlaintext()));
+  }
+
+  @Theory
+  public void test_decryptWrongContextInfo_throws(@FromDataPoints("testVectors") HybridTestVector v)
+      throws Exception {
+    HybridDecrypt hybridDecrypt =
+        EciesAeadHkdfHybridDecrypt.create((EciesPrivateKey) v.getPrivateKey());
+    byte[] contextInfo = v.getContextInfo();
+    if (contextInfo.length > 0) {
+      contextInfo[0] ^= 1;
+    } else {
+      contextInfo = new byte[] {1};
+    }
+    // local variables referenced from a lambda expression must be final or effectively final
+    final byte[] contextInfoCopy = Arrays.copyOf(contextInfo, contextInfo.length);
+    assertThrows(
+        GeneralSecurityException.class,
+        () -> hybridDecrypt.decrypt(v.getCiphertext(), contextInfoCopy));
+  }
+
+  @Theory
+  public void test_encryptThenDecryptMessage_works(
+      @FromDataPoints("testVectors") HybridTestVector v) throws Exception {
+    EciesPrivateKey eciesPrivateKey = (EciesPrivateKey) v.getPrivateKey();
+    HybridDecrypt hybridDecrypt = EciesAeadHkdfHybridDecrypt.create(eciesPrivateKey);
+    HybridEncrypt hybridEncrypt = EciesAeadHkdfHybridEncrypt.create(eciesPrivateKey.getPublicKey());
+    byte[] ciphertext = hybridEncrypt.encrypt(v.getPlaintext(), v.getContextInfo());
+    byte[] plaintext = hybridDecrypt.decrypt(ciphertext, v.getContextInfo());
+    assertThat(Hex.encode(plaintext)).isEqualTo(Hex.encode(v.getPlaintext()));
+  }
 }

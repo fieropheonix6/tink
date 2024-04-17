@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package jwt
 
@@ -57,7 +55,7 @@ var psAlgToSaltLen = map[jrsppb.JwtRsaSsaPssAlgorithm]int{
 	jrsppb.JwtRsaSsaPssAlgorithm_PS512: 64,
 }
 
-func (km *jwtPSVerifierKeyManager) Primitive(serializedKey []byte) (interface{}, error) {
+func (km *jwtPSVerifierKeyManager) Primitive(serializedKey []byte) (any, error) {
 	if serializedKey == nil || len(serializedKey) == 0 {
 		return nil, fmt.Errorf("invalid key")
 	}

@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package signature_test
 
@@ -44,6 +42,8 @@ func TestKeyTemplates(t *testing.T) {
 			template: signature.ECDSAP256KeyWithoutPrefixTemplate()},
 		{name: "ECDSA_P384_NO_PREFIX",
 			template: signature.ECDSAP384KeyWithoutPrefixTemplate()},
+		{name: "ECDSA_P384_SHA384_NO_PREFIX",
+			template: signature.ECDSAP384SHA384KeyWithoutPrefixTemplate()},
 		{name: "ECDSA_P521_NO_PREFIX",
 			template: signature.ECDSAP521KeyWithoutPrefixTemplate()},
 		{name: "RSA_SSA_PKCS1_3072_SHA256_F4",

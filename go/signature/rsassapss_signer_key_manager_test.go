@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package signature_test
 
@@ -225,6 +223,17 @@ func TestRSASSAPSSSignerGetPrimitiveWithInvalidInput(t *testing.T) {
 		{
 			tag:     "empty public key",
 			privKey: mergePrivPub(validPrivKey, &rsppb.RsaSsaPssPublicKey{}),
+		},
+		{
+			tag: "nil public key params",
+			privKey: mergePrivPub(
+				validPrivKey,
+				&rsppb.RsaSsaPssPublicKey{
+					Version: validPrivKey.GetPublicKey().GetVersion(),
+					Params:  nil,
+					N:       validPrivKey.GetPublicKey().GetN(),
+					E:       validPrivKey.GetPublicKey().GetE(),
+				}),
 		},
 		{
 			tag: "invalid public key version",
@@ -516,6 +525,14 @@ func TestRSASSAPSSSignerNewKeyFailsWithInvalidFormat(t *testing.T) {
 		t.Fatalf("NewKeyData() err = %v, want nil", err)
 	}
 	for _, tc := range []testCase{
+		{
+			tag: "nil params",
+			keyFormat: &rsppb.RsaSsaPssKeyFormat{
+				Params:            nil,
+				ModulusSizeInBits: validKeyFormat.GetModulusSizeInBits(),
+				PublicExponent:    validKeyFormat.GetPublicExponent(),
+			},
+		},
 		{
 			tag: "unsafe hash function",
 			keyFormat: &rsppb.RsaSsaPssKeyFormat{

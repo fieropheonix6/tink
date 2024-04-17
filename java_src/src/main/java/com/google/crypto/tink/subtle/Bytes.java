@@ -18,6 +18,7 @@ package com.google.crypto.tink.subtle;
 
 import java.nio.ByteBuffer;
 import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
 import java.util.Arrays;
 
 /**
@@ -32,17 +33,7 @@ public final class Bytes {
    * @return true if two arrays are equal.
    */
   public static final boolean equal(final byte[] x, final byte[] y) {
-    if (x == null || y == null) {
-      return false;
-    }
-    if (x.length != y.length) {
-      return false;
-    }
-    int res = 0;
-    for (int i = 0; i < x.length; i++) {
-      res |= x[i] ^ y[i];
-    }
-    return res == 0;
+    return MessageDigest.isEqual(x, y);
   }
 
   /**
@@ -87,10 +78,8 @@ public final class Bytes {
   }
 
   /**
-   * Computes the xor of two byte buffers, specifying the length to xor, and
-   * stores the result to {@code output}.
-   *
-   * @return a new byte[] of length len.
+   * Computes the xor of two byte buffers, specifying the length to xor, and stores the result to
+   * {@code output}.
    */
   public static final void xor(ByteBuffer output, ByteBuffer x, ByteBuffer y, int len) {
     if (len < 0 || x.remaining() < len || y.remaining() < len || output.remaining() < len) {
@@ -131,14 +120,21 @@ public final class Bytes {
     return res;
   }
 
-  // TODO(thaidn): add checks for boundary conditions/overflows.
   /**
    * Transforms a passed value to a LSB first byte array with the size of the specified capacity
    *
    * @param capacity size of the resulting byte array
-   * @param value that should be represented as a byte array
+   * @param value that should be represented as a byte array. 0 <= value < 256^capacity.
    */
   public static byte[] intToByteArray(int capacity, int value) {
+    if ((capacity > 4) || (capacity < 0)) {
+      throw new IllegalArgumentException("capacity must be between 0 and 4");
+    }
+    // Check that 0 <= value < 256^capacity.
+    // For capacity == 4, all positive values are valid.
+    if (value < 0 || (capacity < 4 && (value >= 1 << (8 * capacity)))) {
+      throw new IllegalArgumentException("value too large");
+    }
     final byte[] result = new byte[capacity];
     for (int i = 0; i < capacity; i++) {
       result[i] = (byte) ((value >> (8 * i)) & 0xFF);
@@ -173,6 +169,12 @@ public final class Bytes {
    * @param length amount of the passed {@code bytes} that should be transformed
    */
   public static int byteArrayToInt(byte[] bytes, int offset, int length) {
+    if ((length > 4) || (length < 0)) {
+      throw new IllegalArgumentException("length must be between 0 and 4");
+    }
+    if (offset < 0 || offset + length > bytes.length) {
+      throw new IllegalArgumentException("offset and length are out of bounds");
+    }
     int value = 0;
     for (int i = 0; i < length; i++) {
       value += (bytes[i + offset] & 0xFF) << (i * 8);

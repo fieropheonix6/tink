@@ -35,48 +35,28 @@ import java.security.GeneralSecurityException;
  * }</pre>
  *
  * @since 1.0.0
- * @deprecated Use per-primitive configs, e.g., {@link AeadConfig}, {@link HybridConfig}, etc.
  */
-@Deprecated
 public final class TinkConfig {
-  /** @deprecated */
-  @Deprecated
-  public static final RegistryConfig TINK_1_0_0 =
-      RegistryConfig.newBuilder()
-          .mergeFrom(
-              HybridConfig.TINK_1_0_0) // include AeadConfig.TINK_1_0_0 and MacConfig.TINK_1_0_0
-          .mergeFrom(SignatureConfig.TINK_1_0_0)
-          .setConfigName("TINK_1_0_0")
-          .build();
-
   /**
-   * @deprecated
-   * @since 1.1.0
+   * @deprecated Configs are not supported anymore. Please call {@code TinkConfig.register();}
+   *     instead of accessing this variable.
    */
   @Deprecated
-  public static final RegistryConfig TINK_1_1_0 =
-      RegistryConfig.newBuilder()
-          .mergeFrom(
-              HybridConfig.TINK_1_1_0) // include AeadConfig.TINK_1_0_0 and MacConfig.TINK_1_0_0
-          .mergeFrom(SignatureConfig.TINK_1_1_0)
-          .mergeFrom(DeterministicAeadConfig.TINK_1_1_0)
-          .mergeFrom(StreamingAeadConfig.TINK_1_1_0)
-          .setConfigName("TINK_1_1_0")
-          .build();
+  public static final RegistryConfig TINK_1_0_0 = RegistryConfig.getDefaultInstance();
 
   /**
-   * @deprecated This is not supported anymore.
-   * @since 1.2.0
+   * @deprecated Configs are not supported anymore. Please call {@code TinkConfig.register();}
+   *     instead of accessing this variable.
    */
   @Deprecated
-  public static final RegistryConfig LATEST =
-      RegistryConfig.newBuilder()
-          .mergeFrom(HybridConfig.LATEST) // include AeadConfig.LATEST and MacConfig.LATEST
-          .mergeFrom(SignatureConfig.LATEST)
-          .mergeFrom(DeterministicAeadConfig.LATEST)
-          .mergeFrom(StreamingAeadConfig.LATEST)
-          .setConfigName("TINK")
-          .build();
+  public static final RegistryConfig TINK_1_1_0 = RegistryConfig.getDefaultInstance();
+
+  /**
+   * @deprecated Configs are not supported anymore. Please call {@code TinkConfig.register();}
+   *     instead of accessing this variable.
+   */
+  @Deprecated
+  public static final RegistryConfig LATEST = RegistryConfig.getDefaultInstance();
 
   /**
    * Tries to register with the {@link Registry} all instances of {@link
@@ -88,6 +68,14 @@ public final class TinkConfig {
   @Deprecated
   public static void init() throws GeneralSecurityException {
     register();
+  }
+
+  static {
+    try {
+      init();
+    } catch (GeneralSecurityException e) {
+      throw new ExceptionInInitializerError(e);
+    }
   }
 
   /**

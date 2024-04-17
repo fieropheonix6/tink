@@ -16,164 +16,142 @@
 
 package com.google.crypto.tink.aead;
 
+import static com.google.crypto.tink.internal.TinkBugException.exceptionIsBug;
+
+import com.google.crypto.tink.AccessesPartialKey;
 import com.google.crypto.tink.Aead;
+import com.google.crypto.tink.KeyManager;
 import com.google.crypto.tink.KeyTemplate;
-import com.google.crypto.tink.Registry;
-import com.google.crypto.tink.internal.KeyTypeManager;
-import com.google.crypto.tink.internal.PrimitiveFactory;
+import com.google.crypto.tink.Parameters;
+import com.google.crypto.tink.SecretKeyAccess;
+import com.google.crypto.tink.aead.internal.XChaCha20Poly1305Jce;
+import com.google.crypto.tink.aead.internal.XChaCha20Poly1305ProtoSerialization;
+import com.google.crypto.tink.config.internal.TinkFipsUtil;
+import com.google.crypto.tink.internal.KeyManagerRegistry;
+import com.google.crypto.tink.internal.LegacyKeyManagerImpl;
+import com.google.crypto.tink.internal.MutableKeyCreationRegistry;
+import com.google.crypto.tink.internal.MutableKeyDerivationRegistry;
+import com.google.crypto.tink.internal.MutableParametersRegistry;
+import com.google.crypto.tink.internal.MutablePrimitiveRegistry;
+import com.google.crypto.tink.internal.PrimitiveConstructor;
+import com.google.crypto.tink.internal.Util;
 import com.google.crypto.tink.proto.KeyData.KeyMaterialType;
-import com.google.crypto.tink.proto.XChaCha20Poly1305Key;
-import com.google.crypto.tink.proto.XChaCha20Poly1305KeyFormat;
-import com.google.crypto.tink.subtle.Random;
-import com.google.crypto.tink.subtle.Validators;
 import com.google.crypto.tink.subtle.XChaCha20Poly1305;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.ExtensionRegistryLite;
-import com.google.protobuf.InvalidProtocolBufferException;
-import java.io.IOException;
+import com.google.crypto.tink.util.SecretBytes;
 import java.io.InputStream;
 import java.security.GeneralSecurityException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import javax.annotation.Nullable;
 
 /**
  * This instance of {@code KeyManager} generates new {@code XChaCha20Poly1305} keys and produces new
  * instances of {@code XChaCha20Poly1305}.
  */
-public class XChaCha20Poly1305KeyManager extends KeyTypeManager<XChaCha20Poly1305Key> {
-  XChaCha20Poly1305KeyManager() {
-    super(
-        XChaCha20Poly1305Key.class,
-        new PrimitiveFactory<Aead, XChaCha20Poly1305Key>(Aead.class) {
-          @Override
-          public Aead getPrimitive(XChaCha20Poly1305Key key) throws GeneralSecurityException {
-            return new XChaCha20Poly1305(key.getKeyValue().toByteArray());
-          }
-        });
+public final class XChaCha20Poly1305KeyManager {
+
+  private static Aead createAead(XChaCha20Poly1305Key key) throws GeneralSecurityException {
+    if (XChaCha20Poly1305Jce.isSupported()) {
+      return XChaCha20Poly1305Jce.create(key);
+    }
+    return XChaCha20Poly1305.create(key);
   }
+
+  private static final PrimitiveConstructor<XChaCha20Poly1305Key, Aead>
+      X_CHA_CHA_20_POLY_1305_PRIMITIVE_CONSTRUCTOR =
+          PrimitiveConstructor.create(
+              XChaCha20Poly1305KeyManager::createAead, XChaCha20Poly1305Key.class, Aead.class);
 
   private static final int KEY_SIZE_IN_BYTES = 32;
 
-  @Override
-  public String getKeyType() {
+  static String getKeyType() {
     return "type.googleapis.com/google.crypto.tink.XChaCha20Poly1305Key";
   }
 
-  @Override
-  public int getVersion() {
-    return 0;
+  private static final KeyManager<Aead> legacyKeyManager =
+      LegacyKeyManagerImpl.create(
+          getKeyType(),
+          Aead.class,
+          KeyMaterialType.SYMMETRIC,
+          com.google.crypto.tink.proto.XChaCha20Poly1305Key.parser());
+
+  @SuppressWarnings("InlineLambdaConstant") // We need a correct Object#equals in registration.
+  private static final MutableKeyDerivationRegistry.InsecureKeyCreator<XChaCha20Poly1305Parameters>
+      KEY_DERIVER = XChaCha20Poly1305KeyManager::createXChaChaKeyFromRandomness;
+
+  @AccessesPartialKey
+  static com.google.crypto.tink.aead.XChaCha20Poly1305Key createXChaChaKeyFromRandomness(
+      XChaCha20Poly1305Parameters parameters,
+      InputStream stream,
+      @Nullable Integer idRequirement,
+      SecretKeyAccess access)
+      throws GeneralSecurityException {
+    return com.google.crypto.tink.aead.XChaCha20Poly1305Key.create(
+        parameters.getVariant(),
+        Util.readIntoSecretBytes(stream, KEY_SIZE_IN_BYTES, access),
+        idRequirement);
   }
 
-  @Override
-  public KeyMaterialType keyMaterialType() {
-    return KeyMaterialType.SYMMETRIC;
+  @SuppressWarnings("InlineLambdaConstant") // We need a correct Object#equals in registration.
+  private static final MutableKeyCreationRegistry.KeyCreator<XChaCha20Poly1305Parameters>
+      KEY_CREATOR = XChaCha20Poly1305KeyManager::createXChaChaKey;
+
+  @AccessesPartialKey
+  static com.google.crypto.tink.aead.XChaCha20Poly1305Key createXChaChaKey(
+      XChaCha20Poly1305Parameters parameters, @Nullable Integer idRequirement)
+      throws GeneralSecurityException {
+    return com.google.crypto.tink.aead.XChaCha20Poly1305Key.create(
+        parameters.getVariant(), SecretBytes.randomBytes(KEY_SIZE_IN_BYTES), idRequirement);
   }
 
-  @Override
-  public void validateKey(XChaCha20Poly1305Key key) throws GeneralSecurityException {
-    Validators.validateVersion(key.getVersion(), getVersion());
-    if (key.getKeyValue().size() != KEY_SIZE_IN_BYTES) {
-      throw new GeneralSecurityException("invalid XChaCha20Poly1305Key: incorrect key length");
-    }
-  }
-
-  @Override
-  public XChaCha20Poly1305Key parseKey(ByteString byteString)
-      throws InvalidProtocolBufferException {
-    return XChaCha20Poly1305Key.parseFrom(byteString, ExtensionRegistryLite.getEmptyRegistry());
-  }
-
-  @Override
-  public KeyFactory<XChaCha20Poly1305KeyFormat, XChaCha20Poly1305Key> keyFactory() {
-    return new KeyFactory<XChaCha20Poly1305KeyFormat, XChaCha20Poly1305Key>(
-        XChaCha20Poly1305KeyFormat.class) {
-      @Override
-      public void validateKeyFormat(XChaCha20Poly1305KeyFormat format)
-          throws GeneralSecurityException {}
-
-      @Override
-      public XChaCha20Poly1305KeyFormat parseKeyFormat(ByteString byteString)
-          throws InvalidProtocolBufferException {
-        return XChaCha20Poly1305KeyFormat.parseFrom(
-            byteString, ExtensionRegistryLite.getEmptyRegistry());
-      }
-
-      @Override
-      public XChaCha20Poly1305Key createKey(XChaCha20Poly1305KeyFormat format)
-          throws GeneralSecurityException {
-        return XChaCha20Poly1305Key.newBuilder()
-            .setVersion(getVersion())
-            .setKeyValue(ByteString.copyFrom(Random.randBytes(KEY_SIZE_IN_BYTES)))
-            .build();
-      }
-
-      @Override
-      public XChaCha20Poly1305Key deriveKey(
-          XChaCha20Poly1305KeyFormat format, InputStream inputStream)
-          throws GeneralSecurityException {
-        Validators.validateVersion(format.getVersion(), getVersion());
-
-        byte[] pseudorandomness = new byte[KEY_SIZE_IN_BYTES];
-        try {
-          int read = inputStream.read(pseudorandomness);
-          if (read != KEY_SIZE_IN_BYTES) {
-            throw new GeneralSecurityException("Not enough pseudorandomness given");
-          }
-          return XChaCha20Poly1305Key.newBuilder()
-              .setKeyValue(ByteString.copyFrom(pseudorandomness))
-              .setVersion(getVersion())
-              .build();
-        } catch (IOException e) {
-          throw new GeneralSecurityException("Reading pseudorandomness failed", e);
-        }
-      }
-
-      @Override
-      public Map<String, KeyFactory.KeyFormat<XChaCha20Poly1305KeyFormat>> keyFormats()
-          throws GeneralSecurityException {
-        Map<String, KeyFactory.KeyFormat<XChaCha20Poly1305KeyFormat>> result = new HashMap<>();
+  private static Map<String, Parameters> namedParameters() throws GeneralSecurityException {
+    Map<String, Parameters> result = new HashMap<>();
         result.put(
             "XCHACHA20_POLY1305",
-            new KeyFactory.KeyFormat<>(
-                XChaCha20Poly1305KeyFormat.getDefaultInstance(),
-                KeyTemplate.OutputPrefixType.TINK));
-        result.put(
-            "XCHACHA20_POLY1305_RAW",
-            new KeyFactory.KeyFormat<>(
-                XChaCha20Poly1305KeyFormat.getDefaultInstance(), KeyTemplate.OutputPrefixType.RAW));
+            XChaCha20Poly1305Parameters.create(XChaCha20Poly1305Parameters.Variant.TINK));
+    result.put(
+        "XCHACHA20_POLY1305_RAW",
+        XChaCha20Poly1305Parameters.create(XChaCha20Poly1305Parameters.Variant.NO_PREFIX));
         return Collections.unmodifiableMap(result);
-      }
-    };
   }
 
   public static void register(boolean newKeyAllowed) throws GeneralSecurityException {
-    Registry.registerKeyManager(new XChaCha20Poly1305KeyManager(), newKeyAllowed);
+    if (!TinkFipsUtil.AlgorithmFipsCompatibility.ALGORITHM_NOT_FIPS.isCompatible()) {
+      throw new GeneralSecurityException(
+          "Registering XChaCha20Poly1305 is not supported in FIPS mode");
+    }
+    XChaCha20Poly1305ProtoSerialization.register();
+    MutablePrimitiveRegistry.globalInstance()
+        .registerPrimitiveConstructor(X_CHA_CHA_20_POLY_1305_PRIMITIVE_CONSTRUCTOR);
+    MutableParametersRegistry.globalInstance().putAll(namedParameters());
+    MutableKeyCreationRegistry.globalInstance().add(KEY_CREATOR, XChaCha20Poly1305Parameters.class);
+    MutableKeyDerivationRegistry.globalInstance()
+        .add(KEY_DERIVER, XChaCha20Poly1305Parameters.class);
+    KeyManagerRegistry.globalInstance().registerKeyManager(legacyKeyManager, newKeyAllowed);
   }
 
   /**
    * @return a {@link KeyTemplate} that generates new instances of XChaCha20Poly1305 keys.
-   * @deprecated use {@code KeyTemplates.get("XCHACHA20_POLY1305")}
    */
-  @Deprecated
   public static final KeyTemplate xChaCha20Poly1305Template() {
-    return KeyTemplate.create(
-        new XChaCha20Poly1305KeyManager().getKeyType(),
-        XChaCha20Poly1305KeyFormat.getDefaultInstance().toByteArray(),
-        KeyTemplate.OutputPrefixType.TINK);
+    return exceptionIsBug(
+        () ->
+            KeyTemplate.createFrom(
+                XChaCha20Poly1305Parameters.create(XChaCha20Poly1305Parameters.Variant.TINK)));
   }
 
   /**
    * @return a {@link KeyTemplate} that generates new instances of XChaCha20Poly1305 keys. Keys
    *     generated from this template create ciphertexts compatible with libsodium and other
    *     libraries.
-   * @deprecated use {@code KeyTemplates.get("XCHACHA20_POLY1305_RAW")}
    */
-  @Deprecated
   public static final KeyTemplate rawXChaCha20Poly1305Template() {
-    return KeyTemplate.create(
-        new XChaCha20Poly1305KeyManager().getKeyType(),
-        XChaCha20Poly1305KeyFormat.getDefaultInstance().toByteArray(),
-        KeyTemplate.OutputPrefixType.RAW);
+    return exceptionIsBug(
+        () ->
+            KeyTemplate.createFrom(
+                XChaCha20Poly1305Parameters.create(XChaCha20Poly1305Parameters.Variant.NO_PREFIX)));
   }
+
+  private XChaCha20Poly1305KeyManager() {}
 }

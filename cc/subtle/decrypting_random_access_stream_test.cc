@@ -17,35 +17,41 @@
 #include "tink/subtle/decrypting_random_access_stream.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <limits>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "tink/internal/test_random_access_stream.h"
 #include "tink/output_stream.h"
 #include "tink/random_access_stream.h"
 #include "tink/streaming_aead.h"
 #include "tink/subtle/random.h"
 #include "tink/subtle/test_util.h"
-#include "tink/util/file_random_access_stream.h"
+#include "tink/util/buffer.h"
 #include "tink/util/ostream_output_stream.h"
 #include "tink/util/status.h"
+#include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
-#include "tink/util/test_util.h"
 
 namespace crypto {
 namespace tink {
 namespace subtle {
 namespace {
 
+using ::crypto::tink::internal::TestRandomAccessStream;
 using crypto::tink::subtle::test::DummyStreamingAead;
 using crypto::tink::subtle::test::DummyStreamSegmentDecrypter;
-using crypto::tink::test::GetTestFileDescriptor;
 using crypto::tink::test::IsOk;
 using crypto::tink::test::StatusIs;
 using subtle::test::WriteToStream;
@@ -77,16 +83,6 @@ class DummyRandomAccessStream : public RandomAccessStream {
   int ct_offset_;
 };
 
-// Creates a RandomAccessStream with the specified contents.
-std::unique_ptr<RandomAccessStream> GetRandomAccessStream(
-    absl::string_view contents) {
-  static int index = 1;
-  std::string filename = absl::StrCat("stream_data_file_", index, ".txt");
-  index++;
-  int input_fd = GetTestFileDescriptor(filename, contents);
-  return {absl::make_unique<util::FileRandomAccessStream>(input_fd)};
-}
-
 // Returns a ciphertext resulting from encryption of 'pt' with 'aad' as
 // associated data, using 'saead'.
 std::string GetCiphertext(StreamingAead* saead, absl::string_view pt,
@@ -115,24 +111,8 @@ std::unique_ptr<RandomAccessStream> GetCiphertextSource(StreamingAead* saead,
                                                         absl::string_view pt,
                                                         absl::string_view aad,
                                                         int ct_offset) {
-  return GetRandomAccessStream(GetCiphertext(saead, pt, aad, ct_offset));
-}
-
-// Reads the entire 'ra_stream', until no more bytes can be read,
-// and puts the read bytes into 'contents'.
-// Returns the status of the last ra_stream->PRead()-operation.
-util::Status ReadAll(RandomAccessStream* ra_stream, std::string* contents) {
-  int chunk_size = 42;
-  contents->clear();
-  auto buffer = std::move(util::Buffer::New(chunk_size).value());
-  int64_t position = 0;
-  auto status = util::OkStatus();
-  while (status.ok()) {
-    status = ra_stream->PRead(position, chunk_size, buffer.get());
-    contents->append(buffer->get_mem_block(), buffer->size());
-    position = contents->size();
-  }
-  return status;
+  return std::make_unique<TestRandomAccessStream>(
+      GetCiphertext(saead, pt, aad, ct_offset));
 }
 
 TEST(DecryptingRandomAccessStreamTest, NegativeCiphertextOffset) {
@@ -222,7 +202,8 @@ TEST(DecryptingRandomAccessStreamTest, BasicDecryption) {
           auto dec_stream = std::move(dec_stream_result.value());
           EXPECT_EQ(pt_size, dec_stream->size().value());
           std::string decrypted;
-          auto status = ReadAll(dec_stream.get(), &decrypted);
+          auto status = internal::ReadAllFromRandomAccessStream(
+              dec_stream.get(), decrypted);
           EXPECT_THAT(status, StatusIs(absl::StatusCode::kOutOfRange,
                                        HasSubstr("EOF")));
           EXPECT_EQ(plaintext, decrypted);
@@ -304,8 +285,8 @@ TEST(DecryptingRandomAccessStreamTest, TruncatedCiphertextDecryption) {
               SCOPED_TRACE(absl::StrCat("ct_size = ", ct.size(),
                                         ", trunc_ct_size = ", trunc_ct_size,
                                         ", chunk_size = ", chunk_size));
-              auto trunc_ct =
-                  GetRandomAccessStream(ct.substr(0, trunc_ct_size));
+              auto trunc_ct = std::make_unique<TestRandomAccessStream>(
+                  ct.substr(0, trunc_ct_size));
               int position = 0;
               auto per_stream_seg_decrypter =
                   absl::make_unique<DummyStreamSegmentDecrypter>(
@@ -376,8 +357,8 @@ TEST(DecryptingRandomAccessStreamTest, WrongCiphertext) {
   for (int ct_size : {0, 10, 100}) {
     SCOPED_TRACE(absl::StrCat("ct_size = ", ct_size));
     // Try decrypting a wrong ciphertext.
-    auto wrong_ct =
-        GetRandomAccessStream(subtle::Random::GetRandomBytes(ct_size));
+    auto wrong_ct = std::make_unique<TestRandomAccessStream>(
+        subtle::Random::GetRandomBytes(ct_size));
     auto seg_decrypter = absl::make_unique<DummyStreamSegmentDecrypter>(
         pt_segment_size, header_size, ct_offset);
     auto dec_stream_result = DecryptingRandomAccessStream::New(
@@ -394,7 +375,8 @@ TEST(DecryptingRandomAccessStreamTest, WrongCiphertext) {
 }
 
 TEST(DecryptingRandomAccessStreamTest, NullSegmentDecrypter) {
-  auto ct_stream = GetRandomAccessStream("some ciphertext contents");
+  auto ct_stream =
+      std::make_unique<TestRandomAccessStream>("some ciphertext contents");
   auto dec_stream_result =
       DecryptingRandomAccessStream::New(nullptr, std::move(ct_stream));
   EXPECT_THAT(dec_stream_result.status(),

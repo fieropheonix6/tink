@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 // Package signature provides implementations of the Signer and Verifier
 // primitives.
@@ -24,6 +22,7 @@ import (
 	"fmt"
 
 	"github.com/google/tink/go/core/registry"
+	"github.com/google/tink/go/internal/internalregistry"
 )
 
 func init() {
@@ -37,6 +36,9 @@ func init() {
 
 	// ED25519
 	if err := registry.RegisterKeyManager(new(ed25519SignerKeyManager)); err != nil {
+		panic(fmt.Sprintf("signature.init() failed: %v", err))
+	}
+	if err := internalregistry.AllowKeyDerivation(ed25519SignerTypeURL); err != nil {
 		panic(fmt.Sprintf("signature.init() failed: %v", err))
 	}
 	if err := registry.RegisterKeyManager(new(ed25519VerifierKeyManager)); err != nil {

@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 // Package hybrid provides HybridEncrypt/Decrypt primitive-specific test
 // utilities.
@@ -23,8 +21,8 @@ import (
 	"fmt"
 
 	"google.golang.org/protobuf/proto"
-	"github.com/google/tink/go/insecurecleartextkeyset"
 	"github.com/google/tink/go/keyset"
+	"github.com/google/tink/go/testkeyset"
 	hpkepb "github.com/google/tink/go/proto/hpke_go_proto"
 	tinkpb "github.com/google/tink/go/proto/tink_go_proto"
 )
@@ -88,8 +86,7 @@ func KeysetHandleFromSerializedPrivateKey(privKeyBytes, pubKeyBytes []byte, temp
 			},
 		},
 	}
-
-	return insecurecleartextkeyset.Read(&keyset.MemReaderWriter{Keyset: ks})
+	return testkeyset.NewHandle(ks)
 }
 
 // hpkeParamsFromTemplate returns HPKE params after verifying that template is

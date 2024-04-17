@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package jwt
 
@@ -58,14 +56,14 @@ func (jm *macWithKID) ComputeMACAndEncodeWithKID(token *RawJWT, kid *string) (st
 func (jm *macWithKID) VerifyMACAndDecodeWithKID(compact string, verifier *Validator, kid *string) (*VerifiedJWT, error) {
 	tag, content, err := splitSignedCompact(compact)
 	if err != nil {
-		return nil, err
+		return nil, errJwtVerification
 	}
 	if err := jm.tm.VerifyMAC(tag, []byte(content)); err != nil {
-		return nil, err
+		return nil, errJwtVerification
 	}
 	rawJWT, err := decodeUnsignedTokenAndValidateHeader(content, jm.algorithm, kid, jm.customKID)
 	if err != nil {
-		return nil, err
+		return nil, errJwtVerification
 	}
 	if err := verifier.Validate(rawJWT); err != nil {
 		return nil, err

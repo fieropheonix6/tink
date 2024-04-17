@@ -11,197 +11,306 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package keyset_test
 
 import (
-	"strings"
+	"bytes"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
-	"github.com/google/tink/go/aead/subtle"
+	"github.com/google/tink/go/aead"
+	"github.com/google/tink/go/core/registry"
+	"github.com/google/tink/go/internal/internalapi"
 	"github.com/google/tink/go/keyset"
 	"github.com/google/tink/go/mac"
+	"github.com/google/tink/go/signature"
 	"github.com/google/tink/go/testkeyset"
 	"github.com/google/tink/go/testutil"
-
+	"github.com/google/tink/go/tink"
 	tinkpb "github.com/google/tink/go/proto/tink_go_proto"
 )
 
 func TestNewHandle(t *testing.T) {
-	kt := mac.HMACSHA256Tag128KeyTemplate()
-	kh, err := keyset.NewHandle(kt)
+	template := mac.HMACSHA256Tag128KeyTemplate()
+	handle, err := keyset.NewHandle(template)
 	if err != nil {
-		t.Errorf("unexpected error: %s", err)
+		t.Errorf("keyset.NewHandle(template) = %v, want nil", err)
 	}
-	ks := testkeyset.KeysetMaterial(kh)
+	ks := testkeyset.KeysetMaterial(handle)
 	if len(ks.Key) != 1 {
-		t.Errorf("incorrect number of keys in the keyset: %d", len(ks.Key))
+		t.Errorf("len(ks.Key) = %d, want 1", len(ks.Key))
 	}
 	key := ks.Key[0]
 	if ks.PrimaryKeyId != key.KeyId {
-		t.Errorf("incorrect primary key id, expect %d, got %d", key.KeyId, ks.PrimaryKeyId)
+		t.Errorf("ks.PrimaryKeyId = %d, want %d", ks.PrimaryKeyId, key.KeyId)
 	}
-	if key.KeyData.TypeUrl != kt.TypeUrl {
-		t.Errorf("incorrect type url, expect %s, got %s", kt.TypeUrl, key.KeyData.TypeUrl)
+	if key.KeyData.TypeUrl != template.TypeUrl {
+		t.Errorf("key.KeyData.TypeUrl = %v, want %v", key.KeyData.TypeUrl, template.TypeUrl)
 	}
-	if _, err = mac.New(kh); err != nil {
-		t.Errorf("cannot get primitive from generated keyset handle: %s", err)
+	if _, err = mac.New(handle); err != nil {
+		t.Errorf("mac.New(handle) err = %v, want nil", err)
 	}
 }
 
-func TestNewHandleWithInvalidInput(t *testing.T) {
-	// template unregistered TypeUrl
-	template := mac.HMACSHA256Tag128KeyTemplate()
-	template.TypeUrl = "some unknown TypeUrl"
-	if _, err := keyset.NewHandle(template); err == nil {
-		t.Errorf("expect an error when TypeUrl is not registered")
+func TestNewHandleWithInvalidTypeURLFails(t *testing.T) {
+	// template with unknown TypeURL
+	invalidTemplate := mac.HMACSHA256Tag128KeyTemplate()
+	invalidTemplate.TypeUrl = "some unknown TypeURL"
+	if _, err := keyset.NewHandle(invalidTemplate); err == nil {
+		t.Errorf("keyset.NewHandle(invalidTemplate) err = nil, want error")
 	}
-	// nil
+}
+
+func TestNewHandleWithNilTemplateFails(t *testing.T) {
 	if _, err := keyset.NewHandle(nil); err == nil {
-		t.Errorf("expect an error when template is nil")
+		t.Error("keyset.NewHandle(nil) err = nil, want error")
 	}
 }
 
-func TestRead(t *testing.T) {
-	masterKey, err := subtle.NewAESGCM([]byte(strings.Repeat("A", 32)))
+func TestWriteAndReadInBinary(t *testing.T) {
+	keysetEncryptionHandle, err := keyset.NewHandle(aead.AES128GCMKeyTemplate())
 	if err != nil {
-		t.Errorf("subtle.NewAESGCM(): %v", err)
+		t.Errorf("keyset.NewHandle(aead.AES128GCMKeyTemplate()) err = %v, want nil", err)
+	}
+	keysetEncryptionAead, err := aead.New(keysetEncryptionHandle)
+	if err != nil {
+		t.Errorf("aead.New(keysetEncryptionHandle) err = %v, want nil", err)
 	}
 
-	// Create a keyset
-	keyData := testutil.NewKeyData("some type url", []byte{0}, tinkpb.KeyData_SYMMETRIC)
-	key := testutil.NewKey(keyData, tinkpb.KeyStatusType_ENABLED, 1, tinkpb.OutputPrefixType_TINK)
-	ks := testutil.NewKeyset(1, []*tinkpb.Keyset_Key{key})
-	h, _ := testkeyset.NewHandle(ks)
-
-	memKeyset := &keyset.MemReaderWriter{}
-	if err := h.Write(memKeyset, masterKey); err != nil {
-		t.Fatalf("handle.Write(): %v", err)
-	}
-	h2, err := keyset.Read(memKeyset, masterKey)
+	handle, err := keyset.NewHandle(mac.HMACSHA256Tag128KeyTemplate())
 	if err != nil {
-		t.Fatalf("keyset.Read(): %v", err)
+		t.Fatalf("keyset.NewHandle(mac.HMACSHA256Tag128KeyTemplate()) err = %v, want nil", err)
 	}
-	if !proto.Equal(testkeyset.KeysetMaterial(h), testkeyset.KeysetMaterial(h2)) {
-		t.Fatalf("Decrypt failed: got %v, want %v", h2, h)
+
+	buff := &bytes.Buffer{}
+	err = handle.Write(keyset.NewBinaryWriter(buff), keysetEncryptionAead)
+	if err != nil {
+		t.Fatalf("handle.Write(keyset.NewBinaryWriter(buff), keysetEncryptionAead) err = %v, want nil", err)
+	}
+	encrypted := buff.Bytes()
+
+	gotHandle, err := keyset.Read(keyset.NewBinaryReader(bytes.NewBuffer(encrypted)), keysetEncryptionAead)
+	if err != nil {
+		t.Fatalf("keyset.Read() err = %v, want nil", err)
+	}
+
+	if !proto.Equal(testkeyset.KeysetMaterial(gotHandle), testkeyset.KeysetMaterial(handle)) {
+		t.Fatalf("keyset.Read() = %v, want %v", gotHandle, handle)
 	}
 }
 
-func TestReadWithAssociatedData(t *testing.T) {
-	masterKey, err := subtle.NewAESGCM([]byte(strings.Repeat("A", 32)))
+func TestWriteAndReadInJSON(t *testing.T) {
+	keysetEncryptionHandle, err := keyset.NewHandle(aead.AES128GCMKeyTemplate())
 	if err != nil {
-		t.Fatalf("subtle.NewAESGCM(): %v", err)
+		t.Errorf("keyset.NewHandle(aead.AES128GCMKeyTemplate()) err = %v, want nil", err)
+	}
+	keysetEncryptionAead, err := aead.New(keysetEncryptionHandle)
+	if err != nil {
+		t.Errorf("aead.New(keysetEncryptionHandle) err = %v, want nil", err)
 	}
 
-	// Create a keyset
-	keyData := testutil.NewKeyData("some type url", []byte{0}, tinkpb.KeyData_SYMMETRIC)
-	key := testutil.NewKey(keyData, tinkpb.KeyStatusType_ENABLED, 1, tinkpb.OutputPrefixType_TINK)
-	keySet := testutil.NewKeyset(1, []*tinkpb.Keyset_Key{key})
-	handle, _ := testkeyset.NewHandle(keySet)
-
-	memKeyset := &keyset.MemReaderWriter{}
-	if err := handle.WriteWithAssociatedData(memKeyset, masterKey, []byte{0x01, 0x02}); err != nil {
-		t.Fatalf("handle.Write(): %v", err)
-	}
-	handle2, err := keyset.ReadWithAssociatedData(memKeyset, masterKey, []byte{0x01, 0x02})
+	handle, err := keyset.NewHandle(mac.HMACSHA256Tag128KeyTemplate())
 	if err != nil {
-		t.Fatalf("keyset.Read(): %v", err)
+		t.Fatalf("keyset.NewHandle(mac.HMACSHA256Tag128KeyTemplate()) err = %v, want nil", err)
 	}
+
+	buff := &bytes.Buffer{}
+	err = handle.Write(keyset.NewJSONWriter(buff), keysetEncryptionAead)
+	if err != nil {
+		t.Fatalf("h.Write(keyset.NewJSONWriter(buff), keysetEncryptionAead) err = %v, want nil", err)
+	}
+	encrypted := buff.Bytes()
+
+	gotHandle, err := keyset.Read(keyset.NewJSONReader(bytes.NewBuffer(encrypted)), keysetEncryptionAead)
+	if err != nil {
+		t.Fatalf("keyset.Read() err = %v, want nil", err)
+	}
+
+	if !proto.Equal(testkeyset.KeysetMaterial(gotHandle), testkeyset.KeysetMaterial(handle)) {
+		t.Fatalf("keyset.Read() = %v, want %v", gotHandle, handle)
+	}
+}
+
+func TestWriteAndReadWithAssociatedData(t *testing.T) {
+	keysetEncryptionHandle, err := keyset.NewHandle(aead.AES128GCMKeyTemplate())
+	if err != nil {
+		t.Errorf("keyset.NewHandle(aead.AES128GCMKeyTemplate()) err = %v, want nil", err)
+	}
+	keysetEncryptionAead, err := aead.New(keysetEncryptionHandle)
+	if err != nil {
+		t.Errorf("aead.New(keysetEncryptionHandle) err = %v, want nil", err)
+	}
+
+	handle, err := keyset.NewHandle(mac.HMACSHA256Tag128KeyTemplate())
+	if err != nil {
+		t.Fatalf("keyset.NewHandle(mac.HMACSHA256Tag128KeyTemplate()) err = %v, want nil", err)
+	}
+	associatedData := []byte{0x01, 0x02}
+
+	buff := &bytes.Buffer{}
+	err = handle.WriteWithAssociatedData(keyset.NewBinaryWriter(buff), keysetEncryptionAead, associatedData)
+	if err != nil {
+		t.Fatalf("handle.WriteWithAssociatedData() err = %v, want nil", err)
+	}
+	encrypted := buff.Bytes()
+
+	handle2, err := keyset.ReadWithAssociatedData(keyset.NewBinaryReader(bytes.NewBuffer(encrypted)), keysetEncryptionAead, associatedData)
+	if err != nil {
+		t.Fatalf("keyset.ReadWithAssociatedData() err = %v, want nil", err)
+	}
+
 	if !proto.Equal(testkeyset.KeysetMaterial(handle), testkeyset.KeysetMaterial(handle2)) {
-		t.Errorf("Decrypt failed: got %v, want %v", handle2, handle)
+		t.Errorf("keyset.ReadWithAssociatedData() = %v, want %v", handle2, handle)
 	}
 }
 
 func TestReadWithMismatchedAssociatedData(t *testing.T) {
-	masterKey, err := subtle.NewAESGCM([]byte(strings.Repeat("A", 32)))
+	keysetEncryptionHandle, err := keyset.NewHandle(aead.AES128GCMKeyTemplate())
 	if err != nil {
-		t.Fatalf("subtle.NewAESGCM(): %v", err)
+		t.Errorf("keyset.NewHandle(aead.AES128GCMKeyTemplate()) err = %v, want nil", err)
+	}
+	keysetEncryptionAead, err := aead.New(keysetEncryptionHandle)
+	if err != nil {
+		t.Errorf("aead.New(keysetEncryptionHandle) err = %v, want nil", err)
 	}
 
-	// Create a keyset
-	keyData := testutil.NewKeyData("some type url", []byte{0}, tinkpb.KeyData_SYMMETRIC)
-	key := testutil.NewKey(keyData, tinkpb.KeyStatusType_ENABLED, 1, tinkpb.OutputPrefixType_TINK)
-	keySet := testutil.NewKeyset(1, []*tinkpb.Keyset_Key{key})
-	handle, _ := testkeyset.NewHandle(keySet)
-
-	memKeyset := &keyset.MemReaderWriter{}
-	if err := handle.WriteWithAssociatedData(memKeyset, masterKey, []byte{0x01, 0x02}); err != nil {
-		t.Fatalf("handle.Write(): %v", err)
+	handle, err := keyset.NewHandle(mac.HMACSHA256Tag128KeyTemplate())
+	if err != nil {
+		t.Fatalf("keyset.NewHandle(mac.HMACSHA256Tag128KeyTemplate()) err = %v, want nil", err)
 	}
-	_, err = keyset.ReadWithAssociatedData(memKeyset, masterKey, []byte{0x01, 0x03})
+	associatedData := []byte{0x01, 0x02}
+
+	buff := &bytes.Buffer{}
+	err = handle.WriteWithAssociatedData(keyset.NewBinaryWriter(buff), keysetEncryptionAead, associatedData)
+	if err != nil {
+		t.Fatalf("handle.WriteWithAssociatedData() err = %v, want nil", err)
+	}
+	encrypted := buff.Bytes()
+
+	invalidAssociatedData := []byte{0x01, 0x03}
+	_, err = keyset.ReadWithAssociatedData(keyset.NewBinaryReader(bytes.NewBuffer(encrypted)), keysetEncryptionAead, invalidAssociatedData)
 	if err == nil {
-		t.Fatalf("keyset.Read() was expected to fail")
+		t.Errorf("keyset.ReadWithAssociatedData() err = nil, want err")
 	}
 }
 
-func TestReadWithNoSecrets(t *testing.T) {
-	// Create a keyset containing public key material
-	keyData := testutil.NewKeyData("some type url", []byte{0}, tinkpb.KeyData_ASYMMETRIC_PUBLIC)
-	key := testutil.NewKey(keyData, tinkpb.KeyStatusType_ENABLED, 1, tinkpb.OutputPrefixType_TINK)
-	ks := testutil.NewKeyset(1, []*tinkpb.Keyset_Key{key})
-	h, _ := testkeyset.NewHandle(ks)
-
-	memKeyset := &keyset.MemReaderWriter{}
-	if err := h.WriteWithNoSecrets(memKeyset); err != nil {
-		t.Fatalf("handle.WriteWithNoSecrets(): %v", err)
-	}
-	h2, err := keyset.ReadWithNoSecrets(memKeyset)
+func TestWriteAndReadWithNoSecrets(t *testing.T) {
+	// Create a keyset that contains a public key.
+	privateHandle, err := keyset.NewHandle(signature.ECDSAP256KeyTemplate())
 	if err != nil {
-		t.Fatalf("keyset.ReadWithNoSecrets(): %v", err)
+		t.Fatalf("keyset.NewHandle(signature.ECDSAP256KeyTemplate()) err = %v, want nil", err)
 	}
-	if !proto.Equal(testkeyset.KeysetMaterial(h), testkeyset.KeysetMaterial(h2)) {
-		t.Fatalf("Decrypt failed: got %v, want %v", h2, h)
+	handle, err := privateHandle.Public()
+	if err != nil {
+		t.Fatalf("privateHandle.Public() err = %v, want nil", err)
+	}
+
+	buff := &bytes.Buffer{}
+	err = handle.WriteWithNoSecrets(keyset.NewBinaryWriter(buff))
+	if err != nil {
+		t.Fatalf("handle.WriteWithAssociatedData(keyset.NewBinaryWriter(buff), masterKey, associatedData) err = %v, want nil", err)
+	}
+	serialized := buff.Bytes()
+
+	handle2, err := keyset.ReadWithNoSecrets(keyset.NewBinaryReader(bytes.NewBuffer(serialized)))
+	if err != nil {
+		t.Fatalf("keyset.ReadWithNoSecrets() err = %v, want nil", err)
+	}
+
+	if !proto.Equal(testkeyset.KeysetMaterial(handle), testkeyset.KeysetMaterial(handle2)) {
+		t.Fatalf("keyset.ReadWithNoSecrets() = %v, want %v", handle2, handle)
 	}
 }
 
-func TestWithNoSecretsFunctionsFailWhenHandlingSecretKeyMaterial(t *testing.T) {
-	// Create a keyset containing secret key material (symmetric)
-	keyData := testutil.NewKeyData("some type url", []byte{0}, tinkpb.KeyData_SYMMETRIC)
-	key := testutil.NewKey(keyData, tinkpb.KeyStatusType_ENABLED, 1, tinkpb.OutputPrefixType_TINK)
-	ks := testutil.NewKeyset(1, []*tinkpb.Keyset_Key{key})
-	h, _ := testkeyset.NewHandle(ks)
-
-	if err := h.WriteWithNoSecrets(&keyset.MemReaderWriter{}); err == nil {
-		t.Error("handle.WriteWithNoSecrets() should fail when exporting secret key material")
+func TestWriteWithNoSecretsFailsWithSymmetricSecretKey(t *testing.T) {
+	// Create a keyset that contains a symmetric secret key.
+	handle, err := keyset.NewHandle(mac.HMACSHA256Tag128KeyTemplate())
+	if err != nil {
+		t.Fatalf("keyset.NewHandle(aead.AES256GCMKeyTemplate()) err = %v, want nil", err)
 	}
 
-	if _, err := keyset.ReadWithNoSecrets(&keyset.MemReaderWriter{Keyset: testkeyset.KeysetMaterial(h)}); err == nil {
-		t.Error("keyset.ReadWithNoSecrets should fail when importing secret key material")
+	buff := &bytes.Buffer{}
+	err = handle.WriteWithNoSecrets(keyset.NewBinaryWriter(buff))
+	if err == nil {
+		t.Error("handle.WriteWithNoSecrets() = nil, want error")
 	}
 }
 
-func TestWithNoSecretsFunctionsFailWhenUnknownKeyMaterial(t *testing.T) {
-	// Create a keyset containing secret key material (symmetric)
+func TestReadWithNoSecretsFailsWithSymmetricSecretKey(t *testing.T) {
+	// Create a keyset that contains a symmetric secret key.
+	handle, err := keyset.NewHandle(mac.HMACSHA256Tag128KeyTemplate())
+	if err != nil {
+		t.Fatalf("keyset.NewHandle(aead.AES256GCMKeyTemplate()) err = %v, want nil", err)
+	}
+	buff := &bytes.Buffer{}
+	err = testkeyset.Write(handle, keyset.NewBinaryWriter(buff))
+	if err != nil {
+		t.Fatalf("insecurecleartextkeyset.Write(handle, keyset.NewBinaryWriter(buff)) err = %v, want nil", err)
+	}
+	serialized := buff.Bytes()
+
+	_, err = keyset.ReadWithNoSecrets(keyset.NewBinaryReader(bytes.NewBuffer(serialized)))
+	if err == nil {
+		t.Error("keyset.ReadWithNoSecrets() = nil, want error")
+	}
+}
+
+func TestWriteWithNoSecretsFailsWithPrivateKey(t *testing.T) {
+	// Create a keyset that contains a private key.
+	handle, err := keyset.NewHandle(signature.ECDSAP256KeyTemplate())
+	if err != nil {
+		t.Fatalf("keyset.NewHandle(signature.ECDSAP256KeyTemplate()) err = %v, want nil", err)
+	}
+
+	buff := &bytes.Buffer{}
+	if err := handle.WriteWithNoSecrets(keyset.NewBinaryWriter(buff)); err == nil {
+		t.Error("handle.WriteWithNoSecrets() = nil, want error")
+	}
+}
+
+func TestReadWithNoSecretsFailsWithPrivateKey(t *testing.T) {
+	// Create a keyset that contains a private key.
+	handle, err := keyset.NewHandle(signature.ECDSAP256KeyTemplate())
+	if err != nil {
+		t.Fatalf("keyset.NewHandle(signature.ECDSAP256KeyTemplate()) err = %v, want nil", err)
+	}
+	buff := &bytes.Buffer{}
+	err = testkeyset.Write(handle, keyset.NewBinaryWriter(buff))
+	if err != nil {
+		t.Fatalf("insecurecleartextkeyset.Write(handle, keyset.NewBinaryWriter(buff)) err = %v, want nil", err)
+	}
+	serialized := buff.Bytes()
+
+	_, err = keyset.ReadWithNoSecrets(keyset.NewBinaryReader(bytes.NewBuffer(serialized)))
+	if err == nil {
+		t.Error("keyset.ReadWithNoSecrets() = nil, want error")
+	}
+}
+
+func TestWriteAndReadWithNoSecretsFailsWithUnknownKeyMaterial(t *testing.T) {
+	// Create a keyset that contains unknown key material.
 	keyData := testutil.NewKeyData("some type url", []byte{0}, tinkpb.KeyData_UNKNOWN_KEYMATERIAL)
 	key := testutil.NewKey(keyData, tinkpb.KeyStatusType_ENABLED, 1, tinkpb.OutputPrefixType_TINK)
 	ks := testutil.NewKeyset(1, []*tinkpb.Keyset_Key{key})
-	h, _ := testkeyset.NewHandle(ks)
-
-	if err := h.WriteWithNoSecrets(&keyset.MemReaderWriter{}); err == nil {
-		t.Error("handle.WriteWithNoSecrets() should fail when exporting secret key material")
+	handle, err := testkeyset.NewHandle(ks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serialized, err := proto.Marshal(ks)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	if _, err := keyset.ReadWithNoSecrets(&keyset.MemReaderWriter{Keyset: testkeyset.KeysetMaterial(h)}); err == nil {
-		t.Error("keyset.ReadWithNoSecrets should fail when importing secret key material")
-	}
-}
-
-func TestWithNoSecretsFunctionsFailWithAsymmetricPrivateKeyMaterial(t *testing.T) {
-	// Create a keyset containing secret key material (asymmetric)
-	keyData := testutil.NewKeyData("some type url", []byte{0}, tinkpb.KeyData_ASYMMETRIC_PRIVATE)
-	key := testutil.NewKey(keyData, tinkpb.KeyStatusType_ENABLED, 1, tinkpb.OutputPrefixType_TINK)
-	ks := testutil.NewKeyset(1, []*tinkpb.Keyset_Key{key})
-	h, _ := testkeyset.NewHandle(ks)
-
-	if err := h.WriteWithNoSecrets(&keyset.MemReaderWriter{}); err == nil {
-		t.Error("handle.WriteWithNoSecrets() should fail when exporting secret key material")
+	buff := &bytes.Buffer{}
+	err = handle.WriteWithNoSecrets(keyset.NewBinaryWriter(buff))
+	if err == nil {
+		t.Error("handle.WriteWithNoSecrets() = nil, want error")
 	}
 
-	if _, err := keyset.ReadWithNoSecrets(&keyset.MemReaderWriter{Keyset: testkeyset.KeysetMaterial(h)}); err == nil {
-		t.Error("keyset.ReadWithNoSecrets should fail when importing secret key material")
+	_, err = keyset.ReadWithNoSecrets(keyset.NewBinaryReader(bytes.NewBuffer(serialized)))
+	if err == nil {
+		t.Error("handle.ReadWithNoSecrets() = nil, want error")
 	}
 }
 
@@ -214,5 +323,122 @@ func TestKeysetInfo(t *testing.T) {
 	info := kh.KeysetInfo()
 	if info.PrimaryKeyId != info.KeyInfo[0].KeyId {
 		t.Errorf("Expected primary key id: %d, but got: %d", info.KeyInfo[0].KeyId, info.PrimaryKeyId)
+	}
+}
+
+func TestPrimitivesWithRegistry(t *testing.T) {
+	template := mac.HMACSHA256Tag128KeyTemplate()
+	template.OutputPrefixType = tinkpb.OutputPrefixType_RAW
+	handle, err := keyset.NewHandle(template)
+	if err != nil {
+		t.Fatalf("keyset.NewHandle(%v) err = %v, want nil", template, err)
+	}
+	handleMAC, err := mac.New(handle)
+	if err != nil {
+		t.Fatalf("mac.New(%v) err = %v, want nil", handle, err)
+	}
+
+	ks := testkeyset.KeysetMaterial(handle)
+	if len(ks.Key) != 1 {
+		t.Fatalf("len(ks.Key) = %d, want 1", len(ks.Key))
+	}
+	keyDataPrimitive, err := registry.PrimitiveFromKeyData(ks.Key[0].KeyData)
+	if err != nil {
+		t.Fatalf("registry.PrimitiveFromKeyData(%v) err = %v, want nil", ks.Key[0].KeyData, err)
+	}
+	keyDataMAC, ok := keyDataPrimitive.(tink.MAC)
+	if !ok {
+		t.Fatal("registry.PrimitiveFromKeyData(keyData) is not of type tink.MAC")
+	}
+
+	plaintext := []byte("plaintext")
+	handleMACTag, err := handleMAC.ComputeMAC(plaintext)
+	if err != nil {
+		t.Fatalf("handleMAC.ComputeMAC(%v) err = %v, want nil", plaintext, err)
+	}
+	if err = keyDataMAC.VerifyMAC(handleMACTag, plaintext); err != nil {
+		t.Errorf("keyDataMAC.VerifyMAC(%v, %v) err = %v, want nil", handleMACTag, plaintext, err)
+	}
+	keyDataMACTag, err := keyDataMAC.ComputeMAC(plaintext)
+	if err != nil {
+		t.Fatalf("keyDataMAC.ComputeMAC(%v) err = %v, want nil", plaintext, err)
+	}
+	if err = handleMAC.VerifyMAC(keyDataMACTag, plaintext); err != nil {
+		t.Errorf("handleMAC.VerifyMAC(%v, %v) err = %v, want nil", keyDataMACTag, plaintext, err)
+	}
+}
+
+type testConfig struct{}
+
+func (c *testConfig) PrimitiveFromKeyData(_ *tinkpb.KeyData, _ internalapi.Token) (any, error) {
+	return testPrimitive{}, nil
+}
+
+func TestPrimitivesWithConfig(t *testing.T) {
+	template := mac.HMACSHA256Tag128KeyTemplate()
+	template.OutputPrefixType = tinkpb.OutputPrefixType_RAW
+	handle, err := keyset.NewHandle(template)
+	if err != nil {
+		t.Fatalf("keyset.NewHandle(%v) = %v, want nil", template, err)
+	}
+	primitives, err := handle.Primitives(keyset.WithConfig(&testConfig{}))
+	if err != nil {
+		t.Fatalf("handle.Primitives(keyset.WithConfig(&testConfig{})) err = %v, want nil", err)
+	}
+	if len(primitives.EntriesInKeysetOrder) != 1 {
+		t.Fatalf("len(handle.Primitives()) = %d, want 1", len(primitives.EntriesInKeysetOrder))
+	}
+	if _, ok := (primitives.Primary.Primitive).(testPrimitive); !ok {
+		t.Errorf("handle.Primitives().Primary = %v, want instance of `testPrimitive`", primitives.Primary.Primitive)
+	}
+}
+
+func TestPrimitivesWithMultipleConfigs(t *testing.T) {
+	template := mac.HMACSHA256Tag128KeyTemplate()
+	template.OutputPrefixType = tinkpb.OutputPrefixType_RAW
+	handle, err := keyset.NewHandle(template)
+	if err != nil {
+		t.Fatalf("keyset.NewHandle(%v) = %v, want nil", template, err)
+	}
+	_, err = handle.Primitives(keyset.WithConfig(&testConfig{}), keyset.WithConfig(&testConfig{}))
+	if err == nil { // if NO error
+		t.Error("handle.Primitives(keyset.WithConfig(&testConfig{}), keyset.WithConfig(&testConfig{})) err = nil, want error")
+	}
+}
+
+type testKeyManager struct{}
+
+type testPrimitive struct{}
+
+func (km *testKeyManager) Primitive(_ []byte) (any, error)              { return testPrimitive{}, nil }
+func (km *testKeyManager) NewKey(_ []byte) (proto.Message, error)       { return nil, nil }
+func (km *testKeyManager) TypeURL() string                              { return mac.HMACSHA256Tag128KeyTemplate().TypeUrl }
+func (km *testKeyManager) NewKeyData(_ []byte) (*tinkpb.KeyData, error) { return nil, nil }
+func (km *testKeyManager) DoesSupport(typeURL string) bool {
+	return typeURL == mac.HMACSHA256Tag128KeyTemplate().TypeUrl
+}
+
+func TestPrimitivesWithKeyManager(t *testing.T) {
+	template := mac.HMACSHA256Tag128KeyTemplate()
+	handle, err := keyset.NewHandle(template)
+	if err != nil {
+		t.Fatalf("keyset.NewHandle(%v) = %v, want nil", template, err)
+	}
+
+	// Verify that without providing a custom key manager we get a usual MAC.
+	if _, err = mac.New(handle); err != nil {
+		t.Fatalf("mac.New(%v) err = %v, want nil", handle, err)
+	}
+
+	// Verify that with the custom key manager provided we get the custom primitive.
+	primitives, err := handle.PrimitivesWithKeyManager(&testKeyManager{})
+	if err != nil {
+		t.Fatalf("handle.PrimitivesWithKeyManager(testKeyManager) err = %v, want nil", err)
+	}
+	if len(primitives.EntriesInKeysetOrder) != 1 {
+		t.Fatalf("len(handle.PrimitivesWithKeyManager()) = %d, want 1", len(primitives.EntriesInKeysetOrder))
+	}
+	if _, ok := (primitives.Primary.Primitive).(testPrimitive); !ok {
+		t.Errorf("handle.PrimitivesWithKeyManager().Primary = %v, want instance of `testPrimitive`", primitives.Primary.Primitive)
 	}
 }

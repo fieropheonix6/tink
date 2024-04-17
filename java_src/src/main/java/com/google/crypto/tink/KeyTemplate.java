@@ -16,13 +16,22 @@
 
 package com.google.crypto.tink;
 
+import com.google.crypto.tink.internal.LegacyProtoParameters;
+import com.google.crypto.tink.internal.MutableSerializationRegistry;
+import com.google.crypto.tink.internal.ProtoParametersSerialization;
+import com.google.crypto.tink.internal.TinkBugException;
 import com.google.errorprone.annotations.Immutable;
 import com.google.protobuf.ByteString;
+import java.security.GeneralSecurityException;
+import javax.annotation.Nullable;
 
 /** A KeyTemplate specifies how to generate keys of a particular type. */
 @Immutable
 public final class KeyTemplate {
-  private final com.google.crypto.tink.proto.KeyTemplate kt;
+  // Exactly one of kt and parameters is non-null.
+  @Nullable private final com.google.crypto.tink.proto.KeyTemplate kt;
+
+  @Nullable private final Parameters parameters;
 
   /**
    * Tink produces and accepts ciphertexts or signatures that consist of a prefix and a payload. The
@@ -76,6 +85,10 @@ public final class KeyTemplate {
     throw new IllegalArgumentException("Unknown output prefix type");
   }
 
+  /**
+   * @deprecated Use createFrom
+   */
+  @Deprecated
   public static KeyTemplate create(
       String typeUrl, byte[] value, OutputPrefixType outputPrefixType) {
     return new KeyTemplate(
@@ -86,23 +99,87 @@ public final class KeyTemplate {
             .build());
   }
 
+  public static KeyTemplate createFrom(Parameters p) throws GeneralSecurityException {
+    return new KeyTemplate(p);
+  }
+
   private KeyTemplate(com.google.crypto.tink.proto.KeyTemplate kt) {
     this.kt = kt;
+    this.parameters = null;
+  }
+
+  private KeyTemplate(Parameters parameters) {
+    this.kt = null;
+    this.parameters = parameters;
   }
 
   com.google.crypto.tink.proto.KeyTemplate getProto() {
-    return kt;
+    try {
+      return getProtoMaybeThrow();
+    } catch (GeneralSecurityException e) {
+      // This may not really be a bug in Tink. This happens if a user uses a KeyTemplate
+      // which was initialized with a parameter, but then calls one of the deprecated functions
+      // below (getTypeUrl, etc.). I hope nobody does this -- but if they do, we recommend migrating
+      // away from these functions. If they cannot, they need to register the corresponding
+      // keymanager.
+      throw new TinkBugException(
+          "Parsing parameters failed in getProto(). You probably want to call some Tink register"
+              + " function for "
+              + parameters,
+          e);
+    }
   }
 
+  com.google.crypto.tink.proto.KeyTemplate getProtoMaybeThrow() throws GeneralSecurityException {
+    if (kt != null) {
+      return kt;
+    }
+    if (parameters instanceof LegacyProtoParameters) {
+      return ((LegacyProtoParameters) parameters).getSerialization().getKeyTemplate();
+    }
+    ProtoParametersSerialization s =
+        MutableSerializationRegistry.globalInstance()
+            .serializeParameters(parameters, ProtoParametersSerialization.class);
+    return s.getKeyTemplate();
+  }
+
+  /**
+   * @deprecated Instead, operate on the {@link Parameters} object obtained with {@link
+   *     #toParameters}. If you really need this array, you need to first use
+   *     TinkProtoParametersFormat to serialize this parameters object, then parse the result with
+   *     the Tink-internal proto class "KeyTemplate".
+   */
+  @Deprecated
   public String getTypeUrl() {
-    return kt.getTypeUrl();
+    return getProto().getTypeUrl();
   }
 
+  /**
+   * @deprecated Instead, operate on the {@link Parameters} object obtained with {@link
+   *     #toParameters}. If you really need this array, you need to first use
+   *     TinkProtoParametersFormat to serialize this parameters object, then parse the result with
+   *     the Tink-internal proto class "KeyTemplate".
+   */
+  @Deprecated
   public byte[] getValue() {
-    return kt.getValue().toByteArray();
+    return getProto().getValue().toByteArray();
   }
 
+  /**
+   * @deprecated Instead, operate on the {@link Parameters} object obtained with {@link
+   *     #toParameters}. If you really need this value, you need to first use
+   *     TinkProtoParametersFormat to serialize this parameters object, then parse the result with
+   *     the Tink-internal proto class "KeyTemplate".
+   */
+  @Deprecated
   public OutputPrefixType getOutputPrefixType() {
-    return fromProto(kt.getOutputPrefixType());
+    return fromProto(getProto().getOutputPrefixType());
+  }
+
+  public Parameters toParameters() throws GeneralSecurityException {
+    if (parameters != null) {
+      return parameters;
+    }
+    return TinkProtoParametersFormat.parse(getProto().toByteArray());
   }
 }

@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package jwt_test
 
@@ -273,6 +271,58 @@ func TestValidationFailures(t *testing.T) {
 				t.Errorf("validator.Validate(%v) err = nil, want error", token)
 			}
 		})
+	}
+}
+
+func TestExpiredTokenValidationReturnsExpiredErr(t *testing.T) {
+	tokenOpts := &jwt.RawJWTOptions{
+		ExpiresAt: refTime(100),
+	}
+	expiredToken, err := jwt.NewRawJWT(tokenOpts)
+	if err != nil {
+		t.Fatalf("jwt.NewRawJWT(tokenOpts) err = %v, want nil", err)
+	}
+	validatorOpts := &jwt.ValidatorOpts{
+		FixedNow: time.Unix(500, 0),
+	}
+	validator, err := jwt.NewValidator(validatorOpts)
+	if err != nil {
+		t.Fatalf("jwt.NewValidator(validatorOpts) err = %v, want nil", err)
+	}
+
+	validationErr := validator.Validate(expiredToken)
+	if validationErr == nil {
+		t.Errorf("validator.Validate(expiredToken) err = nil, want error")
+	}
+	if !jwt.IsExpirationErr(validationErr) {
+		t.Errorf("jwt.IsExpirationErr(validationErr) = false, want true")
+	}
+}
+
+func TestExpirationGetsValidatedFirst(t *testing.T) {
+	tokenOpts := &jwt.RawJWTOptions{
+		ExpiresAt: refTime(100),
+		Audience:  refString("invalidAudience"),
+	}
+	expiredTokenWithInvalidAudience, err := jwt.NewRawJWT(tokenOpts)
+	if err != nil {
+		t.Fatalf("jwt.NewRawJWT(tokenOpts) err = %v, want nil", err)
+	}
+	validatorOpts := &jwt.ValidatorOpts{
+		ExpectedAudiences: refString("audience"),
+		FixedNow:          time.Unix(500, 0),
+	}
+	validator, err := jwt.NewValidator(validatorOpts)
+	if err != nil {
+		t.Fatalf("jwt.NewValidator(validatorOpts) err = %v, want nil", err)
+	}
+
+	validationErr := validator.Validate(expiredTokenWithInvalidAudience)
+	if validationErr == nil {
+		t.Errorf("validator.Validate(expiredTokenWithInvalidAudience) err = nil, want error")
+	}
+	if !jwt.IsExpirationErr(validationErr) {
+		t.Errorf("jwt.IsExpirationErr(validationErr) = false, want true")
 	}
 }
 

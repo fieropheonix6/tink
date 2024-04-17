@@ -26,7 +26,7 @@
 #  source ./kokoro/testutils/install_go.sh
 
 install_temp_go() {
-  local -r go_version="1.17.7"
+  local -r go_version="1.20.10"
 
   local -r platform="$(uname | tr '[:upper:]' '[:lower:]')"
   local go_platform
@@ -58,6 +58,6 @@ install_temp_go() {
   export PATH="${go_tmpdir}/go/bin:${PATH}"
 }
 
-if [[ -n "${KOKORO_ROOT:-}" ]] ; then
+if [[ -n "${KOKORO_ARTIFACTS_DIR:-}" ]] ; then
   install_temp_go
 fi

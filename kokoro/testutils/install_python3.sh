@@ -15,7 +15,7 @@
 # limitations under the License.
 ################################################################################
 
-readonly DEFAULT_PYTHON_VERSION=3.7.1
+readonly DEFAULT_PYTHON_VERSION=3.8.18
 
 # This scripts installs Python 3 at a given version; if the version is not
 # specified, DEFAULT_PYTHON_VERSION is used.
@@ -39,7 +39,8 @@ install_python3() {
   python_version="${1:-${DEFAULT_PYTHON_VERSION}}"
   # Update the list of Python versions.
   (
-    cd /home/kbuilder/.pyenv/plugins/python-build/../..
+    # The macOS image exports a PYENV_ROOT env variable.
+    cd "${PYENV_ROOT:-"${HOME}/.pyenv"}"
     git pull
   )
   # Install Python.

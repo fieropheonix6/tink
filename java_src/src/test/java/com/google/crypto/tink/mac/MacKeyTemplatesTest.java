@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2017 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,24 +16,35 @@
 
 package com.google.crypto.tink.mac;
 
+import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertEquals;
 
+import com.google.crypto.tink.TinkProtoParametersFormat;
 import com.google.crypto.tink.proto.HashType;
 import com.google.crypto.tink.proto.HmacKeyFormat;
 import com.google.crypto.tink.proto.KeyTemplate;
 import com.google.crypto.tink.proto.OutputPrefixType;
 import com.google.protobuf.ExtensionRegistryLite;
+import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.experimental.theories.DataPoints;
+import org.junit.experimental.theories.FromDataPoints;
+import org.junit.experimental.theories.Theories;
+import org.junit.experimental.theories.Theory;
 import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
 
 /** Tests for MacKeyTemplates. */
-@RunWith(JUnit4.class)
+@RunWith(Theories.class)
 public class MacKeyTemplatesTest {
+  @BeforeClass
+  public static void setUp() throws Exception {
+    MacConfig.register();
+  }
+
   @Test
   public void hmacSha256_128BitTag() throws Exception {
     KeyTemplate template = MacKeyTemplates.HMAC_SHA256_128BITTAG;
-    assertEquals(new HmacKeyManager().getKeyType(), template.getTypeUrl());
+    assertEquals(HmacKeyManager.getKeyType(), template.getTypeUrl());
     assertEquals(OutputPrefixType.TINK, template.getOutputPrefixType());
     HmacKeyFormat format =
         HmacKeyFormat.parseFrom(template.getValue(), ExtensionRegistryLite.getEmptyRegistry());
@@ -46,7 +57,7 @@ public class MacKeyTemplatesTest {
   @Test
   public void hmacSha256_256BitTag() throws Exception {
     KeyTemplate template = MacKeyTemplates.HMAC_SHA256_256BITTAG;
-    assertEquals(new HmacKeyManager().getKeyType(), template.getTypeUrl());
+    assertEquals(HmacKeyManager.getKeyType(), template.getTypeUrl());
     assertEquals(OutputPrefixType.TINK, template.getOutputPrefixType());
     HmacKeyFormat format =
         HmacKeyFormat.parseFrom(template.getValue(), ExtensionRegistryLite.getEmptyRegistry());
@@ -59,7 +70,7 @@ public class MacKeyTemplatesTest {
   @Test
   public void hmacSha512_256BitTag() throws Exception {
     KeyTemplate template = MacKeyTemplates.HMAC_SHA512_256BITTAG;
-    assertEquals(new HmacKeyManager().getKeyType(), template.getTypeUrl());
+    assertEquals(HmacKeyManager.getKeyType(), template.getTypeUrl());
     assertEquals(OutputPrefixType.TINK, template.getOutputPrefixType());
     HmacKeyFormat format =
         HmacKeyFormat.parseFrom(template.getValue(), ExtensionRegistryLite.getEmptyRegistry());
@@ -72,7 +83,7 @@ public class MacKeyTemplatesTest {
   @Test
   public void hmacSha512_512BitTag() throws Exception {
     KeyTemplate template = MacKeyTemplates.HMAC_SHA512_512BITTAG;
-    assertEquals(new HmacKeyManager().getKeyType(), template.getTypeUrl());
+    assertEquals(HmacKeyManager.getKeyType(), template.getTypeUrl());
     assertEquals(OutputPrefixType.TINK, template.getOutputPrefixType());
     HmacKeyFormat format =
         HmacKeyFormat.parseFrom(template.getValue(), ExtensionRegistryLite.getEmptyRegistry());
@@ -90,7 +101,7 @@ public class MacKeyTemplatesTest {
     int tagSize = 24;
     HashType hashType = HashType.SHA512;
     KeyTemplate template = MacKeyTemplates.createHmacKeyTemplate(keySize, tagSize, hashType);
-    assertEquals(new HmacKeyManager().getKeyType(), template.getTypeUrl());
+    assertEquals(HmacKeyManager.getKeyType(), template.getTypeUrl());
     assertEquals(OutputPrefixType.TINK, template.getOutputPrefixType());
 
     HmacKeyFormat format =
@@ -98,5 +109,35 @@ public class MacKeyTemplatesTest {
     assertEquals(keySize, format.getKeySize());
     assertEquals(tagSize, format.getParams().getTagSize());
     assertEquals(hashType, format.getParams().getHash());
+  }
+
+  public static class Pair {
+    public Pair(KeyTemplate template, MacParameters parameters) {
+      this.template = template;
+      this.parameters = parameters;
+    }
+
+    KeyTemplate template;
+    MacParameters parameters;
+  }
+
+  @DataPoints("EquivalentPairs")
+  public static final Pair[] TEMPLATES =
+      new Pair[] {
+        new Pair(
+            MacKeyTemplates.HMAC_SHA256_128BITTAG, PredefinedMacParameters.HMAC_SHA256_128BITTAG),
+        new Pair(
+            MacKeyTemplates.HMAC_SHA256_256BITTAG, PredefinedMacParameters.HMAC_SHA256_256BITTAG),
+        new Pair(
+            MacKeyTemplates.HMAC_SHA512_256BITTAG, PredefinedMacParameters.HMAC_SHA512_256BITTAG),
+        new Pair(
+            MacKeyTemplates.HMAC_SHA512_512BITTAG, PredefinedMacParameters.HMAC_SHA512_512BITTAG),
+        new Pair(MacKeyTemplates.AES_CMAC, PredefinedMacParameters.AES_CMAC),
+      };
+
+  @Theory
+  public void testParametersEqualsKeyTemplate(@FromDataPoints("EquivalentPairs") Pair p)
+      throws Exception {
+    assertThat(TinkProtoParametersFormat.parse(p.template.toByteArray())).isEqualTo(p.parameters);
   }
 }

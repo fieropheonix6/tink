@@ -17,6 +17,8 @@
 #ifndef TINK_MAC_MAC_FACTORY_H_
 #define TINK_MAC_MAC_FACTORY_H_
 
+#include <memory>
+
 #include "absl/base/macros.h"
 #include "tink/key_manager.h"
 #include "tink/keyset_handle.h"
@@ -37,6 +39,8 @@ namespace tink {
 // * AeadConfig::Register()
 // * HybridConfig::Register()
 // * TinkConfig::Register()
+// NOLINTBEGIN(whitespace/line_length) (Formatted when commented in)
+// TINK-PENDING-REMOVAL-IN-3.0.0-START
 class ABSL_DEPRECATED(
     "Call getPrimitive<Mac>() on the keyset_handle after registering the "
     "MacWrapper instead.") MacFactory {
@@ -56,6 +60,8 @@ class ABSL_DEPRECATED(
  private:
   MacFactory() {}
 };
+// TINK-PENDING-REMOVAL-IN-3.0.0-END
+// NOLINTEND(whitespace/line_length)
 
 }  // namespace tink
 }  // namespace crypto

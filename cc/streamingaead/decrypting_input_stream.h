@@ -17,10 +17,12 @@
 #ifndef TINK_STREAMINGAEAD_DECRYPTING_INPUT_STREAM_H_
 #define TINK_STREAMINGAEAD_DECRYPTING_INPUT_STREAM_H_
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "tink/input_stream.h"
 #include "tink/primitive_set.h"
 #include "tink/streaming_aead.h"
@@ -48,7 +50,7 @@ class DecryptingInputStream : public crypto::tink::InputStream {
       std::unique_ptr<crypto::tink::InputStream> ciphertext_source,
       absl::string_view associated_data);
 
-  ~DecryptingInputStream() override {}
+  ~DecryptingInputStream() override = default;
   util::StatusOr<int> Next(const void** data) override;
   void BackUp(int count) override;
   int64_t Position() const override;

@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package signature
 
@@ -24,16 +22,14 @@ import (
 // getECDSAParamNames returns the string representations of each parameter in
 // the given ECDSAParams.
 func getECDSAParamNames(params *ecdsapb.EcdsaParams) (string, string, string) {
-	hashName := commonpb.HashType_name[int32(params.HashType)]
-	curveName := commonpb.EllipticCurveType_name[int32(params.Curve)]
-	encodingName := ecdsapb.EcdsaSignatureEncoding_name[int32(params.Encoding)]
+	hashName := commonpb.HashType_name[int32(params.GetHashType())]
+	curveName := commonpb.EllipticCurveType_name[int32(params.GetCurve())]
+	encodingName := ecdsapb.EcdsaSignatureEncoding_name[int32(params.GetEncoding())]
 	return hashName, curveName, encodingName
 }
 
 // newECDSAPrivateKey creates a ECDSAPrivateKey with the specified paramaters.
-func newECDSAPrivateKey(version uint32,
-	publicKey *ecdsapb.EcdsaPublicKey,
-	keyValue []byte) *ecdsapb.EcdsaPrivateKey {
+func newECDSAPrivateKey(version uint32, publicKey *ecdsapb.EcdsaPublicKey, keyValue []byte) *ecdsapb.EcdsaPrivateKey {
 	return &ecdsapb.EcdsaPrivateKey{
 		Version:   version,
 		PublicKey: publicKey,
@@ -42,9 +38,7 @@ func newECDSAPrivateKey(version uint32,
 }
 
 // newECDSAPublicKey creates a ECDSAPublicKey with the specified paramaters.
-func newECDSAPublicKey(version uint32,
-	params *ecdsapb.EcdsaParams,
-	x []byte, y []byte) *ecdsapb.EcdsaPublicKey {
+func newECDSAPublicKey(version uint32, params *ecdsapb.EcdsaParams, x, y []byte) *ecdsapb.EcdsaPublicKey {
 	return &ecdsapb.EcdsaPublicKey{
 		Version: version,
 		Params:  params,

@@ -34,14 +34,6 @@ namespace tink {
 //
 class MacConfig {
  public:
-  static constexpr char kCatalogueName[] = "TinkMac";
-  static constexpr char kPrimitiveName[] = "Mac";
-
-  // Returns config of Mac implementations supported
-  // in the current Tink release.
-  ABSL_DEPRECATED("This is not supported anymore.")
-  static const google::crypto::tink::RegistryConfig& Latest();
-
   // Registers Mac primitive wrapper and key managers for all Mac key types
   // from the current Tink release.
   static crypto::tink::util::Status Register();

@@ -19,6 +19,7 @@
 
 #include <type_traits>
 
+#include "absl/status/status.h"
 #include "tink/output_stream.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
@@ -59,7 +60,7 @@ template <class T>
 class OutputStreamWithResult : public OutputStream {
  public:
   OutputStreamWithResult() : closed_(false) {}
-  ~OutputStreamWithResult() override {}
+  ~OutputStreamWithResult() override = default;
 
   // The return type is StatusOr<T> if T != Status, and Status otherwise.
   using ResultType =

@@ -20,13 +20,20 @@
 #include <string>
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
+#include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 #include "tink/jwt/internal/jwt_format.h"
 #include "tink/jwt/internal/jwt_mac_internal.h"
 #include "tink/jwt/jwt_mac.h"
+#include "tink/jwt/jwt_validator.h"
+#include "tink/jwt/raw_jwt.h"
+#include "tink/jwt/verified_jwt.h"
 #include "tink/primitive_set.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
+#include "proto/tink.pb.h"
 
 namespace crypto {
 namespace tink {
@@ -49,7 +56,7 @@ class JwtMacSetWrapper : public JwtMac {
       absl::string_view compact,
       const crypto::tink::JwtValidator& validator) const override;
 
-  ~JwtMacSetWrapper() override {}
+  ~JwtMacSetWrapper() override = default;
 
  private:
   std::unique_ptr<PrimitiveSet<JwtMacInternal>> jwt_mac_set_;

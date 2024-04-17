@@ -22,10 +22,12 @@ import com.google.errorprone.annotations.Immutable;
  * {@code TinkKey} represents how Tink views individual keys. In contrast, {@code KeysetHandle} only
  * provides access to a {@code Keyset}, which represents multiple keys.
  *
- * <p> A {@code TinkKey} contains the data associated to a type of key and provides ways of getting
+ * <p>A {@code TinkKey} contains the data associated to a type of key and provides ways of getting
  * that data. The {@code TinkKey} interface does not specify how the key data is represented nor how
  * it provides access to the data.
-**/
+ *
+ * <p>Do not use this in new code. Instead, use {@link com.google.crypto.tink.Key}.
+ */
 @Immutable
 public interface TinkKey {
   /** Returns true if the key contains secret key material, and false otherwise. */

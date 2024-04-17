@@ -16,6 +16,7 @@
 #ifndef TINK_INTERNAL_KEYSET_WRAPPER_H_
 #define TINK_INTERNAL_KEYSET_WRAPPER_H_
 
+#include <memory>
 #include <string>
 
 #include "absl/container/flat_hash_map.h"
@@ -41,7 +42,7 @@ namespace internal {
 template <typename Primitive>
 class KeysetWrapper {
  public:
-  virtual ~KeysetWrapper() {}
+  virtual ~KeysetWrapper() = default;
 
   // Wraps a given `keyset` with annotations `annotations`.
   virtual crypto::tink::util::StatusOr<std::unique_ptr<Primitive>> Wrap(

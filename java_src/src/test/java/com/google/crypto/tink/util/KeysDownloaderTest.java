@@ -26,6 +26,7 @@ import com.google.api.client.http.LowLevelHttpRequest;
 import com.google.api.client.testing.http.MockHttpTransport;
 import com.google.api.client.testing.http.MockLowLevelHttpRequest;
 import com.google.api.client.testing.http.MockLowLevelHttpResponse;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -68,7 +69,7 @@ public class KeysDownloaderTest {
     httpTransportGetCount = new AtomicInteger(0);
     currentTimeInMillis = INITIAL_CURRENT_TIME_IN_MILLIS;
     executorIsAcceptingRunnables = true;
-    TestKeysDownloader.sTestInstance = this;
+    TestKeysDownloader.testInstance = this;
   }
 
   @After
@@ -303,7 +304,7 @@ public class KeysDownloaderTest {
   public void shouldPerformRefreshAfterExecutorTransientFailure() throws Exception {
     KeysDownloader instance = newInstanceForTests();
     httpResponseBuilder = new HttpResponseBuilder().setContent("keys1");
-    instance.download();
+    Object unused = instance.download();
     httpResponseBuilder = new HttpResponseBuilder().setContent("keys2");
     // Executor temporarily full, rejecting new Runnable instances
     executorIsAcceptingRunnables = false;
@@ -449,7 +450,7 @@ public class KeysDownloaderTest {
   }
 
   private static class TestKeysDownloader extends KeysDownloader {
-    private static KeysDownloaderTest sTestInstance;
+    private static KeysDownloaderTest testInstance;
 
     TestKeysDownloader(Executor backgroundExecutor, HttpTransport httpTransport, String keysUrl) {
       super(backgroundExecutor, httpTransport, keysUrl);
@@ -457,7 +458,7 @@ public class KeysDownloaderTest {
 
     @Override
     long getCurrentTimeInMillis() {
-      return sTestInstance.currentTimeInMillis;
+      return testInstance.currentTimeInMillis;
     }
   }
 
@@ -467,26 +468,31 @@ public class KeysDownloaderTest {
     private Long ageInSeconds;
     private int statusCode = HttpStatusCodes.STATUS_CODE_OK;
 
+    @CanIgnoreReturnValue
     public HttpResponseBuilder setStatusCode(int statusCode) {
       this.statusCode = statusCode;
       return this;
     }
 
+    @CanIgnoreReturnValue
     public HttpResponseBuilder setContent(String content) {
       this.content = content;
       return this;
     }
 
+    @CanIgnoreReturnValue
     public HttpResponseBuilder setCacheControlWithMaxAgeInSeconds(Long maxAgeInSeconds) {
       this.maxAgeInSeconds = maxAgeInSeconds;
       return this;
     }
 
+    @CanIgnoreReturnValue
     public HttpResponseBuilder clearCacheControl() {
       this.maxAgeInSeconds = null;
       return this;
     }
 
+    @CanIgnoreReturnValue
     public HttpResponseBuilder setAgeInSeconds(Long ageInSeconds) {
       this.ageInSeconds = ageInSeconds;
       return this;

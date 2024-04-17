@@ -16,7 +16,7 @@
 
 package com.google.crypto.tink;
 
-import androidx.annotation.RequiresApi;
+import com.google.crypto.tink.internal.JsonParser;
 import com.google.crypto.tink.proto.EncryptedKeyset;
 import com.google.crypto.tink.proto.KeyData;
 import com.google.crypto.tink.proto.KeyData.KeyMaterialType;
@@ -25,19 +25,18 @@ import com.google.crypto.tink.proto.Keyset;
 import com.google.crypto.tink.proto.KeysetInfo;
 import com.google.crypto.tink.proto.OutputPrefixType;
 import com.google.crypto.tink.subtle.Base64;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import com.google.errorprone.annotations.InlineMe;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
-import com.google.gson.JsonParser;
-import com.google.gson.internal.Streams;
-import com.google.gson.stream.JsonReader;
 import com.google.protobuf.ByteString;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.StringReader;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 
@@ -51,13 +50,14 @@ import java.nio.file.Path;
 public final class JsonKeysetReader implements KeysetReader {
   private static final Charset UTF_8 = Charset.forName("UTF-8");
 
+  private static final long MAX_KEY_ID = 4294967295L;  // = 2^32 - 1
+  private static final long MIN_KEY_ID = Integer.MIN_VALUE;  // = - 2^31
+
   private final InputStream inputStream;
-  private final JsonObject json;
   private boolean urlSafeBase64 = false;
 
   private JsonKeysetReader(InputStream inputStream) {
     this.inputStream = inputStream;
-    json = null;
   }
 
   /**
@@ -66,7 +66,8 @@ public final class JsonKeysetReader implements KeysetReader {
    * <p>Note: the input stream won't be read until {@link JsonKeysetReader#read} or {@link
    * JsonKeysetReader#readEncrypted} is called.
    */
-  public static KeysetReader withInputStream(InputStream input) throws IOException {
+  @SuppressWarnings("CheckedExceptionNotThrown")
+  public static JsonKeysetReader withInputStream(InputStream input) throws IOException {
     return new JsonKeysetReader(input);
   }
 
@@ -75,6 +76,9 @@ public final class JsonKeysetReader implements KeysetReader {
    *
    * @deprecated Use {@code #withString}
    */
+  @InlineMe(
+      replacement = "JsonKeysetReader.withString(input.toString())",
+      imports = "com.google.crypto.tink.JsonKeysetReader")
   @Deprecated
   public static JsonKeysetReader withJsonObject(Object input) {
     return withString(input.toString());
@@ -85,7 +89,12 @@ public final class JsonKeysetReader implements KeysetReader {
     return new JsonKeysetReader(new ByteArrayInputStream(input.getBytes(UTF_8)));
   }
 
-  /** Static method to create a JsonKeysetReader from a byte array. */
+  /**
+   * Static method to create a JsonKeysetReader from a byte array.
+   *
+   * @deprecated Use TinkJsonProtoKeysetFormat.parseKeyset() instead.
+   */
+  @Deprecated
   public static JsonKeysetReader withBytes(final byte[] bytes) {
     return new JsonKeysetReader(new ByteArrayInputStream(bytes));
   }
@@ -95,9 +104,15 @@ public final class JsonKeysetReader implements KeysetReader {
    *
    * <p>Note: the file won't be read until {@link JsonKeysetReader#read} or {@link
    * JsonKeysetReader#readEncrypted} is called.
+   *
+   * @deprecated Method should be inlined.
    */
+  @InlineMe(
+      replacement = "JsonKeysetReader.withInputStream(new FileInputStream(file))",
+      imports = {"com.google.crypto.tink.JsonKeysetReader", "java.io.FileInputStream"})
+  @Deprecated
   public static JsonKeysetReader withFile(File file) throws IOException {
-    return new JsonKeysetReader(new FileInputStream(file));
+    return withInputStream(new FileInputStream(file));
   }
 
   /**
@@ -107,9 +122,19 @@ public final class JsonKeysetReader implements KeysetReader {
    * JsonKeysetReader#readEncrypted} is called.
    *
    * <p>This method only works on Android API level 26 or newer.
+   *
+   * @deprecated Method should be inlined.
    */
+  @InlineMe(
+      replacement = "JsonKeysetReader.withInputStream(new FileInputStream(new File(path)))",
+      imports = {
+        "com.google.crypto.tink.JsonKeysetReader",
+        "java.io.File",
+        "java.io.FileInputStream"
+      })
+  @Deprecated
   public static JsonKeysetReader withPath(String path) throws IOException {
-    return withFile(new File(path));
+    return withInputStream(new FileInputStream(new File(path)));
   }
 
   /**
@@ -119,12 +144,18 @@ public final class JsonKeysetReader implements KeysetReader {
    * JsonKeysetReader#readEncrypted} is called.
    *
    * <p>This method only works on Android API level 26 or newer.
+   *
+   * @deprecated Method should be inlined.
    */
-  @RequiresApi(26) // https://developer.android.com/reference/java/nio/file/Path
+  @InlineMe(
+      replacement = "JsonKeysetReader.withInputStream(new FileInputStream(path.toFile()))",
+      imports = {"com.google.crypto.tink.JsonKeysetReader", "java.io.FileInputStream"})
+  @Deprecated
   public static JsonKeysetReader withPath(Path path) throws IOException {
-    return withFile(path.toFile());
+    return JsonKeysetReader.withInputStream(new FileInputStream(path.toFile()));
   }
 
+  @CanIgnoreReturnValue
   public JsonKeysetReader withUrlSafeBase64() {
     this.urlSafeBase64 = true;
     return this;
@@ -133,14 +164,8 @@ public final class JsonKeysetReader implements KeysetReader {
   @Override
   public Keyset read() throws IOException {
     try {
-      if (json != null) {
-        return keysetFromJson(json);
-      } else {
-        JsonReader jsonReader = new JsonReader(
-            new StringReader(new String(Util.readAll(inputStream), UTF_8)));
-        jsonReader.setLenient(false);
-        return keysetFromJson(Streams.parse(jsonReader).getAsJsonObject());
-      }
+      return keysetFromJson(
+          JsonParser.parse(new String(Util.readAll(inputStream), UTF_8)).getAsJsonObject());
     } catch (JsonParseException | IllegalStateException e) {
       throw new IOException(e);
     } finally {
@@ -153,12 +178,8 @@ public final class JsonKeysetReader implements KeysetReader {
   @Override
   public EncryptedKeyset readEncrypted() throws IOException {
     try {
-      if (json != null) {
-        return encryptedKeysetFromJson(json);
-      } else {
-        return encryptedKeysetFromJson(
-            JsonParser.parseString(new String(Util.readAll(inputStream), UTF_8)).getAsJsonObject());
-      }
+      return encryptedKeysetFromJson(
+          JsonParser.parse(new String(Util.readAll(inputStream), UTF_8)).getAsJsonObject());
     } catch (JsonParseException | IllegalStateException e) {
       throw new IOException(e);
     } finally {
@@ -168,11 +189,25 @@ public final class JsonKeysetReader implements KeysetReader {
     }
   }
 
-  private Keyset keysetFromJson(JsonObject json) {
+  private static int getKeyId(JsonElement element) throws IOException {
+    long id;
+    try {
+      id = JsonParser.getParsedNumberAsLongOrThrow(element);
+    } catch (NumberFormatException e) {
+      throw new IOException(e);
+    }
+    if (id > MAX_KEY_ID || id < MIN_KEY_ID) {
+      throw new IOException("invalid key id");
+    }
+    // casts large unsigned int32 numbers to negative int32 numbers
+    return (int) element.getAsLong();
+  }
+
+  private Keyset keysetFromJson(JsonObject json) throws IOException {
     validateKeyset(json);
     Keyset.Builder builder = Keyset.newBuilder();
     if (json.has("primaryKeyId")) {
-      builder.setPrimaryKeyId(json.get("primaryKeyId").getAsInt());
+      builder.setPrimaryKeyId(getKeyId(json.get("primaryKeyId")));
     }
     JsonArray keys = json.getAsJsonArray("key");
     for (int i = 0; i < keys.size(); i++) {
@@ -181,7 +216,7 @@ public final class JsonKeysetReader implements KeysetReader {
     return builder.build();
   }
 
-  private EncryptedKeyset encryptedKeysetFromJson(JsonObject json) {
+  private EncryptedKeyset encryptedKeysetFromJson(JsonObject json) throws IOException {
     validateEncryptedKeyset(json);
     byte[] encryptedKeyset;
     if (urlSafeBase64) {
@@ -201,20 +236,20 @@ public final class JsonKeysetReader implements KeysetReader {
     }
   }
 
-  private Keyset.Key keyFromJson(JsonObject json) {
+  private Keyset.Key keyFromJson(JsonObject json) throws IOException {
     validateKey(json);
     return Keyset.Key.newBuilder()
         .setStatus(getStatus(json.get("status").getAsString()))
-        .setKeyId(json.get("keyId").getAsInt())
+        .setKeyId(getKeyId(json.get("keyId")))
         .setOutputPrefixType(getOutputPrefixType(json.get("outputPrefixType").getAsString()))
         .setKeyData(keyDataFromJson(json.getAsJsonObject("keyData")))
         .build();
   }
 
-  private static KeysetInfo keysetInfoFromJson(JsonObject json) {
+  private static KeysetInfo keysetInfoFromJson(JsonObject json) throws IOException {
     KeysetInfo.Builder builder = KeysetInfo.newBuilder();
     if (json.has("primaryKeyId")) {
-      builder.setPrimaryKeyId(json.get("primaryKeyId").getAsInt());
+      builder.setPrimaryKeyId(getKeyId(json.get("primaryKeyId")));
     }
     if (json.has("keyInfo")) {
       JsonArray keyInfos = json.getAsJsonArray("keyInfo");
@@ -225,10 +260,10 @@ public final class JsonKeysetReader implements KeysetReader {
     return builder.build();
   }
 
-  private static KeysetInfo.KeyInfo keyInfoFromJson(JsonObject json) {
+  private static KeysetInfo.KeyInfo keyInfoFromJson(JsonObject json) throws IOException {
     return KeysetInfo.KeyInfo.newBuilder()
         .setStatus(getStatus(json.get("status").getAsString()))
-        .setKeyId(json.get("keyId").getAsInt())
+        .setKeyId(getKeyId(json.get("keyId")))
         .setOutputPrefixType(getOutputPrefixType(json.get("outputPrefixType").getAsString()))
         .setTypeUrl(json.get("typeUrl").getAsString())
         .build();

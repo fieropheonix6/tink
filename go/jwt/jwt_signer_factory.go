@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package jwt
 
@@ -21,14 +19,15 @@ import (
 
 	"github.com/google/tink/go/core/primitiveset"
 	"github.com/google/tink/go/keyset"
+	tinkpb "github.com/google/tink/go/proto/tink_go_proto"
 )
 
 // NewSigner generates a new instance of the JWT Signer primitive.
-func NewSigner(h *keyset.Handle) (Signer, error) {
-	if h == nil {
+func NewSigner(handle *keyset.Handle) (Signer, error) {
+	if handle == nil {
 		return nil, fmt.Errorf("keyset handle can't be nil")
 	}
-	ps, err := h.PrimitivesWithKeyManager(nil)
+	ps, err := handle.PrimitivesWithKeyManager(nil)
 	if err != nil {
 		return nil, fmt.Errorf("jwt_signer_factory: cannot obtain primitive set: %v", err)
 	}
@@ -48,6 +47,9 @@ func newWrappedSigner(ps *primitiveset.PrimitiveSet) (*wrappedSigner, error) {
 	}
 	for _, primitives := range ps.Entries {
 		for _, p := range primitives {
+			if p.PrefixType != tinkpb.OutputPrefixType_RAW && p.PrefixType != tinkpb.OutputPrefixType_TINK {
+				return nil, fmt.Errorf("jwt_signer_factory: invalid OutputPrefixType: %s", p.PrefixType)
+			}
 			if _, ok := (p.Primitive).(*signerWithKID); !ok {
 				return nil, fmt.Errorf("jwt_signer_factory: not a JWT Signer primitive")
 			}

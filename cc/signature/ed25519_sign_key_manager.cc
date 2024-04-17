@@ -16,10 +16,13 @@
 
 #include "tink/signature/ed25519_sign_key_manager.h"
 
+#include <memory>
+
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "tink/input_stream.h"
 #include "tink/internal/ec_util.h"
 #include "tink/public_key_sign.h"
 #include "tink/signature/ed25519_verify_key_manager.h"

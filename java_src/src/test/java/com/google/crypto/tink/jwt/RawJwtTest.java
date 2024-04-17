@@ -461,6 +461,12 @@ public final class RawJwtTest {
   }
 
   @Test
+  public void integerIsEncodedAsInteger() throws Exception {
+    RawJwt token = RawJwt.newBuilder().addNumberClaim("num", 1).withoutExpiration().build();
+    assertThat(token.getJsonPayload()).isEqualTo("{\"num\":1}");
+  }
+
+  @Test
   public void getJsonPayload_success() throws Exception {
     RawJwt token = RawJwt.newBuilder().setJwtId("id").withoutExpiration().build();
     assertThat(token.getJsonPayload()).isEqualTo("{\"jti\":\"id\"}");
@@ -600,7 +606,7 @@ public final class RawJwtTest {
   }
 
   @Test
-  public void fromJsonPayloadWithValidJsonEscapedCharacter_shouldThrow() throws Exception {
+  public void fromJsonPayloadWithValidJsonEscapedCharacter_success() throws Exception {
     RawJwt token = RawJwt.fromJsonPayload(Optional.empty(), "{\"iss\":\"\\uD834\\uDD1E\"}");
     assertThat(token.hasIssuer()).isTrue();
     assertThat(token.getIssuer()).isEqualTo("\uD834\uDD1E");
@@ -641,10 +647,17 @@ public final class RawJwtTest {
   }
 
   @Test
-  public void fromJsonPayloadWithComments_shouldThrow () throws Exception {
+  public void fromJsonPayloadWithComments_shouldThrow() throws Exception {
     String input = "{\"sub\": \"subject\" /*, \"iss\": \"issuer\" */}";
     assertThrows(JwtInvalidException.class, () -> RawJwt.fromJsonPayload(Optional.empty(), input));
   }
+
+  @Test
+  public void fromJsonPayloadWithTwoIdenticalClaimNames_shouldThrow() throws Exception {
+    String input = "{\"claim\": \"claim1\", \"claim\": \"claim2\"}";
+    assertThrows(JwtInvalidException.class, () -> RawJwt.fromJsonPayload(Optional.empty(), input));
+  }
+
 
   @Test
   public void fromJsonPayloadWithEscapedChars_success() throws Exception {
@@ -659,6 +672,34 @@ public final class RawJwtTest {
     assertThrows(JwtInvalidException.class, () -> RawJwt.fromJsonPayload(Optional.empty(), input));
   }
 
+  @Test
+  public void fromJsonPayload_withLargeNumberClaim() throws Exception {
+    String input =
+        "{\"numClaim\":   "
+            + "9999999999999999999999999999999999999999999900000000000000000000000}";
+    RawJwt token = RawJwt.fromJsonPayload(Optional.empty(), input);
+    assertThat(token.getNumberClaim("numClaim"))
+        .isWithin(0.0002e66)
+        .of(9.9999e66);
+  }
+
+  @Test
+  public void fromJsonPayload_withLargerThanDoubleMaxValueNumberClaim_isLarge() throws Exception {
+    String input =
+        "{\"numClaim\":   "
+            + "99999999999999999999999999.99e+99999999999999999999999999}";
+    RawJwt token = RawJwt.fromJsonPayload(Optional.empty(), input);
+    assertThat(token.getNumberClaim("numClaim")).isAtLeast(Double.MAX_VALUE);
+  }
+
+  @Test
+  public void fromJsonPayload_withSmallerThanDoubleMinValueNumberClaim_isSmall() throws Exception {
+    String input =
+        "{\"numClaim\":   "
+            + "-99999999999999999999999999.99e+99999999999999999999999999}";
+    RawJwt token = RawJwt.fromJsonPayload(Optional.empty(), input);
+    assertThat(token.getNumberClaim("numClaim")).isAtMost(Double.MIN_VALUE);
+  }
 
   @Test
   public void getClaimsOfDifferentType_shouldThrow() throws Exception {

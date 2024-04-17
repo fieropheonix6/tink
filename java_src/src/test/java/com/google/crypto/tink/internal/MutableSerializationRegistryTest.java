@@ -18,6 +18,7 @@ package com.google.crypto.tink.internal;
 
 import static com.google.common.truth.Truth.assertThat;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.junit.Assert.assertThrows;
 
 import com.google.crypto.tink.InsecureSecretKeyAccess;
 import com.google.crypto.tink.Key;
@@ -36,7 +37,7 @@ import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
 /**
- * Thread safety tests for {@link MutableSerializationRegistry}.
+ * Tests for {@link MutableSerializationRegistry}.
  *
  * <p>We repeat the main tests in SerializationRegistryTest. There really shouldn't be both classes,
  * but currently this is what we need, and the other is what we should have.
@@ -220,6 +221,7 @@ public final class MutableSerializationRegistryTest {
             MutableSerializationRegistryTest::serializeKey2ToB,
             TestKey2.class,
             TestSerializationB.class));
+    assertThat(registry.hasSerializerForKey(new TestKey1(), TestSerializationA.class)).isTrue();
     assertThat(
             registry
                 .serializeKey(new TestKey1(), TestSerializationA.class, ACCESS)
@@ -243,6 +245,16 @@ public final class MutableSerializationRegistryTest {
   }
 
   @Test
+  public void emptyRegistry_serializeKey_throws() throws Exception {
+    MutableSerializationRegistry registry = new MutableSerializationRegistry();
+    assertThat(registry.hasSerializerForKey(new TestKey1(), TestSerializationA.class)).isFalse();
+    assertThrows(
+        GeneralSecurityException.class,
+        () -> registry
+                .serializeKey(new TestKey1(), TestSerializationA.class, ACCESS));
+  }
+
+  @Test
   public void test_registerAllParsers_checkDispatch() throws Exception {
     MutableSerializationRegistry registry = new MutableSerializationRegistry();
     registry.registerKeyParser(
@@ -257,10 +269,20 @@ public final class MutableSerializationRegistryTest {
     registry.registerKeyParser(
         KeyParser.create(
             MutableSerializationRegistryTest::parseBToKey2, B_2, TestSerializationB.class));
+    assertThat(registry.hasParserForKey(new TestSerializationA(A_1))).isTrue();
     assertThat(registry.parseKey(new TestSerializationA(A_1), ACCESS)).isInstanceOf(TestKey1.class);
     assertThat(registry.parseKey(new TestSerializationA(A_2), ACCESS)).isInstanceOf(TestKey2.class);
     assertThat(registry.parseKey(new TestSerializationB(B_1), ACCESS)).isInstanceOf(TestKey1.class);
     assertThat(registry.parseKey(new TestSerializationB(B_2), ACCESS)).isInstanceOf(TestKey2.class);
+  }
+
+  @Test
+  public void emptyRegistry_parseKey_throws() throws Exception {
+    MutableSerializationRegistry registry = new MutableSerializationRegistry();
+    assertThat(registry.hasParserForKey(new TestSerializationA(A_1))).isFalse();
+    assertThrows(
+        GeneralSecurityException.class,
+        () -> registry.parseKey(new TestSerializationA(A_1), ACCESS));
   }
 
   // ================================================================================================
@@ -341,6 +363,8 @@ public final class MutableSerializationRegistryTest {
             MutableSerializationRegistryTest::serializeParameters2ToB,
             TestParameters2.class,
             TestSerializationB.class));
+    assertThat(registry.hasSerializerForParameters(new TestParameters1(), TestSerializationA.class))
+        .isTrue();
     assertThat(
             registry
                 .serializeParameters(new TestParameters1(), TestSerializationA.class)
@@ -364,6 +388,16 @@ public final class MutableSerializationRegistryTest {
   }
 
   @Test
+  public void emptyRegistry_serializeParameters_throws() throws Exception {
+    MutableSerializationRegistry registry = new MutableSerializationRegistry();
+    assertThat(registry.hasSerializerForParameters(new TestParameters1(), TestSerializationA.class))
+        .isFalse();
+    assertThrows(
+        GeneralSecurityException.class,
+        () -> registry.serializeParameters(new TestParameters1(), TestSerializationA.class));
+  }
+
+  @Test
   public void test_registerAllParametersParsers_checkDispatch() throws Exception {
     MutableSerializationRegistry registry = new MutableSerializationRegistry();
     registry.registerParametersParser(
@@ -378,6 +412,7 @@ public final class MutableSerializationRegistryTest {
     registry.registerParametersParser(
         ParametersParser.create(
             MutableSerializationRegistryTest::parseBToParameters2, B_2, TestSerializationB.class));
+    assertThat(registry.hasParserForParameters(new TestSerializationA(A_1))).isTrue();
     assertThat(registry.parseParameters(new TestSerializationA(A_1)))
         .isInstanceOf(TestParameters1.class);
     assertThat(registry.parseParameters(new TestSerializationA(A_2)))
@@ -386,6 +421,15 @@ public final class MutableSerializationRegistryTest {
         .isInstanceOf(TestParameters1.class);
     assertThat(registry.parseParameters(new TestSerializationB(B_2)))
         .isInstanceOf(TestParameters2.class);
+  }
+
+  @Test
+  public void emptyRegistry_parseParameters_throws() throws Exception {
+    MutableSerializationRegistry registry = new MutableSerializationRegistry();
+    assertThat(registry.hasParserForParameters(new TestSerializationA(A_1))).isFalse();
+    assertThrows(
+        GeneralSecurityException.class,
+        () -> registry.parseParameters(new TestSerializationA(A_1)));
   }
 
   @Test
@@ -406,6 +450,11 @@ public final class MutableSerializationRegistryTest {
     return new TestParameters1();
   }
 
+  private static TestParameters1 parseParametersAlwaysThrows(
+      ProtoParametersSerialization serialization) throws GeneralSecurityException {
+    throw new GeneralSecurityException("Always throws");
+  }
+
   @Test
   public void test_parseParametersWithLegacyFallback_testRegistered() throws Exception {
     MutableSerializationRegistry registry = new MutableSerializationRegistry();
@@ -419,6 +468,23 @@ public final class MutableSerializationRegistryTest {
             "typeUrlForTesting98178", OutputPrefixType.TINK, TestProto.getDefaultInstance());
     Parameters parameters = registry.parseParametersWithLegacyFallback(protoParameters);
     assertThat(parameters).isInstanceOf(TestParameters1.class);
+  }
+
+  @Test
+  public void test_parseParametersWithLegacyFallback_testRegisteredButFaulty_throws()
+      throws Exception {
+    MutableSerializationRegistry registry = new MutableSerializationRegistry();
+    registry.registerParametersParser(
+        ParametersParser.create(
+            MutableSerializationRegistryTest::parseParametersAlwaysThrows,
+            Util.toBytesFromPrintableAscii("typeUrlForTesting98178"),
+            ProtoParametersSerialization.class));
+    ProtoParametersSerialization protoParameters =
+        ProtoParametersSerialization.create(
+            "typeUrlForTesting98178", OutputPrefixType.TINK, TestProto.getDefaultInstance());
+    assertThrows(
+        GeneralSecurityException.class,
+        () -> registry.parseParametersWithLegacyFallback(protoParameters));
   }
 
   @Test
@@ -461,5 +527,34 @@ public final class MutableSerializationRegistryTest {
             /* idRequirement= */ null);
     Key key = registry.parseKeyWithLegacyFallback(protoKey, InsecureSecretKeyAccess.get());
     assertThat(key).isInstanceOf(TestKey1.class);
+  }
+
+  @Test
+  public void test_parseKeyWithLegacyFallback_testFallback_missingAccess() throws Exception {
+    MutableSerializationRegistry registry = new MutableSerializationRegistry();
+    ProtoKeySerialization protoKey =
+        ProtoKeySerialization.create(
+            "typeUrlForTesting21125",
+            ByteString.EMPTY,
+            KeyMaterialType.SYMMETRIC,
+            OutputPrefixType.RAW,
+            /* idRequirement= */ null);
+    assertThrows(
+        GeneralSecurityException.class, () -> registry.parseKeyWithLegacyFallback(protoKey, null));
+  }
+
+  @Test
+  public void test_parseKeyWithLegacyFallback_testFallback_accessNotNeededRemote()
+      throws Exception {
+    MutableSerializationRegistry registry = new MutableSerializationRegistry();
+    ProtoKeySerialization protoKey =
+        ProtoKeySerialization.create(
+            "typeUrlForTesting21125",
+            ByteString.EMPTY,
+            KeyMaterialType.REMOTE,
+            OutputPrefixType.RAW,
+            /* idRequirement= */ null);
+    Key key = registry.parseKeyWithLegacyFallback(protoKey, InsecureSecretKeyAccess.get());
+    assertThat(key).isInstanceOf(LegacyProtoKey.class);
   }
 }

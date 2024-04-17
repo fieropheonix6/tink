@@ -17,12 +17,12 @@
 package com.google.crypto.tink.aead.internal;
 
 import com.google.crypto.tink.config.internal.TinkFipsUtil;
+import com.google.crypto.tink.internal.Util;
 import com.google.crypto.tink.subtle.EngineFactory;
-import com.google.crypto.tink.subtle.SubtleUtil;
 import com.google.crypto.tink.subtle.Validators;
-import java.nio.ByteBuffer;
 import java.security.GeneralSecurityException;
 import java.security.spec.AlgorithmParameterSpec;
+import javax.annotation.Nullable;
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
@@ -53,18 +53,20 @@ public final class InsecureNonceAesGcmJce {
         }
       };
 
-  private final SecretKey keySpec;
-  private final boolean prependIv;
+  /** Returns a thread-local instance of the AES-GCM cipher. */
+  public static Cipher getThreadLocalCipher() {
+    return localCipher.get();
+  }
 
-  public InsecureNonceAesGcmJce(final byte[] key, boolean prependIv)
-      throws GeneralSecurityException {
+  private final SecretKey keySpec;
+
+  public InsecureNonceAesGcmJce(final byte[] key) throws GeneralSecurityException {
     if (!FIPS.isCompatible()) {
       throw new GeneralSecurityException(
           "Can not use AES-GCM in FIPS-mode, as BoringCrypto module is not available.");
     }
     Validators.validateAesKeySize(key.length);
     this.keySpec = new SecretKeySpec(key, "AES");
-    this.prependIv = prependIv;
   }
 
   /**
@@ -80,37 +82,13 @@ public final class InsecureNonceAesGcmJce {
     if (plaintext.length > Integer.MAX_VALUE - IV_SIZE_IN_BYTES - TAG_SIZE_IN_BYTES) {
       throw new GeneralSecurityException("plaintext too long");
     }
-    int ciphertextLength =
-        prependIv
-            ? IV_SIZE_IN_BYTES + plaintext.length + TAG_SIZE_IN_BYTES
-            : plaintext.length + TAG_SIZE_IN_BYTES;
-    byte[] ciphertext = new byte[ciphertextLength];
-    if (prependIv) {
-      System.arraycopy(iv, 0, ciphertext, 0, IV_SIZE_IN_BYTES);
-    }
 
     AlgorithmParameterSpec params = getParams(iv);
     localCipher.get().init(Cipher.ENCRYPT_MODE, keySpec, params);
     if (associatedData != null && associatedData.length != 0) {
       localCipher.get().updateAAD(associatedData);
     }
-    int ciphertextOutputOffset = prependIv ? IV_SIZE_IN_BYTES : 0;
-    int written =
-        localCipher
-            .get()
-            .doFinal(plaintext, 0, plaintext.length, ciphertext, ciphertextOutputOffset);
-    // For security reasons, AES-GCM encryption must always use tag of TAG_SIZE_IN_BYTES bytes. If
-    // so, written must be equal to plaintext.length + TAG_SIZE_IN_BYTES.
-
-    if (written != plaintext.length + TAG_SIZE_IN_BYTES) {
-      // The tag is shorter than expected.
-      int actualTagSize = written - plaintext.length;
-      throw new GeneralSecurityException(
-          String.format(
-              "encryption failed; GCM tag must be %s bytes, but got only %s bytes",
-              TAG_SIZE_IN_BYTES, actualTagSize));
-    }
-    return ciphertext;
+    return localCipher.get().doFinal(plaintext);
   }
 
   /**
@@ -122,14 +100,8 @@ public final class InsecureNonceAesGcmJce {
     if (iv.length != IV_SIZE_IN_BYTES) {
       throw new GeneralSecurityException("iv is wrong size");
     }
-    int minimumCiphertextLength =
-        prependIv ? IV_SIZE_IN_BYTES + TAG_SIZE_IN_BYTES : TAG_SIZE_IN_BYTES;
-    if (ciphertext.length < minimumCiphertextLength) {
+    if (ciphertext.length < TAG_SIZE_IN_BYTES) {
       throw new GeneralSecurityException("ciphertext too short");
-    }
-    if (prependIv
-        && !ByteBuffer.wrap(iv).equals(ByteBuffer.wrap(ciphertext, 0, IV_SIZE_IN_BYTES))) {
-      throw new GeneralSecurityException("iv does not match prepended iv");
     }
 
     AlgorithmParameterSpec params = getParams(iv);
@@ -137,18 +109,17 @@ public final class InsecureNonceAesGcmJce {
     if (associatedData != null && associatedData.length != 0) {
       localCipher.get().updateAAD(associatedData);
     }
-    int ciphertextInputOffset = prependIv ? IV_SIZE_IN_BYTES : 0;
-    int ciphertextLength = prependIv ? ciphertext.length - IV_SIZE_IN_BYTES : ciphertext.length;
-    return localCipher.get().doFinal(ciphertext, ciphertextInputOffset, ciphertextLength);
+    return localCipher.get().doFinal(ciphertext);
   }
 
-  private static AlgorithmParameterSpec getParams(final byte[] iv) throws GeneralSecurityException {
+  public static AlgorithmParameterSpec getParams(final byte[] iv) throws GeneralSecurityException {
     return getParams(iv, 0, iv.length);
   }
 
   private static AlgorithmParameterSpec getParams(final byte[] buf, int offset, int len)
       throws GeneralSecurityException {
-    if (SubtleUtil.isAndroid() && SubtleUtil.androidApiLevel() <= 19) {
+    @Nullable Integer apiLevel = Util.getAndroidApiLevel();
+    if (apiLevel != null && apiLevel <= 19) {
       // GCMParameterSpec should always be present in Java 7 or newer, but it's unsupported on
       // Android devices with API level <= 19. Fortunately, if a modern copy of Conscrypt is present
       // (either through GMS Core or bundled with the app) we can initialize the cipher with just an

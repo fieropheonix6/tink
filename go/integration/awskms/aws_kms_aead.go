@@ -11,94 +11,72 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
-// Package awskms provides integration with the AWS Cloud KMS.
+// Package awskms provides integration with the AWS Key Management Service.
 package awskms
 
 import (
 	"encoding/hex"
-	"errors"
-	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/aws/aws-sdk-go/service/kms/kmsiface"
 )
 
-// AWSAEAD represents a AWS KMS service to a particular URI.
+// AWSAEAD is an implementation of the AEAD interface which performs
+// cryptographic operations remotely via the AWS KMS service using a specific
+// key URI.
 type AWSAEAD struct {
-	keyURI string
-	kms    kmsiface.KMSAPI
+	keyURI                string
+	kms                   kmsiface.KMSAPI
+	encryptionContextName EncryptionContextName
 }
 
-// newAWSAEAD returns a new AWS KMS service.
-// keyURI must have the following format: 'arn:<partition>:kms:<region>:[:path]'.
+// newAWSAEAD returns a new AWSAEAD instance.
+//
+// keyURI must have the following format:
+//
+//	aws-kms://arn:<partition>:kms:<region>:[<path>]
+//
 // See http://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html.
-func newAWSAEAD(keyURI string, kms kmsiface.KMSAPI) *AWSAEAD {
+func newAWSAEAD(keyURI string, kms kmsiface.KMSAPI, name EncryptionContextName) *AWSAEAD {
 	return &AWSAEAD{
-		keyURI: keyURI,
-		kms:    kms,
+		keyURI:                keyURI,
+		kms:                   kms,
+		encryptionContextName: name,
 	}
 }
 
 // Encrypt encrypts the plaintext with associatedData.
 func (a *AWSAEAD) Encrypt(plaintext, associatedData []byte) ([]byte, error) {
-	ad := hex.EncodeToString(associatedData)
 	req := &kms.EncryptInput{
-		KeyId:             aws.String(a.keyURI),
-		Plaintext:         plaintext,
-		EncryptionContext: map[string]*string{"additionalData": &ad},
+		KeyId:     aws.String(a.keyURI),
+		Plaintext: plaintext,
 	}
-	if ad == "" {
-		req = &kms.EncryptInput{
-			KeyId:     aws.String(a.keyURI),
-			Plaintext: plaintext,
-		}
+	if len(associatedData) > 0 {
+		ad := hex.EncodeToString(associatedData)
+		req.EncryptionContext = map[string]*string{a.encryptionContextName.String(): &ad}
 	}
 	resp, err := a.kms.Encrypt(req)
 	if err != nil {
 		return nil, err
 	}
-
 	return resp.CiphertextBlob, nil
 }
 
-// Decrypt AEAD decrypts the data and verified the associated data.
-//
-// Returns an error if the KeyId field in the response does not match the KeyURI
-// provided when creating the client. If we don't do this, the possibility exists
-// for the ciphertext to be replaced by one under a key we don't control/expect,
-// but do have decrypt permissions on.
-//
-// This check is disabled if AWSAEAD.keyURI is not in key ARN format.
-//
-// See https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html#key-id.
+// Decrypt decrypts the ciphertext and verifies the associated data.
 func (a *AWSAEAD) Decrypt(ciphertext, associatedData []byte) ([]byte, error) {
-	ad := hex.EncodeToString(associatedData)
 	req := &kms.DecryptInput{
-		KeyId:             aws.String(a.keyURI),
-		CiphertextBlob:    ciphertext,
-		EncryptionContext: map[string]*string{"additionalData": &ad},
+		KeyId:          aws.String(a.keyURI),
+		CiphertextBlob: ciphertext,
 	}
-	if ad == "" {
-		req = &kms.DecryptInput{
-			CiphertextBlob: ciphertext,
-		}
+	if len(associatedData) > 0 {
+		ad := hex.EncodeToString(associatedData)
+		req.EncryptionContext = map[string]*string{a.encryptionContextName.String(): &ad}
 	}
 	resp, err := a.kms.Decrypt(req)
 	if err != nil {
 		return nil, err
 	}
-	if isKeyArnFormat(a.keyURI) && strings.Compare(*resp.KeyId, a.keyURI) != 0 {
-		return nil, errors.New("decryption failed: wrong key id")
-	}
 	return resp.Plaintext, nil
-}
-
-// isKeyArnFormat returns true if the keyURI is the KMS Key ARN format; false otherwise.
-func isKeyArnFormat(keyURI string) bool {
-	tokens := strings.Split(keyURI, ":")
-	return len(tokens) == 6 && strings.HasPrefix(tokens[5], "key/")
 }

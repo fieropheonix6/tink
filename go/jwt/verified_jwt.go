@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package jwt
 
@@ -163,7 +161,7 @@ func (v *VerifiedJWT) HasArrayClaim(name string) bool {
 }
 
 // ArrayClaim returns a slice representing a JSON array for a claim or an error if the claim is empty.
-func (v *VerifiedJWT) ArrayClaim(name string) ([]interface{}, error) {
+func (v *VerifiedJWT) ArrayClaim(name string) ([]any, error) {
 	return v.token.ArrayClaim(name)
 }
 
@@ -173,7 +171,7 @@ func (v *VerifiedJWT) HasObjectClaim(name string) bool {
 }
 
 // ObjectClaim returns a map representing a JSON object for a claim or an error if the claim is empty.
-func (v *VerifiedJWT) ObjectClaim(name string) (map[string]interface{}, error) {
+func (v *VerifiedJWT) ObjectClaim(name string) (map[string]any, error) {
 	return v.token.ObjectClaim(name)
 }
 

@@ -17,8 +17,10 @@
 #include "tink/subtle/rsa_ssa_pss_verify_boringssl.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
@@ -27,6 +29,7 @@
 #include "openssl/evp.h"
 #include "openssl/rsa.h"
 #include "tink/internal/err_util.h"
+#include "tink/internal/fips_utils.h"
 #include "tink/internal/md_util.h"
 #include "tink/internal/rsa_util.h"
 #include "tink/internal/ssl_unique_ptr.h"

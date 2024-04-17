@@ -15,101 +15,106 @@
 ///////////////////////////////////////////////////////////////////////////////
 // [START aead-example]
 // A command-line utility for testing Tink AEAD.
-#include <fstream>
 #include <iostream>
 #include <memory>
-#include <sstream>
+#include <ostream>
 #include <string>
-#include <utility>
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
-#include "absl/memory/memory.h"
-#include "absl/status/status.h"
-#include "absl/strings/str_cat.h"
+#include "absl/log/check.h"
 #include "absl/strings/string_view.h"
 #include "tink/aead.h"
 #include "tink/aead/aead_config.h"
-#include "tink/cleartext_keyset_handle.h"
-#include "tink/json_keyset_reader.h"
+#include "tink/config/global_registry.h"
+#include "util/util.h"
 #include "tink/keyset_handle.h"
-#include "tink/keyset_reader.h"
 #include "tink/util/status.h"
 
 ABSL_FLAG(std::string, keyset_filename, "", "Keyset file in JSON format");
 ABSL_FLAG(std::string, mode, "", "Mode of operation {encrypt|decrypt}");
 ABSL_FLAG(std::string, input_filename, "", "Filename to operate on");
 ABSL_FLAG(std::string, output_filename, "", "Output file name");
-ABSL_FLAG(std::string, associated_data, "", "Associated data for AEAD");
+ABSL_FLAG(std::string, associated_data, "",
+          "Associated data for AEAD (default: empty");
 
 namespace {
 
 using ::crypto::tink::Aead;
 using ::crypto::tink::AeadConfig;
-using ::crypto::tink::CleartextKeysetHandle;
-using ::crypto::tink::JsonKeysetReader;
 using ::crypto::tink::KeysetHandle;
-using ::crypto::tink::KeysetReader;
 using ::crypto::tink::util::Status;
 using ::crypto::tink::util::StatusOr;
 
 constexpr absl::string_view kEncrypt = "encrypt";
 constexpr absl::string_view kDecrypt = "decrypt";
 
-// Creates a KeysetReader that reads a JSON-formatted keyset
-// from the given file.
-StatusOr<std::unique_ptr<KeysetReader>> GetJsonKeysetReader(
-    const std::string& filename) {
-  std::clog << "Creating a JsonKeysetReader...\n";
-  auto key_input_stream = absl::make_unique<std::ifstream>();
-  key_input_stream->open(filename, std::ifstream::in);
-  return JsonKeysetReader::New(std::move(key_input_stream));
-}
-
-// Creates a KeysetHandle that for a keyset read from the given file,
-// which is expected to contain a JSON-formatted keyset.
-StatusOr<std::unique_ptr<KeysetHandle>> ReadKeyset(
-    const std::string& filename) {
-  StatusOr<std::unique_ptr<KeysetReader>> keyset_reader =
-      GetJsonKeysetReader(filename);
-  if (!keyset_reader.ok()) {
-    return keyset_reader.status();
-  }
-  return CleartextKeysetHandle::Read(*std::move(keyset_reader));
-}
-
-// Reads `filename` and returns the read content as a string, or an error status
-// if the file does not exist.
-StatusOr<std::string> Read(const std::string& filename) {
-  std::clog << "Reading the input...\n";
-  std::ifstream input_stream;
-  input_stream.open(filename, std::ifstream::in);
-  if (!input_stream.is_open()) {
-    return Status(absl::StatusCode::kInternal,
-                  absl::StrCat("Error opening input file ", filename));
-  }
-  std::stringstream input;
-  input << input_stream.rdbuf();
-  return input.str();
-}
-
-// Writes the given `data_to_write` to the specified file `filename`.
-Status Write(const std::string& data_to_write, const std::string& filename) {
-  std::clog << "Writing the output...\n";
-  std::ofstream output_stream(filename,
-                              std::ofstream::out | std::ofstream::binary);
-  if (!output_stream.is_open()) {
-    return Status(absl::StatusCode::kInternal,
-                  absl::StrCat("Error opening output file ", filename));
-  }
-  output_stream << data_to_write;
-  return crypto::tink::util::OkStatus();
+void ValidateParams() {
+  // [START_EXCLUDE]
+  CHECK(absl::GetFlag(FLAGS_mode) == kEncrypt ||
+        absl::GetFlag(FLAGS_mode) == kDecrypt)
+      << "Invalid mode; must be `encrypt` or `decrypt`";
+  CHECK(!absl::GetFlag(FLAGS_keyset_filename).empty())
+      << "Keyset file must be specified";
+  CHECK(!absl::GetFlag(FLAGS_input_filename).empty())
+      << "Input file must be specified";
+  CHECK(!absl::GetFlag(FLAGS_output_filename).empty())
+      << "Output file must be specified";
+  // [END_EXCLUDE]
 }
 
 }  // namespace
 
+namespace tink_cc_examples {
+
+// AEAD example CLI implementation.
+Status AeadCli(absl::string_view mode, const std::string& keyset_filename,
+               const std::string& input_filename,
+               const std::string& output_filename,
+               absl::string_view associated_data) {
+  Status result = AeadConfig::Register();
+  if (!result.ok()) return result;
+
+  // Read the keyset from file.
+  StatusOr<std::unique_ptr<KeysetHandle>> keyset_handle =
+      ReadJsonCleartextKeyset(keyset_filename);
+  if (!keyset_handle.ok()) return keyset_handle.status();
+
+  // Get the primitive.
+  StatusOr<std::unique_ptr<Aead>> aead =
+      (*keyset_handle)
+          ->GetPrimitive<crypto::tink::Aead>(
+              crypto::tink::ConfigGlobalRegistry());
+  if (!aead.ok()) return aead.status();
+
+  // Read the input.
+  StatusOr<std::string> input_file_content = ReadFile(input_filename);
+  if (!input_file_content.ok()) return input_file_content.status();
+
+  // Compute the output.
+  std::string output;
+  if (mode == kEncrypt) {
+    StatusOr<std::string> encrypt_result =
+        (*aead)->Encrypt(*input_file_content, associated_data);
+    if (!encrypt_result.ok()) return encrypt_result.status();
+    output = encrypt_result.value();
+  } else {  // operation == kDecrypt.
+    StatusOr<std::string> decrypt_result =
+        (*aead)->Decrypt(*input_file_content, associated_data);
+    if (!decrypt_result.ok()) return decrypt_result.status();
+    output = decrypt_result.value();
+  }
+
+  // Write the output to the output file.
+  return WriteToFile(output, output_filename);
+}
+
+}  // namespace tink_cc_examples
+
 int main(int argc, char** argv) {
   absl::ParseCommandLine(argc, argv);
+
+  ValidateParams();
 
   std::string mode = absl::GetFlag(FLAGS_mode);
   std::string keyset_filename = absl::GetFlag(FLAGS_keyset_filename);
@@ -117,82 +122,14 @@ int main(int argc, char** argv) {
   std::string output_filename = absl::GetFlag(FLAGS_output_filename);
   std::string associated_data = absl::GetFlag(FLAGS_associated_data);
 
-  if (mode.empty()) {
-    std::cerr << "Mode must be specified with --mode=<" << kEncrypt << "|"
-              << kDecrypt << ">." << std::endl;
-    exit(1);
-  }
-
-  if (mode != kEncrypt && mode != kDecrypt) {
-    std::cerr << "Unknown mode '" << mode << "'; "
-              << "Expected either " << kEncrypt << " or " << kDecrypt << "."
-              << std::endl;
-    exit(1);
-  }
   std::clog << "Using keyset from file " << keyset_filename << " to AEAD-"
             << mode << " file " << input_filename << " with associated data '"
-            << associated_data << "'." << std::endl;
+            << associated_data << "'." << '\n';
   std::clog << "The resulting output will be written to " << output_filename
-            << std::endl;
+            << '\n';
 
-  Status result = AeadConfig::Register();
-  if (!result.ok()) {
-    std::cerr << result.message() << std::endl;
-    exit(1);
-  }
-
-  // Read the keyset from file.
-  StatusOr<std::unique_ptr<KeysetHandle>> keyset_handle =
-      ReadKeyset(keyset_filename);
-  if (!keyset_handle.ok()) {
-    std::cerr << keyset_handle.status().message() << std::endl;
-    exit(1);
-  }
-
-  // Get the primitive.
-  StatusOr<std::unique_ptr<Aead>> aead_primitive =
-      (*keyset_handle)->GetPrimitive<Aead>();
-  if (!aead_primitive.ok()) {
-    std::cerr << aead_primitive.status().message() << std::endl;
-    exit(1);
-  }
-
-  // Read the input.
-  StatusOr<std::string> input_file_content = Read(input_filename);
-  if (!input_file_content.ok()) {
-    std::cerr << input_file_content.status().message() << std::endl;
-    exit(1);
-  }
-
-  // Compute the output.
-  std::clog << mode << "ing...\n";
-  std::string output;
-  if (mode == kEncrypt) {
-    StatusOr<std::string> encrypt_result =
-        (*aead_primitive)->Encrypt(*input_file_content, associated_data);
-    if (!encrypt_result.ok()) {
-      std::cerr << encrypt_result.status().message() << std::endl;
-      exit(1);
-    }
-    output = encrypt_result.value();
-  } else {  // operation == kDecrypt.
-    StatusOr<std::string> decrypt_result =
-        (*aead_primitive)->Decrypt(*input_file_content, associated_data);
-    if (!decrypt_result.ok()) {
-      std::cerr << decrypt_result.status().message() << std::endl;
-      exit(1);
-    }
-    output = decrypt_result.value();
-  }
-
-  // Write the output to the output file.
-  Status write_result = Write(output, output_filename);
-  if (!write_result.ok()) {
-    std::cerr << write_result.message() << std::endl;
-    exit(1);
-  }
-
-  std::clog << "All done." << std::endl;
+  CHECK_OK(tink_cc_examples::AeadCli(mode, keyset_filename, input_filename,
+                                     output_filename, associated_data));
   return 0;
 }
 // [END aead-example]

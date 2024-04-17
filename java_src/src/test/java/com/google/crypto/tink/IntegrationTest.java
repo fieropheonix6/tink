@@ -22,7 +22,8 @@ import static org.junit.Assert.assertEquals;
 import com.google.crypto.tink.config.TinkConfig;
 import com.google.crypto.tink.subtle.Random;
 import com.google.crypto.tink.testing.TestUtil;
-import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -36,7 +37,7 @@ import org.junit.runners.JUnit4;
 public class IntegrationTest {
   @BeforeClass
   public static void setUp() throws GeneralSecurityException {
-    Config.register(TinkConfig.TINK_1_0_0);
+    TinkConfig.register();
   }
 
   /**
@@ -49,15 +50,16 @@ public class IntegrationTest {
       return;
     }
     HybridDecrypt hybridDecrypt =
-        CleartextKeysetHandle.read(
-                BinaryKeysetReader.withFile(
-                    new File("testdata/keysets/ecies_private_keyset2.bin")))
+        TinkProtoKeysetFormat.parseKeyset(
+                Files.readAllBytes(
+                    Paths.get("testdata/keysets/ecies_private_keyset2.bin")),
+                InsecureSecretKeyAccess.get())
             .getPrimitive(HybridDecrypt.class);
 
     HybridEncrypt hybridEncrypt =
-        CleartextKeysetHandle.read(
-                BinaryKeysetReader.withFile(
-                    new File("testdata/keysets/ecies_public_keyset2.bin")))
+        TinkProtoKeysetFormat.parseKeysetWithoutSecret(
+                Files.readAllBytes(
+                    Paths.get("testdata/keysets/ecies_public_keyset2.bin")))
             .getPrimitive(HybridEncrypt.class);
 
     byte[] plaintext = Random.randBytes(20);
@@ -84,15 +86,16 @@ public class IntegrationTest {
     }
 
     HybridDecrypt hybridDecrypt =
-        CleartextKeysetHandle.read(
-                BinaryKeysetReader.withFile(
-                    new File("testdata/keysets/ecies_private_keyset.bin")))
+        TinkProtoKeysetFormat.parseKeyset(
+                Files.readAllBytes(
+                    Paths.get("testdata/keysets/ecies_private_keyset.bin")),
+                InsecureSecretKeyAccess.get())
             .getPrimitive(HybridDecrypt.class);
 
     HybridEncrypt hybridEncrypt =
-        CleartextKeysetHandle.read(
-                BinaryKeysetReader.withFile(
-                    new File("testdata/keysets/ecies_public_keyset.bin")))
+        TinkProtoKeysetFormat.parseKeysetWithoutSecret(
+                Files.readAllBytes(
+                    Paths.get("testdata/keysets/ecies_public_keyset.bin")))
             .getPrimitive(HybridEncrypt.class);
 
     byte[] plaintext = Random.randBytes(20);

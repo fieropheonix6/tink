@@ -17,11 +17,13 @@
 #ifndef TINK_UTIL_SECRET_PROTO_H_
 #define TINK_UTIL_SECRET_PROTO_H_
 
+#include <cstddef>
 #include <memory>
 #include <utility>
 
 #include "google/protobuf/arena.h"
 #include "absl/memory/memory.h"
+#include "absl/status/status.h"
 #include "tink/util/secret_data.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
@@ -61,11 +63,11 @@ class SecretProto {
     return proto;
   }
 
-  SecretProto() {}
+  SecretProto() = default;
 
   SecretProto(const SecretProto& other) { *value_ = *other.value_; }
 
-  SecretProto(SecretProto&& other) { *this = std::move(other); }
+  SecretProto(SecretProto&& other) noexcept { *this = std::move(other); }
 
   explicit SecretProto(const T& value) { *value_ = value; }
 
@@ -74,7 +76,7 @@ class SecretProto {
     return *this;
   }
 
-  SecretProto& operator=(SecretProto&& other) {
+  SecretProto& operator=(SecretProto&& other) noexcept {
     using std::swap;
     swap(arena_, other.arena_);
     swap(value_, other.value_);
@@ -101,7 +103,7 @@ class SecretProto {
  private:
   std::unique_ptr<google::protobuf::Arena> arena_ =
       absl::make_unique<google::protobuf::Arena>(internal::SecretArenaOptions());
-  T* value_ = google::protobuf::Arena::CreateMessage<T>(arena_.get());
+  T* value_ = google::protobuf::Arena::Create<T>(arena_.get());
 };
 
 }  // namespace util

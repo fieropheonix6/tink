@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 // Package primitiveset provides a container for a set of cryptographic
 // primitives.
@@ -33,17 +31,17 @@ import (
 // primitive, it holds the identifier and status of the primitive.
 type Entry struct {
 	KeyID      uint32
-	Primitive  interface{}
+	Primitive  any
 	Prefix     string
 	PrefixType tinkpb.OutputPrefixType
 	Status     tinkpb.KeyStatusType
 	TypeURL    string
 }
 
-func newEntry(keyID uint32, p interface{}, prefix string, prefixType tinkpb.OutputPrefixType, status tinkpb.KeyStatusType, typeURL string) *Entry {
+func newEntry(keyID uint32, primitive any, prefix string, prefixType tinkpb.OutputPrefixType, status tinkpb.KeyStatusType, typeURL string) *Entry {
 	return &Entry{
 		KeyID:      keyID,
-		Primitive:  p,
+		Primitive:  primitive,
 		Prefix:     prefix,
 		Status:     status,
 		PrefixType: prefixType,
@@ -70,6 +68,8 @@ type PrimitiveSet struct {
 	// primitives sharing the prefix). This allows quickly retrieving the
 	// primitives sharing some particular prefix.
 	Entries map[string][]*Entry
+	// Stores entries in the original keyset key order.
+	EntriesInKeysetOrder []*Entry
 
 	Annotations map[string]string
 }
@@ -77,9 +77,10 @@ type PrimitiveSet struct {
 // New returns an empty instance of PrimitiveSet.
 func New() *PrimitiveSet {
 	return &PrimitiveSet{
-		Primary:     nil,
-		Entries:     make(map[string][]*Entry),
-		Annotations: nil,
+		Primary:              nil,
+		Entries:              make(map[string][]*Entry),
+		EntriesInKeysetOrder: make([]*Entry, 0),
+		Annotations:          nil,
 	}
 }
 
@@ -98,8 +99,8 @@ func (ps *PrimitiveSet) EntriesForPrefix(prefix string) ([]*Entry, error) {
 }
 
 // Add creates a new entry in the primitive set and returns the added entry.
-func (ps *PrimitiveSet) Add(p interface{}, key *tinkpb.Keyset_Key) (*Entry, error) {
-	if key == nil || p == nil {
+func (ps *PrimitiveSet) Add(primitive any, key *tinkpb.Keyset_Key) (*Entry, error) {
+	if key == nil || primitive == nil {
 		return nil, fmt.Errorf("primitive_set: key and primitive must not be nil")
 	}
 	if key.GetKeyData() == nil {
@@ -114,12 +115,13 @@ func (ps *PrimitiveSet) Add(p interface{}, key *tinkpb.Keyset_Key) (*Entry, erro
 	}
 	e := newEntry(
 		key.GetKeyId(),
-		p,
+		primitive,
 		prefix,
 		key.GetOutputPrefixType(),
 		key.GetStatus(),
 		key.GetKeyData().GetTypeUrl(),
 	)
 	ps.Entries[prefix] = append(ps.Entries[prefix], e)
+	ps.EntriesInKeysetOrder = append(ps.EntriesInKeysetOrder, e)
 	return e, nil
 }

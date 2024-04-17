@@ -11,20 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package subtle_test
 
 import (
 	"encoding/hex"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/google/tink/go/mac/subtle"
 	"github.com/google/tink/go/subtle/random"
+	"github.com/google/tink/go/testutil"
 )
 
 var (
@@ -39,7 +35,7 @@ var (
 	}
 )
 
-type testdata struct {
+type AESCMACSuite struct {
 	Algorithm        string
 	GeneratorVersion string
 	NumberOfTests    uint32
@@ -63,21 +59,13 @@ type testcase struct {
 }
 
 func TestVectorsWycheproof(t *testing.T) {
-	srcDir, ok := os.LookupEnv("TEST_SRCDIR")
-	if !ok {
-		t.Skip("TEST_SRCDIR not set")
-	}
-	f, err := os.Open(filepath.Join(srcDir, "wycheproof/testvectors/aes_cmac_test.json"))
-	if err != nil {
-		t.Fatalf("cannot open file: %s", err)
-	}
-	parser := json.NewDecoder(f)
-	data := new(testdata)
-	if err := parser.Decode(data); err != nil {
-		t.Fatalf("cannot decode test data: %s", err)
+	testutil.SkipTestIfTestSrcDirIsNotSet(t)
+	suite := new(AESCMACSuite)
+	if err := testutil.PopulateSuite(suite, "aes_cmac_test.json"); err != nil {
+		t.Fatalf("testutil.PopulateSuite: %v", err)
 	}
 
-	for _, g := range data.TestGroups {
+	for _, g := range suite.TestGroups {
 		for _, tc := range g.Tests {
 			key, err := hex.DecodeString(tc.Key)
 			if err != nil || uint32(len(key))*8 != g.KeySize {

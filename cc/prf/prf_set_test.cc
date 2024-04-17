@@ -16,15 +16,20 @@
 
 #include "tink/prf/prf_set.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "tink/config/global_registry.h"
 #include "tink/keyset_handle.h"
 #include "tink/keyset_manager.h"
 #include "tink/prf/prf_config.h"
@@ -103,7 +108,8 @@ TEST(PrfSetWrapperTest, TestPrimitivesEndToEnd) {
   uint32_t aes_cmac_id = id_result.value();
   auto keyset_handle = keyset_manager->GetKeysetHandle();
   uint32_t hkdf_id = keyset_handle->GetKeysetInfo().primary_key_id();
-  auto prf_set_result = keyset_handle->GetPrimitive<PrfSet>();
+  auto prf_set_result =
+      keyset_handle->GetPrimitive<crypto::tink::PrfSet>(ConfigGlobalRegistry());
   ASSERT_TRUE(prf_set_result.ok()) << prf_set_result.status();
   auto prf_set = std::move(prf_set_result.value());
   EXPECT_THAT(prf_set->GetPrimaryId(), Eq(hkdf_id));

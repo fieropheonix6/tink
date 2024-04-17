@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package registry
 
@@ -28,16 +26,20 @@ import (
 type KeyManager interface {
 	// Primitive constructs a primitive instance for the key given in serializedKey, which must be a
 	// serialized key protocol buffer handled by this manager.
-	Primitive(serializedKey []byte) (interface{}, error)
+	Primitive(serializedKey []byte) (any, error)
 
 	// NewKey generates a new key according to specification in serializedKeyFormat, which must be
 	// supported by this manager.
+	//
+	// Deprecated: Tink always used [NewKeyData] to create new keys. This function is
+	// unused (except in the unused and deprecated function [registry.NewKey]). It doesn't need to be
+	// implemented.
 	NewKey(serializedKeyFormat []byte) (proto.Message, error)
 
 	// DoesSupport returns true iff this KeyManager supports key type identified by typeURL.
 	DoesSupport(typeURL string) bool
 
-	// TypeURL returns the type URL that identifes the key type of keys managed by this key manager.
+	// TypeURL returns the type URL that identifies the key type of keys managed by this key manager.
 	TypeURL() string
 
 	// APIs for Key Management

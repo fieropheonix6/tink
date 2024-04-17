@@ -1,0 +1,220 @@
+tink_module(keyderivation::internal)
+
+tink_cc_library(
+  NAME prf_based_deriver
+  SRCS
+    prf_based_deriver.cc
+    prf_based_deriver.h
+  DEPS
+    tink::keyderivation::internal::config_prf_for_deriver
+    tink::keyderivation::internal::key_derivers
+    absl::memory
+    absl::string_view
+    tink::core::cleartext_keyset_handle
+    tink::core::input_stream
+    tink::core::key
+    tink::core::key_status
+    tink::core::keyset_handle
+    tink::core::keyset_handle_builder
+    tink::core::parameters
+    tink::aead::aes_gcm_proto_serialization
+    tink::internal::configuration_impl
+    tink::internal::key_type_info_store
+    tink::internal::mutable_serialization_registry
+    tink::internal::proto_parameters_serialization
+    tink::internal::registry_impl
+    tink::keyderivation::keyset_deriver
+    tink::subtle::prf::streaming_prf
+    tink::util::status
+    tink::util::statusor
+    tink::proto::tink_cc_proto
+)
+
+tink_cc_test(
+  NAME prf_based_deriver_test
+  SRCS
+    prf_based_deriver_test.cc
+  DEPS
+    tink::keyderivation::internal::prf_based_deriver
+    gmock
+    absl::memory
+    absl::status
+    absl::string_view
+    absl::optional
+    tink::core::cleartext_keyset_handle
+    tink::core::insecure_secret_key_access
+    tink::core::key_status
+    tink::core::keyset_handle
+    tink::core::partial_key_access
+    tink::core::registry
+    tink::aead::aead_key_templates
+    tink::aead::aes_ctr_hmac_aead_key_manager
+    tink::aead::aes_gcm_key
+    tink::aead::aes_gcm_key_manager
+    tink::aead::aes_gcm_parameters
+    tink::internal::registry_impl
+    tink::keyderivation::keyset_deriver
+    tink::prf::hkdf_prf_key_manager
+    tink::subtle::random
+    tink::subtle::prf::streaming_prf
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::util::test_util
+    tink::proto::aes_gcm_cc_proto
+    tink::proto::common_cc_proto
+    tink::proto::hkdf_prf_cc_proto
+    tink::proto::tink_cc_proto
+)
+
+tink_cc_library(
+  NAME prf_based_deriver_key_manager
+  SRCS
+    prf_based_deriver_key_manager.h
+  DEPS
+    tink::keyderivation::internal::prf_based_deriver
+    absl::memory
+    absl::status
+    absl::strings
+    tink::core::key_type_manager
+    tink::core::template_util
+    tink::core::registry
+    tink::keyderivation::keyset_deriver
+    tink::util::constants
+    tink::util::status
+    tink::util::statusor
+    tink::util::validation
+    tink::proto::prf_based_deriver_cc_proto
+    tink::proto::tink_cc_proto
+)
+
+tink_cc_test(
+  NAME prf_based_deriver_key_manager_test
+  SRCS
+    prf_based_deriver_key_manager_test.cc
+  DEPS
+    tink::keyderivation::internal::prf_based_deriver
+    tink::keyderivation::internal::prf_based_deriver_key_manager
+    gmock
+    absl::memory
+    absl::status
+    tink::core::cleartext_keyset_handle
+    tink::core::keyset_handle
+    tink::core::registry
+    tink::aead::aead_key_templates
+    tink::aead::aes_gcm_key_manager
+    tink::keyderivation::keyset_deriver
+    tink::prf::hkdf_prf_key_manager
+    tink::subtle::subtle
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::util::test_util
+    tink::proto::aes_gcm_cc_proto
+    tink::proto::hkdf_prf_cc_proto
+    tink::proto::prf_based_deriver_cc_proto
+    tink::proto::tink_cc_proto
+)
+
+tink_cc_library(
+  NAME key_derivers
+  SRCS
+    key_derivers.cc
+    key_derivers.h
+  DEPS
+    absl::flat_hash_map
+    absl::any_invocable
+    absl::check
+    absl::memory
+    absl::status
+    absl::strings
+    absl::string_view
+    absl::optional
+    tink::core::input_stream
+    tink::core::insecure_secret_key_access
+    tink::core::key
+    tink::core::parameters
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::aead::aes_gcm_key
+    tink::aead::aes_gcm_parameters
+    tink::aead::aes_gcm_proto_serialization
+    tink::util::input_stream_util
+    tink::util::status
+    tink::util::statusor
+    tink::proto::aes_gcm_cc_proto
+    tink::proto::tink_cc_proto
+)
+
+tink_cc_test(
+  NAME key_derivers_test
+  SRCS
+    key_derivers_test.cc
+  DEPS
+    tink::keyderivation::internal::key_derivers
+    gmock
+    absl::memory
+    absl::status
+    absl::optional
+    tink::core::input_stream
+    tink::core::insecure_secret_key_access
+    tink::core::key
+    tink::core::key_status
+    tink::core::keyset_handle
+    tink::core::keyset_handle_builder
+    tink::core::partial_key_access
+    tink::core::registry
+    tink::core::restricted_data
+    tink::core::secret_key_access_token
+    tink::aead::aes_eax_parameters
+    tink::aead::aes_eax_proto_serialization
+    tink::aead::aes_gcm_key
+    tink::aead::aes_gcm_key_manager
+    tink::aead::aes_gcm_parameters
+    tink::aead::aes_gcm_proto_serialization
+    tink::internal::mutable_serialization_registry
+    tink::internal::proto_parameters_serialization
+    tink::internal::serialization
+    tink::prf::hkdf_prf_key_manager
+    tink::subtle::common_enums
+    tink::subtle::random
+    tink::subtle::prf::hkdf_streaming_prf
+    tink::subtle::prf::streaming_prf
+    tink::util::istream_input_stream
+    tink::util::secret_data
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::util::test_util
+    tink::proto::aes_gcm_cc_proto
+    tink::proto::common_cc_proto
+    tink::proto::hkdf_prf_cc_proto
+    tink::proto::tink_cc_proto
+)
+
+tink_cc_library(
+  NAME config_prf_for_deriver
+  SRCS
+    config_prf_for_deriver.h
+  DEPS
+    absl::check
+    absl::memory
+    tink::core::configuration
+    tink::internal::configuration_impl
+    tink::prf::hkdf_prf_key_manager
+)
+
+tink_cc_test(
+  NAME config_prf_for_deriver_test
+  SRCS
+    config_prf_for_deriver_test.cc
+  DEPS
+    tink::keyderivation::internal::config_prf_for_deriver
+    gmock
+    tink::internal::configuration_impl
+    tink::internal::key_type_info_store
+    tink::prf::hkdf_prf_key_manager
+    tink::subtle::prf::streaming_prf
+    tink::util::input_stream_util
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::util::test_util
+    tink::proto::tink_cc_proto
+)

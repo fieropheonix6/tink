@@ -11,19 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package signature_test
 
 import (
+	"bytes"
+	"fmt"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
+	"github.com/google/tink/go/core/registry"
+	"github.com/google/tink/go/insecurecleartextkeyset"
+	"github.com/google/tink/go/internal/internalregistry"
+	"github.com/google/tink/go/internal/testing/stubkeymanager"
 	"github.com/google/tink/go/keyset"
 	"github.com/google/tink/go/mac"
+	"github.com/google/tink/go/monitoring"
 	"github.com/google/tink/go/signature"
 	"github.com/google/tink/go/subtle/random"
+	"github.com/google/tink/go/testing/fakemonitoring"
 	"github.com/google/tink/go/testkeyset"
 	"github.com/google/tink/go/testutil"
 	commonpb "github.com/google/tink/go/proto/common_go_proto"
@@ -31,25 +38,28 @@ import (
 )
 
 func TestSignerVerifyFactory(t *testing.T) {
-	tinkPriv, tinkPub := newECDSAKeysetKeypair(commonpb.HashType_SHA512,
+	tinkPriv, tinkPub := newECDSAKeysetKeypair(t, commonpb.HashType_SHA512,
 		commonpb.EllipticCurveType_NIST_P521,
 		tinkpb.OutputPrefixType_TINK,
 		1)
-	legacyPriv, legacyPub := newECDSAKeysetKeypair(commonpb.HashType_SHA256,
+	legacyPriv, legacyPub := newECDSAKeysetKeypair(t, commonpb.HashType_SHA256,
 		commonpb.EllipticCurveType_NIST_P256,
 		tinkpb.OutputPrefixType_LEGACY,
 		2)
-	rawPriv, rawPub := newECDSAKeysetKeypair(commonpb.HashType_SHA512,
+	rawPriv, rawPub := newECDSAKeysetKeypair(t, commonpb.HashType_SHA512,
 		commonpb.EllipticCurveType_NIST_P384,
 		tinkpb.OutputPrefixType_RAW,
 		3)
-	crunchyPriv, crunchyPub := newECDSAKeysetKeypair(commonpb.HashType_SHA512,
+	crunchyPriv, crunchyPub := newECDSAKeysetKeypair(t, commonpb.HashType_SHA512,
 		commonpb.EllipticCurveType_NIST_P384,
 		tinkpb.OutputPrefixType_CRUNCHY,
 		4)
 	privKeys := []*tinkpb.Keyset_Key{tinkPriv, legacyPriv, rawPriv, crunchyPriv}
 	privKeyset := testutil.NewKeyset(privKeys[0].KeyId, privKeys)
-	privKeysetHandle, _ := testkeyset.NewHandle(privKeyset)
+	privKeysetHandle, err := testkeyset.NewHandle(privKeyset)
+	if err != nil {
+		t.Fatalf("testkeyset.NewHandle() err = %q, want nil", err)
+	}
 	pubKeys := []*tinkpb.Keyset_Key{tinkPub, legacyPub, rawPub, crunchyPub}
 	pubKeyset := testutil.NewKeyset(pubKeys[0].KeyId, pubKeys)
 	pubKeysetHandle, err := testkeyset.NewHandle(pubKeyset)
@@ -75,7 +85,7 @@ func TestSignerVerifyFactory(t *testing.T) {
 		t.Errorf("verifier.Verify(sig, data) = %v, want nil", err)
 	}
 	// verify with other key should fail
-	_, otherPub := newECDSAKeysetKeypair(commonpb.HashType_SHA512,
+	_, otherPub := newECDSAKeysetKeypair(t, commonpb.HashType_SHA512,
 		commonpb.EllipticCurveType_NIST_P521,
 		tinkpb.OutputPrefixType_TINK,
 		1)
@@ -95,7 +105,7 @@ func TestSignerVerifyFactory(t *testing.T) {
 }
 
 func TestPrimitiveFactoryFailsWhenKeysetHasNoPrimary(t *testing.T) {
-	privateKey, _ := newECDSAKeysetKeypair(commonpb.HashType_SHA512,
+	privateKey, _ := newECDSAKeysetKeypair(t, commonpb.HashType_SHA512,
 		commonpb.EllipticCurveType_NIST_P521,
 		tinkpb.OutputPrefixType_TINK,
 		1)
@@ -120,18 +130,22 @@ func TestPrimitiveFactoryFailsWhenKeysetHasNoPrimary(t *testing.T) {
 	}
 }
 
-func newECDSAKeysetKeypair(hashType commonpb.HashType,
-	curve commonpb.EllipticCurveType,
-	outputPrefixType tinkpb.OutputPrefixType,
-	keyID uint32) (*tinkpb.Keyset_Key, *tinkpb.Keyset_Key) {
+func newECDSAKeysetKeypair(t *testing.T, hashType commonpb.HashType, curve commonpb.EllipticCurveType, outputPrefixType tinkpb.OutputPrefixType, keyID uint32) (*tinkpb.Keyset_Key, *tinkpb.Keyset_Key) {
+	t.Helper()
 	key := testutil.NewRandomECDSAPrivateKey(hashType, curve)
-	serializedKey, _ := proto.Marshal(key)
+	serializedKey, err := proto.Marshal(key)
+	if err != nil {
+		t.Fatalf("proto.Marshal() err = %q, want nil", err)
+	}
 	keyData := testutil.NewKeyData(testutil.ECDSASignerTypeURL,
 		serializedKey,
 		tinkpb.KeyData_ASYMMETRIC_PRIVATE)
 	privKey := testutil.NewKey(keyData, tinkpb.KeyStatusType_ENABLED, keyID, outputPrefixType)
 
-	serializedKey, _ = proto.Marshal(key.PublicKey)
+	serializedKey, err = proto.Marshal(key.PublicKey)
+	if err != nil {
+		t.Fatalf("proto.Marshal() err = %q, want nil", err)
+	}
 	keyData = testutil.NewKeyData(testutil.ECDSAVerifierTypeURL,
 		serializedKey,
 		tinkpb.KeyData_ASYMMETRIC_PUBLIC)
@@ -175,5 +189,313 @@ func TestFactoryWithValidPrimitiveSetType(t *testing.T) {
 	_, err = signature.NewVerifier(goodPublicKH)
 	if err != nil {
 		t.Errorf("signature.NewVerifier(goodPublicKH) err = %v, want nil", err)
+	}
+}
+
+func TestPrimitiveFactorySignVerifyWithoutAnnotationsDoesNothing(t *testing.T) {
+	defer internalregistry.ClearMonitoringClient()
+	client := fakemonitoring.NewClient("fake-client")
+	if err := internalregistry.RegisterMonitoringClient(client); err != nil {
+		t.Fatalf("internalregistry.RegisterMonitoringClient() err = %v, want nil", err)
+	}
+	privHandle, err := keyset.NewHandle(signature.ED25519KeyTemplate())
+	if err != nil {
+		t.Fatalf("keyset.NewHandle() err = %v, want nil", err)
+	}
+	signer, err := signature.NewSigner(privHandle)
+	if err != nil {
+		t.Fatalf("signature.NewSigner() err = %v, want nil", err)
+	}
+	pubHandle, err := privHandle.Public()
+	if err != nil {
+		t.Fatalf("privHandle.Public() err = %v, want nil", err)
+	}
+	verifier, err := signature.NewVerifier(pubHandle)
+	if err != nil {
+		t.Fatalf("signature.NewVerifier() err = %v, want nil", err)
+	}
+	data := []byte("some_important_data")
+	sig, err := signer.Sign(data)
+	if err != nil {
+		t.Fatalf("signer.Sign() err = %v, want nil", err)
+	}
+	if err := verifier.Verify(sig, data); err != nil {
+		t.Fatalf("verifier.Verify() err = %v, want nil", err)
+	}
+	if len(client.Events()) != 0 {
+		t.Errorf("len(client.Events()) = %d, want 0", len(client.Events()))
+	}
+	if len(client.Failures()) != 0 {
+		t.Errorf("len(client.Failures()) = %d, want 0", len(client.Failures()))
+	}
+}
+
+func TestPrimitiveFactoryMonitoringWithAnnotationsLogSignVerify(t *testing.T) {
+	defer internalregistry.ClearMonitoringClient()
+	client := fakemonitoring.NewClient("fake-client")
+	if err := internalregistry.RegisterMonitoringClient(client); err != nil {
+		t.Fatalf("internalregistry.RegisterMonitoringClient() err = %v, want nil", err)
+	}
+	handle, err := keyset.NewHandle(signature.ED25519KeyTemplate())
+	if err != nil {
+		t.Fatalf("keyset.NewHandle() err = %v, want nil", err)
+	}
+	buff := &bytes.Buffer{}
+	if err := insecurecleartextkeyset.Write(handle, keyset.NewBinaryWriter(buff)); err != nil {
+		t.Fatalf("insecurecleartextkeyset.Write() err = %v, want nil", err)
+	}
+	annotations := map[string]string{"foo": "bar"}
+	privHandle, err := insecurecleartextkeyset.Read(keyset.NewBinaryReader(buff), keyset.WithAnnotations(annotations))
+	if err != nil {
+		t.Fatalf("insecurecleartextkeyset.Read() err = %v, want nil", err)
+	}
+	signer, err := signature.NewSigner(privHandle)
+	if err != nil {
+		t.Fatalf("signature.NewSigner() err = %v, want nil", err)
+	}
+	pubHandle, err := privHandle.Public()
+	if err != nil {
+		t.Fatalf("privHandle.Public() err = %v, want nil", err)
+	}
+	buff.Reset()
+	if err := insecurecleartextkeyset.Write(pubHandle, keyset.NewBinaryWriter(buff)); err != nil {
+		t.Fatalf("insecurecleartextkeyset.Write() err = %v, want nil", err)
+	}
+	pubHandle, err = insecurecleartextkeyset.Read(keyset.NewBinaryReader(buff), keyset.WithAnnotations(annotations))
+	if err != nil {
+		t.Fatalf("insecurecleartextkeyset.Read() err = %v, want nil", err)
+	}
+	verifier, err := signature.NewVerifier(pubHandle)
+	if err != nil {
+		t.Fatalf("signature.NewVerifier() err = %v, want nil", err)
+	}
+	data := []byte("some_important_data")
+	sig, err := signer.Sign(data)
+	if err != nil {
+		t.Fatalf("signer.Sign() err = %v, want nil", err)
+	}
+	if err := verifier.Verify(sig, data); err != nil {
+		t.Fatalf("verifier.Verify() err = %v, want nil", err)
+	}
+	if len(client.Failures()) != 0 {
+		t.Errorf("len(client.Failures()) = %d, want 0", len(client.Failures()))
+	}
+	got := client.Events()
+	wantVerifyKeysetInfo := &monitoring.KeysetInfo{
+		Annotations:  annotations,
+		PrimaryKeyID: pubHandle.KeysetInfo().GetPrimaryKeyId(),
+		Entries: []*monitoring.Entry{
+			{
+				KeyID:     pubHandle.KeysetInfo().GetPrimaryKeyId(),
+				Status:    monitoring.Enabled,
+				KeyType:   "tink.Ed25519PublicKey",
+				KeyPrefix: "TINK",
+			},
+		},
+	}
+	wantSignKeysetInfo := &monitoring.KeysetInfo{
+		Annotations:  annotations,
+		PrimaryKeyID: privHandle.KeysetInfo().GetPrimaryKeyId(),
+		Entries: []*monitoring.Entry{
+			{
+				KeyID:     privHandle.KeysetInfo().GetPrimaryKeyId(),
+				Status:    monitoring.Enabled,
+				KeyType:   "tink.Ed25519PrivateKey",
+				KeyPrefix: "TINK",
+			},
+		},
+	}
+	want := []*fakemonitoring.LogEvent{
+		{
+			Context:  monitoring.NewContext("public_key_sign", "sign", wantSignKeysetInfo),
+			KeyID:    privHandle.KeysetInfo().GetPrimaryKeyId(),
+			NumBytes: len(data),
+		},
+		{
+			Context:  monitoring.NewContext("public_key_verify", "verify", wantVerifyKeysetInfo),
+			KeyID:    privHandle.KeysetInfo().GetPrimaryKeyId(),
+			NumBytes: len(data),
+		},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("%v", diff)
+	}
+}
+
+type alwaysFailingSigner struct{}
+
+func (a *alwaysFailingSigner) Sign(data []byte) ([]byte, error) { return nil, fmt.Errorf("failed") }
+
+func TestPrimitiveFactoryMonitoringWithAnnotationsSignFailureIsLogged(t *testing.T) {
+	defer internalregistry.ClearMonitoringClient()
+	client := fakemonitoring.NewClient("fake-client")
+	if err := internalregistry.RegisterMonitoringClient(client); err != nil {
+		t.Fatalf("internalregistry.RegisterMonitoringClient() err = %v, want nil", err)
+	}
+	typeURL := "TestPrimitiveFactoryMonitoringWithAnnotationsSignFailureIsLogged" + "PrivateKeyManager"
+	km := &stubkeymanager.StubPrivateKeyManager{
+		StubKeyManager: stubkeymanager.StubKeyManager{
+			URL:  typeURL,
+			Prim: &alwaysFailingSigner{},
+			KeyData: &tinkpb.KeyData{
+				TypeUrl:         typeURL,
+				Value:           []byte("serialized_key"),
+				KeyMaterialType: tinkpb.KeyData_ASYMMETRIC_PRIVATE,
+			},
+		},
+	}
+	if err := registry.RegisterKeyManager(km); err != nil {
+		t.Fatalf("registry.RegisterKeyManager() err = %v, want nil", err)
+	}
+	template := &tinkpb.KeyTemplate{
+		TypeUrl:          typeURL,
+		OutputPrefixType: tinkpb.OutputPrefixType_LEGACY,
+	}
+	kh, err := keyset.NewHandle(template)
+	if err != nil {
+		t.Fatalf("keyset.NewHandle() err = %v, want nil", err)
+	}
+	buff := &bytes.Buffer{}
+	if err := insecurecleartextkeyset.Write(kh, keyset.NewBinaryWriter(buff)); err != nil {
+		t.Fatalf("insecurecleartextkeyset.Write() err = %v, want nil", err)
+	}
+	annotations := map[string]string{"foo": "bar"}
+	privHandle, err := insecurecleartextkeyset.Read(keyset.NewBinaryReader(buff), keyset.WithAnnotations(annotations))
+	if err != nil {
+		t.Fatalf("insecurecleartextkeyset.Read() err = %v, want nil", err)
+	}
+	signer, err := signature.NewSigner(privHandle)
+	if err != nil {
+		t.Fatalf("signature.NewSigner() err = %v, want nil", err)
+	}
+	if _, err := signer.Sign([]byte("some_data")); err == nil {
+		t.Fatalf("signer.Sign() err = nil, want error")
+	}
+	if len(client.Events()) != 0 {
+		t.Errorf("len(client.Events()) = %d, want 0", len(client.Events()))
+	}
+	got := client.Failures()
+	want := []*fakemonitoring.LogFailure{
+		{
+			Context: monitoring.NewContext(
+				"public_key_sign",
+				"sign",
+				monitoring.NewKeysetInfo(
+					annotations,
+					kh.KeysetInfo().GetPrimaryKeyId(),
+					[]*monitoring.Entry{
+						{
+							KeyID:     kh.KeysetInfo().GetPrimaryKeyId(),
+							Status:    monitoring.Enabled,
+							KeyType:   typeURL,
+							KeyPrefix: "LEGACY",
+						},
+					},
+				),
+			),
+		},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("%v", diff)
+	}
+}
+
+func TestPrimitiveFactoryMonitoringWithAnnotationsVerifyFailureIsLogged(t *testing.T) {
+	defer internalregistry.ClearMonitoringClient()
+	client := fakemonitoring.NewClient("fake-client")
+	if err := internalregistry.RegisterMonitoringClient(client); err != nil {
+		t.Fatalf("internalregistry.RegisterMonitoringClient() err = %v, want nil", err)
+	}
+	privHandle, err := keyset.NewHandle(signature.ED25519KeyTemplate())
+	if err != nil {
+		t.Fatalf("keyset.NewHandle() err = %v, want nil", err)
+	}
+	pubHandle, err := privHandle.Public()
+	if err != nil {
+		t.Fatalf("privHandle.Public() err = %v, want nil", err)
+	}
+	buff := &bytes.Buffer{}
+	annotations := map[string]string{"foo": "bar"}
+	if err := insecurecleartextkeyset.Write(pubHandle, keyset.NewBinaryWriter(buff)); err != nil {
+		t.Fatalf("insecurecleartextkeyset.Write() err = %v, want nil", err)
+	}
+	pubHandle, err = insecurecleartextkeyset.Read(keyset.NewBinaryReader(buff), keyset.WithAnnotations(annotations))
+	if err != nil {
+		t.Fatalf("insecurecleartextkeyset.Read() err = %v, want nil", err)
+	}
+	verifier, err := signature.NewVerifier(pubHandle)
+	if err != nil {
+		t.Fatalf("signature.NewVerifier() err = %v, want nil", err)
+	}
+	if err := verifier.Verify([]byte("some_invalid_signature"), []byte("some_invalid_data")); err == nil {
+		t.Fatalf("verifier.Verify() err = nil, want error")
+	}
+	if len(client.Events()) != 0 {
+		t.Errorf("len(client.Events()) = %d, want 0", len(client.Events()))
+	}
+	got := client.Failures()
+	want := []*fakemonitoring.LogFailure{
+		{
+			Context: monitoring.NewContext(
+				"public_key_verify",
+				"verify",
+				monitoring.NewKeysetInfo(
+					annotations,
+					pubHandle.KeysetInfo().GetPrimaryKeyId(),
+					[]*monitoring.Entry{
+						{
+							KeyID:     pubHandle.KeysetInfo().GetPrimaryKeyId(),
+							Status:    monitoring.Enabled,
+							KeyType:   "tink.Ed25519PublicKey",
+							KeyPrefix: "TINK",
+						},
+					},
+				),
+			),
+		},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("%v", diff)
+	}
+}
+
+func TestVerifyWithLegacyKeyDoesNotHaveSideEffectOnMessage(t *testing.T) {
+	privateKey, publicKey := newECDSAKeysetKeypair(t, commonpb.HashType_SHA256,
+		commonpb.EllipticCurveType_NIST_P256,
+		tinkpb.OutputPrefixType_LEGACY,
+		2)
+	privateKeyset := testutil.NewKeyset(privateKey.KeyId, []*tinkpb.Keyset_Key{privateKey})
+	privateHandle, err := testkeyset.NewHandle(privateKeyset)
+	if err != nil {
+		t.Fatalf("testkeyset.NewHandle(privateHandle) err = %v, want nil", err)
+	}
+	publicKeyset := testutil.NewKeyset(publicKey.KeyId, []*tinkpb.Keyset_Key{publicKey})
+	publicHandle, err := testkeyset.NewHandle(publicKeyset)
+	if err != nil {
+		t.Fatalf("testkeyset.NewHandle(publicKeyset) err = %v, want nil", err)
+	}
+	signer, err := signature.NewSigner(privateHandle)
+	if err != nil {
+		t.Fatalf("signature.NewSigner(privateHandle) err = %v, want nil", err)
+	}
+	verifier, err := signature.NewVerifier(publicHandle)
+	if err != nil {
+		t.Fatalf("signature.NewVerifier(publicHandle) err = %v, want nil", err)
+	}
+
+	data := []byte("data")
+	message := data[:3] // Let message be a slice of data.
+
+	sig, err := signer.Sign(message)
+	if err != nil {
+		t.Fatalf("signer.Sign(message) err = %v, want nil", err)
+	}
+	err = verifier.Verify(sig, message)
+	if err != nil {
+		t.Fatalf("verifier.Verify(sig, message) err = %v, want nil", err)
+	}
+	wantData := []byte("data")
+	if !bytes.Equal(data, wantData) {
+		t.Errorf("data = %q, want: %q", data, wantData)
 	}
 }

@@ -16,12 +16,14 @@
 #include "tink/aead/internal/ssl_aead.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <string>
 #include <utility>
 
+#include "absl/base/attributes.h"
 #include "absl/cleanup/cleanup.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
@@ -31,6 +33,7 @@
 #include "openssl/crypto.h"
 #include "openssl/evp.h"
 #include "tink/aead/internal/aead_util.h"
+#include "tink/internal/call_with_core_dump_protection.h"
 #include "tink/internal/err_util.h"
 #include "tink/internal/ssl_unique_ptr.h"
 #include "tink/internal/util.h"
@@ -44,35 +47,9 @@ namespace internal {
 
 ABSL_CONST_INIT const int kXchacha20Poly1305TagSizeInBytes = 16;
 ABSL_CONST_INIT const int kAesGcmTagSizeInBytes = 16;
+ABSL_CONST_INIT const int kAesGcmSivTagSizeInBytes = 16;
 
 namespace {
-
-// Sets `iv` to the given `context`, as well as the "direction"
-// (encrypt/decrypt) based on `encryption`.
-util::Status SetIvAndDirection(EVP_CIPHER_CTX *context, absl::string_view iv,
-                               bool encryption) {
-  if (context == nullptr) {
-    return util::Status(absl::StatusCode::kInternal,
-                        "Context must not be null");
-  }
-  const int encryption_flag = encryption ? 1 : 0;
-  // Set the size for IV first, then set the IV bytes.
-  if (EVP_CIPHER_CTX_ctrl(context, EVP_CTRL_AEAD_SET_IVLEN, iv.size(),
-                          /*ptr=*/nullptr) <= 0) {
-    return util::Status(absl::StatusCode::kInternal, "Setting IV size failed");
-  }
-  if (EVP_CipherInit_ex(context, /*cipher=*/nullptr, /*impl=*/nullptr,
-                        /*key=*/nullptr,
-                        reinterpret_cast<const uint8_t *>(iv.data()),
-                        /*enc=*/encryption_flag) <= 0) {
-    return util::Status(
-        absl::StatusCode::kInternal,
-        absl::StrCat("Failed to initialize the context with IV of size ",
-                     iv.size(), " and for ",
-                     encryption ? "encryption" : "decryption"));
-  }
-  return util::OkStatus();
-}
 
 // Encrypts/Decrypts `data` and writes the result into `out`. The direction
 // (encrypt/decrypt) is given by `context`. `out` is assumed to be large enough
@@ -108,9 +85,9 @@ util::StatusOr<int64_t> UpdateCipher(EVP_CIPHER_CTX *context,
 
 class OpenSslOneShotAeadImpl : public SslOneShotAead {
  public:
-  OpenSslOneShotAeadImpl(internal::SslUniquePtr<EVP_CIPHER_CTX> context,
-                         size_t tag_size)
-      : context_(std::move(context)), tag_size_(tag_size) {}
+  explicit OpenSslOneShotAeadImpl(const util::SecretData &key,
+                                  const EVP_CIPHER *cipher, size_t tag_size)
+      : key_(key), cipher_(cipher), tag_size_(tag_size) {}
 
   util::StatusOr<int64_t> Encrypt(absl::string_view plaintext,
                                   absl::string_view associated_data,
@@ -140,48 +117,8 @@ class OpenSslOneShotAeadImpl : public SslOneShotAead {
                        associated_data.size()));
     }
 
-    // For thread safety we copy the context and only then set the IV. This
-    // allows to allocate an AesGcmBoringSsl cipher, and initialize the context
-    // to force precomputation on the key, and only then set a different IV
-    // for each call to `Encrypt`.
-    internal::SslUniquePtr<EVP_CIPHER_CTX> context(EVP_CIPHER_CTX_new());
-    // This makes a copy of the `cipher_data` field of the context too, which
-    // contains the key material and IV (see
-    // https://github.com/google/boringssl/blob/master/crypto/fipsmodule/cipher/cipher.c#L116).
-    EVP_CIPHER_CTX_copy(context.get(), context_.get());
-
-    util::Status res =
-        SetIvAndDirection(context.get(), iv, /*encryption=*/true);
-    if (!res.ok()) {
-      return res;
-    }
-
-    // Set the associated data.
-    int len = 0;
-    if (EVP_EncryptUpdate(context.get(), /*out=*/nullptr, &len,
-                          reinterpret_cast<const uint8_t *>(ad.data()),
-                          ad.size()) <= 0) {
-      return util::Status(absl::StatusCode::kInternal,
-                          "Failed to set associated data");
-    }
-
-    util::StatusOr<int64_t> raw_ciphertext_bytes =
-        UpdateCipher(context.get(), plaintext_data, out);
-    if (!raw_ciphertext_bytes.ok()) {
-      return raw_ciphertext_bytes.status();
-    }
-
-    if (EVP_EncryptFinal_ex(context.get(), /*out=*/nullptr, &len) <= 0) {
-      return util::Status(absl::StatusCode::kInternal, "Finalization failed");
-    }
-
-    // Write the tag after the ciphertext.
-    absl::Span<char> tag = out.subspan(*raw_ciphertext_bytes, tag_size_);
-    if (EVP_CIPHER_CTX_ctrl(context.get(), EVP_CTRL_AEAD_GET_TAG, tag_size_,
-                            reinterpret_cast<uint8_t *>(tag.data())) <= 0) {
-      return util::Status(absl::StatusCode::kInternal, "Failed to get the tag");
-    }
-    return *raw_ciphertext_bytes + tag_size_;
+    return internal::CallWithCoreDumpProtection(
+        [&]() { return EncryptSensitive(plaintext_data, ad, iv, out); });
   }
 
   util::StatusOr<int64_t> Decrypt(absl::string_view ciphertext,
@@ -218,18 +155,73 @@ class OpenSslOneShotAeadImpl : public SslOneShotAead {
                        associated_data.size()));
     }
 
-    internal::SslUniquePtr<EVP_CIPHER_CTX> context(EVP_CIPHER_CTX_new());
-    EVP_CIPHER_CTX_copy(context.get(), context_.get());
+    return internal::CallWithCoreDumpProtection(
+        [&]() { return DecryptSensitive(ciphertext, ad, iv, out); });
+  }
 
-    util::Status res =
-        SetIvAndDirection(context.get(), iv, /*encryption=*/false);
-    if (!res.ok()) {
-      return res;
+  int64_t CiphertextSize(int64_t plaintext_length) const override {
+    return plaintext_length + tag_size_;
+  }
+
+  int64_t PlaintextSize(int64_t ciphertext_length) const override {
+    if (ciphertext_length < tag_size_) {
+      return 0;
+    }
+    return ciphertext_length - tag_size_;
+  }
+
+ private:
+  util::StatusOr<uint64_t> EncryptSensitive(absl::string_view plaintext_data,
+                                            absl::string_view ad,
+                                            absl::string_view iv,
+                                            absl::Span<char> out) const {
+    util::StatusOr<internal::SslUniquePtr<EVP_CIPHER_CTX>> context =
+        GetContext(iv, /*encryption=*/true);
+    if (!context.ok()) {
+      return context.status();
+    }
+
+    // Set the associated data.
+    int len = 0;
+    if (EVP_EncryptUpdate(context->get(), /*out=*/nullptr, &len,
+                          reinterpret_cast<const uint8_t *>(ad.data()),
+                          ad.size()) <= 0) {
+      return util::Status(absl::StatusCode::kInternal,
+                          "Failed to set associated data");
+    }
+
+    util::StatusOr<int64_t> raw_ciphertext_bytes =
+        UpdateCipher(context->get(), plaintext_data, out);
+    if (!raw_ciphertext_bytes.ok()) {
+      return raw_ciphertext_bytes.status();
+    }
+
+    if (EVP_EncryptFinal_ex(context->get(), /*out=*/nullptr, &len) <= 0) {
+      return util::Status(absl::StatusCode::kInternal, "Finalization failed");
+    }
+
+    // Write the tag after the ciphertext.
+    absl::Span<char> tag = out.subspan(*raw_ciphertext_bytes, tag_size_);
+    if (EVP_CIPHER_CTX_ctrl(context->get(), EVP_CTRL_AEAD_GET_TAG, tag_size_,
+                            reinterpret_cast<uint8_t *>(tag.data())) <= 0) {
+      return util::Status(absl::StatusCode::kInternal, "Failed to get the tag");
+    }
+    return *raw_ciphertext_bytes + tag_size_;
+  }
+
+  util::StatusOr<uint64_t> DecryptSensitive(absl::string_view ciphertext,
+                                            absl::string_view ad,
+                                            absl::string_view iv,
+                                            absl::Span<char> out) const {
+    util::StatusOr<internal::SslUniquePtr<EVP_CIPHER_CTX>> context =
+        GetContext(iv, /*encryption=*/false);
+    if (!context.ok()) {
+      return context.status();
     }
 
     int len = 0;
     // Add the associated data.
-    if (EVP_DecryptUpdate(context.get(), /*out=*/nullptr, &len,
+    if (EVP_DecryptUpdate(context->get(), /*out=*/nullptr, &len,
                           reinterpret_cast<const uint8_t *>(ad.data()),
                           ad.size()) <= 0) {
       return util::Status(absl::StatusCode::kInternal,
@@ -246,7 +238,7 @@ class OpenSslOneShotAeadImpl : public SslOneShotAead {
     auto tag = std::string(ciphertext.substr(raw_ciphertext_size, tag_size_));
 
     // Set the tag.
-    if (EVP_CIPHER_CTX_ctrl(context.get(), EVP_CTRL_AEAD_SET_TAG, tag_size_,
+    if (EVP_CIPHER_CTX_ctrl(context->get(), EVP_CTRL_AEAD_SET_TAG, tag_size_,
                             reinterpret_cast<uint8_t *>(&tag[0])) <= 0) {
       return util::Status(absl::StatusCode::kInternal,
                           "Could not set authentication tag");
@@ -258,6 +250,7 @@ class OpenSslOneShotAeadImpl : public SslOneShotAead {
     char buffer_if_size_is_zero = '\0';
     auto out_buffer = absl::Span<char>(&buffer_if_size_is_zero, /*length=*/1);
     if (!out.empty()) {
+      const int64_t min_out_buff_size = PlaintextSize(ciphertext.size());
       out_buffer = out.subspan(0, min_out_buff_size - tag_size_);
     }
 
@@ -267,12 +260,12 @@ class OpenSslOneShotAeadImpl : public SslOneShotAead {
         absl::MakeCleanup([out] { OPENSSL_cleanse(out.data(), out.size()); });
 
     util::StatusOr<int64_t> written_bytes =
-        UpdateCipher(context.get(), raw_ciphertext, out_buffer);
+        UpdateCipher(context->get(), raw_ciphertext, out_buffer);
     if (!written_bytes.ok()) {
       return written_bytes.status();
     }
 
-    if (!EVP_DecryptFinal_ex(context.get(), /*out=*/nullptr, &len)) {
+    if (!EVP_DecryptFinal_ex(context->get(), /*out=*/nullptr, &len)) {
       return util::Status(absl::StatusCode::kInternal, "Authentication failed");
     }
 
@@ -281,20 +274,58 @@ class OpenSslOneShotAeadImpl : public SslOneShotAead {
     return *written_bytes;
   }
 
- private:
-  const internal::SslUniquePtr<EVP_CIPHER_CTX> context_;
+  // Returns a new EVP_CIPHER_CTX for encryption (`ecryption` == true) or
+  // decryption (`encryption` == false).
+  util::StatusOr<internal::SslUniquePtr<EVP_CIPHER_CTX>> GetContext(
+      absl::string_view iv, bool encryption) const {
+    internal::SslUniquePtr<EVP_CIPHER_CTX> context(EVP_CIPHER_CTX_new());
+    if (context == nullptr) {
+      return util::Status(absl::StatusCode::kInternal,
+                          "EVP_CIPHER_CTX_new failed");
+    }
+    const int encryption_flag = encryption ? 1 : 0;
+    if (EVP_CipherInit_ex(context.get(), cipher_, /*impl=*/nullptr,
+                          /*key=*/nullptr, /*iv=*/nullptr,
+                          encryption_flag) <= 0) {
+      return util::Status(
+          absl::StatusCode::kInternal,
+          absl::StrCat("Failed initializializing context for ",
+                       encryption ? "encryption" : "decryption"));
+    }
+    // Set the size for IV first, then set the IV bytes.
+    if (EVP_CIPHER_CTX_ctrl(context.get(), EVP_CTRL_AEAD_SET_IVLEN, iv.size(),
+                            /*ptr=*/nullptr) <= 0) {
+      return util::Status(
+          absl::StatusCode::kInternal,
+          absl::StrCat("Failed stting size of the IV to ", iv.size()));
+    }
+    if (EVP_CipherInit_ex(context.get(), /*cipher=*/nullptr, /*impl=*/nullptr,
+                          reinterpret_cast<const uint8_t *>(key_.data()),
+                          reinterpret_cast<const uint8_t *>(iv.data()),
+                          encryption_flag) <= 0) {
+      return util::Status(
+          absl::StatusCode::kInternal,
+          absl::StrCat("Failed to set key of size ", key_.size(),
+                       "and IV of size ", iv.size()));
+    }
+
+    return std::move(context);
+  }
+
+  const util::SecretData key_;
+  const EVP_CIPHER *cipher_;
   const size_t tag_size_;
 };
 
 #ifdef OPENSSL_IS_BORINGSSL
 
-// Implementation of the one-shot AEAD cypter. This is purposely internal to an
-// anonymous namespace to disallow direct use of this class other than through
-// the Create* functions below.
+// Implementation of the one-shot AEAD cypter. This is purposely internal to
+// an anonymous namespace to disallow direct use of this class other than
+// through the Create* functions below.
 class BoringSslOneShotAeadImpl : public SslOneShotAead {
  public:
-  BoringSslOneShotAeadImpl(internal::SslUniquePtr<EVP_AEAD_CTX> context,
-                           size_t tag_size)
+  explicit BoringSslOneShotAeadImpl(
+      internal::SslUniquePtr<EVP_AEAD_CTX> context, size_t tag_size)
       : context_(std::move(context)), tag_size_(tag_size) {}
 
   util::StatusOr<int64_t> Encrypt(absl::string_view plaintext,
@@ -319,13 +350,24 @@ class BoringSslOneShotAeadImpl : public SslOneShotAead {
           absl::StrCat("Output buffer too small; expected at least ",
                        min_out_buff_size, " got ", out.size()));
     }
+
+    return internal::CallWithCoreDumpProtection([&]() {
+      return EncryptSensitive(plaintext, associated_data, iv, out);
+    });
+  }
+
+  util::StatusOr<int64_t> EncryptSensitive(absl::string_view plaintext,
+                                           absl::string_view associated_data,
+                                           absl::string_view iv,
+                                           absl::Span<char> out) const {
     size_t out_len = 0;
     if (!EVP_AEAD_CTX_seal(
             context_.get(), reinterpret_cast<uint8_t *>(&out[0]), &out_len,
             out.size(), reinterpret_cast<const uint8_t *>(iv.data()), iv.size(),
             reinterpret_cast<const uint8_t *>(plaintext.data()),
             plaintext.size(),
-            /*ad=*/reinterpret_cast<const uint8_t *>(associated_data.data()),
+            /*ad=*/
+            reinterpret_cast<const uint8_t *>(associated_data.data()),
             /*ad_len=*/associated_data.size())) {
       return util::Status(
           absl::StatusCode::kInternal,
@@ -363,6 +405,15 @@ class BoringSslOneShotAeadImpl : public SslOneShotAead {
                        min_out_buff_size, " got ", out.size()));
     }
 
+    return internal::CallWithCoreDumpProtection([&]() {
+      return DecryptSensitive(ciphertext, associated_data, iv, out);
+    });
+  }
+
+  util::StatusOr<int64_t> DecryptSensitive(absl::string_view ciphertext,
+                                           absl::string_view associated_data,
+                                           absl::string_view iv,
+                                           absl::Span<char> out) const {
     // If out.empty() accessing the 0th element would result in an out of
     // bound violation. This makes sure we pass a pointer to at least one byte
     // when calling into OpenSSL.
@@ -378,7 +429,8 @@ class BoringSslOneShotAeadImpl : public SslOneShotAead {
             reinterpret_cast<const uint8_t *>(iv.data()), iv.size(),
             reinterpret_cast<const uint8_t *>(ciphertext.data()),
             ciphertext.size(),
-            /*ad=*/reinterpret_cast<const uint8_t *>(associated_data.data()),
+            /*ad=*/
+            reinterpret_cast<const uint8_t *>(associated_data.data()),
             /*ad_len=*/associated_data.size())) {
       return util::Status(
           absl::StatusCode::kInternal,
@@ -388,69 +440,23 @@ class BoringSslOneShotAeadImpl : public SslOneShotAead {
     return out_len;
   }
 
+  int64_t CiphertextSize(int64_t plaintext_length) const override {
+    return plaintext_length + tag_size_;
+  }
+
+  int64_t PlaintextSize(int64_t ciphertext_length) const override {
+    if (ciphertext_length < tag_size_) {
+      return 0;
+    }
+    return ciphertext_length - tag_size_;
+  }
+
+ private:
   const internal::SslUniquePtr<EVP_AEAD_CTX> context_;
   const size_t tag_size_;
 };
 
 #endif
-
-#ifdef OPENSSL_IS_BORINGSSL
-// Always use the BoringSSL APIs when available.
-using SslOneShotAeadImpl = BoringSslOneShotAeadImpl;
-#else
-using SslOneShotAeadImpl = OpenSslOneShotAeadImpl;
-#endif
-
-// One shot implementing AES-GCM.
-class SslAesGcmOneShotAead : public SslOneShotAeadImpl {
- public:
-#ifdef OPENSSL_IS_BORINGSSL
-  explicit SslAesGcmOneShotAead(internal::SslUniquePtr<EVP_AEAD_CTX> context)
-      : BoringSslOneShotAeadImpl(std::move(context), kAesGcmTagSizeInBytes) {}
-#else
-  explicit SslAesGcmOneShotAead(internal::SslUniquePtr<EVP_CIPHER_CTX> context)
-      : SslOneShotAeadImpl(std::move(context), kAesGcmTagSizeInBytes) {}
-#endif
-
-  int64_t CiphertextSize(int64_t plaintext_length) const override {
-    return plaintext_length + kAesGcmTagSizeInBytes;
-  }
-
-  int64_t PlaintextSize(int64_t ciphertext_length) const override {
-    if (ciphertext_length < kAesGcmTagSizeInBytes) {
-      return 0;
-    }
-    return ciphertext_length - kAesGcmTagSizeInBytes;
-  }
-};
-
-// One shot implementing AES-GCM-SIV.
-using SslAesGcmSivOneShotAead = SslAesGcmOneShotAead;
-
-// One shot implementing XCHACHA-POLY-1305.
-class SslXchacha20Poly1305OneShotAead : public SslOneShotAeadImpl {
- public:
-#ifdef OPENSSL_IS_BORINGSSL
-  explicit SslXchacha20Poly1305OneShotAead(
-      internal::SslUniquePtr<EVP_AEAD_CTX> context)
-      : BoringSslOneShotAeadImpl(std::move(context), kAesGcmTagSizeInBytes) {}
-#else
-  explicit SslXchacha20Poly1305OneShotAead(
-      internal::SslUniquePtr<EVP_CIPHER_CTX> context)
-      : SslOneShotAeadImpl(std::move(context), kAesGcmTagSizeInBytes) {}
-#endif
-
-  int64_t CiphertextSize(int64_t plaintext_length) const override {
-    return plaintext_length + kXchacha20Poly1305TagSizeInBytes;
-  }
-
-  int64_t PlaintextSize(int64_t ciphertext_length) const override {
-    if (ciphertext_length < kXchacha20Poly1305TagSizeInBytes) {
-      return 0;
-    }
-    return ciphertext_length - kXchacha20Poly1305TagSizeInBytes;
-  }
-};
 
 }  // namespace
 
@@ -463,13 +469,18 @@ util::StatusOr<std::unique_ptr<SslOneShotAead>> CreateAesGcmOneShotCrypter(
     return aead_cipher.status();
   }
 
-  internal::SslUniquePtr<EVP_AEAD_CTX> context(EVP_AEAD_CTX_new(
-      *aead_cipher, key.data(), key.size(), kAesGcmTagSizeInBytes));
+  internal::SslUniquePtr<EVP_AEAD_CTX> context(
+      internal::CallWithCoreDumpProtection([&]() {
+        return EVP_AEAD_CTX_new(*aead_cipher, key.data(), key.size(),
+                                kAesGcmTagSizeInBytes);
+      }));
   if (context == nullptr) {
     return util::Status(
         absl::StatusCode::kInternal,
         absl::StrCat("EVP_AEAD_CTX_new failed: ", internal::GetSslErrors()));
   }
+  return {absl::make_unique<BoringSslOneShotAeadImpl>(std::move(context),
+                                                      kAesGcmTagSizeInBytes)};
 #else
   util::StatusOr<const EVP_CIPHER *> aead_cipher =
       GetAesGcmCipherForKeySize(key.size());
@@ -477,25 +488,9 @@ util::StatusOr<std::unique_ptr<SslOneShotAead>> CreateAesGcmOneShotCrypter(
     return aead_cipher.status();
   }
 
-  internal::SslUniquePtr<EVP_CIPHER_CTX> context(EVP_CIPHER_CTX_new());
-
-  if (context == nullptr) {
-    return util::Status(absl::StatusCode::kInternal,
-                        "EVP_CIPHER_CTX_new failed");
-  }
-
-  // Initialize the context for the cipher having OpenSSL to make some
-  // precomputations on the key. It doesn't matter at this point if we set
-  // encryption or decryption, it will be overwritten later on anyways any
-  // time we call EVP_CipherInit_ex.
-  if (EVP_CipherInit_ex(context.get(), *aead_cipher, /*impl=*/nullptr,
-                        reinterpret_cast<const uint8_t *>(&key[0]),
-                        /*iv=*/nullptr, /*enc=*/1) <= 0) {
-    return util::Status(absl::StatusCode::kInternal,
-                        "Context initialization failed");
-  }
+  return absl::make_unique<OpenSslOneShotAeadImpl>(key, *aead_cipher,
+                                                   kAesGcmTagSizeInBytes);
 #endif
-  return {absl::make_unique<SslAesGcmOneShotAead>(std::move(context))};
 }
 
 util::StatusOr<std::unique_ptr<SslOneShotAead>> CreateAesGcmSivOneShotCrypter(
@@ -506,14 +501,18 @@ util::StatusOr<std::unique_ptr<SslOneShotAead>> CreateAesGcmSivOneShotCrypter(
   if (!aead_cipher.ok()) {
     return aead_cipher.status();
   }
-  internal::SslUniquePtr<EVP_AEAD_CTX> context(EVP_AEAD_CTX_new(
-      *aead_cipher, key.data(), key.size(), kAesGcmTagSizeInBytes));
+  internal::SslUniquePtr<EVP_AEAD_CTX> context(
+      internal::CallWithCoreDumpProtection([&]() {
+        return EVP_AEAD_CTX_new(*aead_cipher, key.data(), key.size(),
+                                kAesGcmTagSizeInBytes);
+      }));
   if (context == nullptr) {
     return util::Status(absl::StatusCode::kInternal,
                         absl::StrCat("EVP_AEAD_CTX_new initialization Failed: ",
                                      internal::GetSslErrors()));
   }
-  return {absl::make_unique<SslAesGcmSivOneShotAead>(std::move(context))};
+  return {absl::make_unique<BoringSslOneShotAeadImpl>(
+      std::move(context), kAesGcmSivTagSizeInBytes)};
 #else
   return util::Status(absl::StatusCode::kUnimplemented,
                       "AES-GCM-SIV is unimplemented for OpenSSL");
@@ -531,15 +530,17 @@ CreateXchacha20Poly1305OneShotCrypter(const util::SecretData &key) {
   }
 
   internal::SslUniquePtr<EVP_AEAD_CTX> context(
-      EVP_AEAD_CTX_new(EVP_aead_xchacha20_poly1305(), key.data(), key.size(),
-                       kAesGcmTagSizeInBytes));
+      internal::CallWithCoreDumpProtection([&]() {
+        return EVP_AEAD_CTX_new(EVP_aead_xchacha20_poly1305(), key.data(),
+                                key.size(), kAesGcmTagSizeInBytes);
+      }));
   if (context == nullptr) {
     return util::Status(absl::StatusCode::kInternal,
                         absl::StrCat("EVP_AEAD_CTX_new initialization Failed: ",
                                      internal::GetSslErrors()));
   }
-  return {
-      absl::make_unique<SslXchacha20Poly1305OneShotAead>(std::move(context))};
+  return {absl::make_unique<BoringSslOneShotAeadImpl>(
+      std::move(context), kXchacha20Poly1305TagSizeInBytes)};
 #else
   return util::Status(absl::StatusCode::kUnimplemented,
                       "Xchacha20-Poly1305 is unimplemented for OpenSSL");

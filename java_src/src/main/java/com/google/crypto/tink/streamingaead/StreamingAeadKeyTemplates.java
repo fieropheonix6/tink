@@ -28,19 +28,35 @@ import com.google.crypto.tink.proto.OutputPrefixType;
 /**
  * Pre-generated {@link KeyTemplate} for {@link com.google.crypto.tink.StreamingAead} keys.
  *
+ * <p>We recommend to avoid this class in order to keep dependencies small.
+ *
+ * <ul>
+ *   <li>Using this class adds a dependency on protobuf. We hope that eventually it is possible to
+ *       use Tink without a dependency on protobuf.
+ *   <li>Using this class adds a dependency on classes for all involved key types.
+ * </ul>
+ *
+ * These dependencies all come from static class member variables, which are initialized when the
+ * class is loaded. This implies that static analysis and code minimization tools (such as proguard)
+ * cannot remove the usages either.
+ *
+ * <p>Instead, we recommend to use {@code KeysetHandle.generateEntryFromParametersName} or {@code
+ * KeysetHandle.generateEntryFromParameters}.
+ *
  * <p>One can use these templates to generate new {@link com.google.crypto.tink.proto.Keyset} with
  * {@code KeysetHandle}. To generate a new keyset that contains a {@link AesGcmHkdfStreamingKey},
  * one can do:
  *
  * <pre>{@code
- * Config.register(StreamingAeadConfig.TINK_1_0_0);
+ * StreamingAeadConfig.register();
  * KeysetHandle handle = KeysetHandle.generateNew(StreamingAeadKeyTemplates.AES128_GCM_HKDF_4KB);
  * StreamingAead ags = handle.getPrimitive(StreamingAead.class);
  * }</pre>
  *
+ * @deprecated Try using our refaster templates to replace them (see
+ *     https://github.com/tink-crypto/tink-java/tree/main/tools/refaster). If migration is unclear,
+ *     please file an issue on https://github.com/tink-crypto/tink-java.
  * @since 1.1.0
- * @deprecated use {@link com.google.crypto.tink.KeyTemplates#get}, e.g.,
- *     KeyTemplates.get("AES256_GCM_HKDF_1MB")
  */
 @Deprecated
 public final class StreamingAeadKeyTemplates {
@@ -192,7 +208,7 @@ public final class StreamingAeadKeyTemplates {
         .build();
     return KeyTemplate.newBuilder()
         .setValue(format.toByteString())
-        .setTypeUrl(new AesCtrHmacStreamingKeyManager().getKeyType())
+        .setTypeUrl(AesCtrHmacStreamingKeyManager.getKeyType())
         .setOutputPrefixType(OutputPrefixType.RAW)
         .build();
   }
@@ -216,7 +232,7 @@ public final class StreamingAeadKeyTemplates {
             .build();
     return KeyTemplate.newBuilder()
         .setValue(format.toByteString())
-        .setTypeUrl(new AesGcmHkdfStreamingKeyManager().getKeyType())
+        .setTypeUrl(AesGcmHkdfStreamingKeyManager.getKeyType())
         .setOutputPrefixType(OutputPrefixType.RAW)
         .build();
   }

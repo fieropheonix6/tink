@@ -17,117 +17,89 @@ package com.google.crypto.tink.jwt;
 
 import static java.nio.charset.StandardCharsets.US_ASCII;
 
-import com.google.crypto.tink.internal.KeyTypeManager;
-import com.google.crypto.tink.internal.PrimitiveFactory;
-import com.google.crypto.tink.proto.JwtRsaSsaPkcs1Algorithm;
-import com.google.crypto.tink.proto.JwtRsaSsaPkcs1PublicKey;
-import com.google.crypto.tink.proto.KeyData.KeyMaterialType;
-import com.google.crypto.tink.subtle.EngineFactory;
-import com.google.crypto.tink.subtle.Enums;
+import com.google.crypto.tink.AccessesPartialKey;
+import com.google.crypto.tink.PublicKeyVerify;
+import com.google.crypto.tink.internal.PrimitiveConstructor;
+import com.google.crypto.tink.signature.RsaSsaPkcs1Parameters;
+import com.google.crypto.tink.signature.RsaSsaPkcs1PublicKey;
 import com.google.crypto.tink.subtle.RsaSsaPkcs1VerifyJce;
-import com.google.crypto.tink.subtle.Validators;
 import com.google.gson.JsonObject;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.ExtensionRegistryLite;
-import com.google.protobuf.InvalidProtocolBufferException;
-import java.math.BigInteger;
 import java.security.GeneralSecurityException;
-import java.security.interfaces.RSAPublicKey;
-import java.security.spec.RSAPublicKeySpec;
-import java.util.Optional;
 
 /**
  * This key manager produces new instances of {@code JwtRsaSsaPkcs11Verify}. It doesn't support key
  * generation.
  */
-class JwtRsaSsaPkcs1VerifyKeyManager extends KeyTypeManager<JwtRsaSsaPkcs1PublicKey> {
-
+final class JwtRsaSsaPkcs1VerifyKeyManager {
   // Note: each algorithm defines not just the modulo size, but also the
   // hash length and salt length to use.
   // See https://www.rfc-editor.org/rfc/rfc7518.html#section-3.5
-  public static Enums.HashType hashForPkcs1Algorithm(JwtRsaSsaPkcs1Algorithm algorithm)
-      throws GeneralSecurityException {
-    switch (algorithm) {
-      case RS256:
-        return Enums.HashType.SHA256;
-      case RS384:
-        return Enums.HashType.SHA384;
-      case RS512:
-        return Enums.HashType.SHA512;
-      default:
-        throw new GeneralSecurityException("unknown algorithm " + algorithm.name());
+  private static RsaSsaPkcs1Parameters.HashType hashTypeForAlgorithm(
+      JwtRsaSsaPkcs1Parameters.Algorithm algorithm) throws GeneralSecurityException {
+    if (algorithm.equals(JwtRsaSsaPkcs1Parameters.Algorithm.RS256)) {
+      return RsaSsaPkcs1Parameters.HashType.SHA256;
     }
+    if (algorithm.equals(JwtRsaSsaPkcs1Parameters.Algorithm.RS384)) {
+      return RsaSsaPkcs1Parameters.HashType.SHA384;
+    }
+    if (algorithm.equals(JwtRsaSsaPkcs1Parameters.Algorithm.RS512)) {
+      return RsaSsaPkcs1Parameters.HashType.SHA512;
+    }
+    throw new GeneralSecurityException("unknown algorithm " + algorithm);
   }
 
-  private static final RSAPublicKey createPublicKey(JwtRsaSsaPkcs1PublicKey keyProto)
+  @AccessesPartialKey
+  static RsaSsaPkcs1PublicKey toRsaSsaPkcs1PublicKey(JwtRsaSsaPkcs1PublicKey publicKey)
       throws GeneralSecurityException {
-    java.security.KeyFactory kf = EngineFactory.KEY_FACTORY.getInstance("RSA");
-    BigInteger modulus = new BigInteger(1, keyProto.getN().toByteArray());
-    BigInteger exponent = new BigInteger(1, keyProto.getE().toByteArray());
-    return (RSAPublicKey) kf.generatePublic(new RSAPublicKeySpec(modulus, exponent));
+    RsaSsaPkcs1Parameters rsaSsaPkcs1Parameters =
+        RsaSsaPkcs1Parameters.builder()
+            .setModulusSizeBits(publicKey.getParameters().getModulusSizeBits())
+            .setPublicExponent(publicKey.getParameters().getPublicExponent())
+            .setHashType(hashTypeForAlgorithm(publicKey.getParameters().getAlgorithm()))
+            .setVariant(RsaSsaPkcs1Parameters.Variant.NO_PREFIX)
+            .build();
+    return RsaSsaPkcs1PublicKey.builder()
+        .setParameters(rsaSsaPkcs1Parameters)
+        .setModulus(publicKey.getModulus())
+        .build();
   }
 
-  public JwtRsaSsaPkcs1VerifyKeyManager() {
-    super(
-        JwtRsaSsaPkcs1PublicKey.class,
-        new PrimitiveFactory<JwtPublicKeyVerifyInternal, JwtRsaSsaPkcs1PublicKey>(
-            JwtPublicKeyVerifyInternal.class) {
-          @Override
-          public JwtPublicKeyVerifyInternal getPrimitive(JwtRsaSsaPkcs1PublicKey keyProto)
-              throws GeneralSecurityException {
-            RSAPublicKey publickey = createPublicKey(keyProto);
-            Enums.HashType hash = hashForPkcs1Algorithm(keyProto.getAlgorithm());
-            final RsaSsaPkcs1VerifyJce verifier = new RsaSsaPkcs1VerifyJce(publickey, hash);
-            final String algorithmName = keyProto.getAlgorithm().name();
-            final Optional<String> customKidFromRsaSsaPkcs1PublicKey =
-                keyProto.hasCustomKid()
-                    ? Optional.of(keyProto.getCustomKid().getValue())
-                    : Optional.empty();
+  @SuppressWarnings("Immutable") // RsaSsaPkcs1VerifyJce.create is immutable.
+  static JwtPublicKeyVerify createFullPrimitive(
+      com.google.crypto.tink.jwt.JwtRsaSsaPkcs1PublicKey publicKey)
+      throws GeneralSecurityException {
+    RsaSsaPkcs1PublicKey rsaSsaPkcs1PublicKey = toRsaSsaPkcs1PublicKey(publicKey);
+    final PublicKeyVerify verifier = RsaSsaPkcs1VerifyJce.create(rsaSsaPkcs1PublicKey);
 
-            return new JwtPublicKeyVerifyInternal() {
-              @Override
-              public VerifiedJwt verifyAndDecodeWithKid(
-                  String compact, JwtValidator validator, Optional<String> kid)
-                  throws GeneralSecurityException {
-                JwtFormat.Parts parts = JwtFormat.splitSignedCompact(compact);
-                verifier.verify(parts.signatureOrMac, parts.unsignedCompact.getBytes(US_ASCII));
-                JsonObject parsedHeader = JsonUtil.parseJson(parts.header);
-                JwtFormat.validateHeader(
-                    algorithmName, kid, customKidFromRsaSsaPkcs1PublicKey, parsedHeader);
-                RawJwt token =
-                    RawJwt.fromJsonPayload(JwtFormat.getTypeHeader(parsedHeader), parts.payload);
-                return validator.validate(token);
-              }
-            };
-          }
-        });
+    return new JwtPublicKeyVerify() {
+      @Override
+      public VerifiedJwt verifyAndDecode(String compact, JwtValidator validator)
+          throws GeneralSecurityException {
+        JwtFormat.Parts parts = JwtFormat.splitSignedCompact(compact);
+        verifier.verify(parts.signatureOrMac, parts.unsignedCompact.getBytes(US_ASCII));
+        JsonObject parsedHeader = JsonUtil.parseJson(parts.header);
+        JwtFormat.validateHeader(
+            parsedHeader,
+            publicKey.getParameters().getAlgorithm().getStandardName(),
+            publicKey.getKid(),
+            publicKey.getParameters().allowKidAbsent());
+        RawJwt token = RawJwt.fromJsonPayload(JwtFormat.getTypeHeader(parsedHeader), parts.payload);
+        return validator.validate(token);
+      }
+    };
   }
 
-  @Override
-  public String getKeyType() {
+  static final PrimitiveConstructor<
+          com.google.crypto.tink.jwt.JwtRsaSsaPkcs1PublicKey, JwtPublicKeyVerify>
+      PRIMITIVE_CONSTRUCTOR =
+          PrimitiveConstructor.create(
+              JwtRsaSsaPkcs1VerifyKeyManager::createFullPrimitive,
+              com.google.crypto.tink.jwt.JwtRsaSsaPkcs1PublicKey.class,
+              JwtPublicKeyVerify.class);
+
+  static String getKeyType() {
     return "type.googleapis.com/google.crypto.tink.JwtRsaSsaPkcs1PublicKey";
   }
 
-  @Override
-  public int getVersion() {
-    return 0;
-  }
-
-  @Override
-  public KeyMaterialType keyMaterialType() {
-    return KeyMaterialType.ASYMMETRIC_PUBLIC;
-  }
-
-  @Override
-  public JwtRsaSsaPkcs1PublicKey parseKey(ByteString byteString)
-      throws InvalidProtocolBufferException {
-    return JwtRsaSsaPkcs1PublicKey.parseFrom(byteString, ExtensionRegistryLite.getEmptyRegistry());
-  }
-
-  @Override
-  public void validateKey(JwtRsaSsaPkcs1PublicKey pubKey) throws GeneralSecurityException {
-    Validators.validateVersion(pubKey.getVersion(), getVersion());
-    Validators.validateRsaModulusSize(new BigInteger(1, pubKey.getN().toByteArray()).bitLength());
-    Validators.validateRsaPublicExponent(new BigInteger(1, pubKey.getE().toByteArray()));
-  }
+  private JwtRsaSsaPkcs1VerifyKeyManager() {}
 }

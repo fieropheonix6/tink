@@ -23,13 +23,14 @@
 #include <utility>
 
 #include "gtest/gtest.h"
+#include "absl/status/status.h"
 #include "tink/binary_keyset_reader.h"
 #include "tink/keyset_handle.h"
+#include "tink/util/status.h"
 #include "tink/util/test_keyset_handle.h"
 #include "tink/util/test_util.h"
 #include "proto/tink.pb.h"
 
-using crypto::tink::TestKeysetHandle;
 using crypto::tink::test::AddRawKey;
 using crypto::tink::test::AddTinkKey;
 
@@ -49,9 +50,9 @@ class CleartextKeysetHandleTest : public ::testing::Test {
 TEST_F(CleartextKeysetHandleTest, testRead) {
   Keyset keyset;
   Keyset::Key key;
-  AddTinkKey("some key type", 42, key, KeyStatusType::ENABLED,
+  AddTinkKey("some_key_type", 42, key, KeyStatusType::ENABLED,
              KeyData::SYMMETRIC, &keyset);
-  AddRawKey("some other key type", 711, key, KeyStatusType::ENABLED,
+  AddRawKey("some_other_key_type", 711, key, KeyStatusType::ENABLED,
             KeyData::SYMMETRIC, &keyset);
   keyset.set_primary_key_id(42);
   {  // Reader that reads a valid keyset.
@@ -76,9 +77,9 @@ TEST_F(CleartextKeysetHandleTest, testRead) {
 TEST_F(CleartextKeysetHandleTest, testWrite) {
   Keyset keyset;
   Keyset::Key key;
-  AddTinkKey("some key type", 42, key, KeyStatusType::ENABLED,
+  AddTinkKey("some_key_type", 42, key, KeyStatusType::ENABLED,
              KeyData::SYMMETRIC, &keyset);
-  AddRawKey("some other key type", 711, key, KeyStatusType::ENABLED,
+  AddRawKey("some_other_key_type", 711, key, KeyStatusType::ENABLED,
             KeyData::SYMMETRIC, &keyset);
   keyset.set_primary_key_id(42);
 

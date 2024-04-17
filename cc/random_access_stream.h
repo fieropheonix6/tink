@@ -17,6 +17,8 @@
 #ifndef TINK_RANDOM_ACCESS_STREAM_H_
 #define TINK_RANDOM_ACCESS_STREAM_H_
 
+#include <cstdint>
+
 #include "tink/util/buffer.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
@@ -28,8 +30,8 @@ namespace tink {
 // like regular files.
 class RandomAccessStream {
  public:
-  RandomAccessStream() {}
-  virtual ~RandomAccessStream() {}
+  RandomAccessStream() = default;
+  virtual ~RandomAccessStream() = default;
 
   // Reads up to 'count' bytes starting at 'position' and writes them
   // to 'dest_buffer'.  'position' must be within the size of the stream,

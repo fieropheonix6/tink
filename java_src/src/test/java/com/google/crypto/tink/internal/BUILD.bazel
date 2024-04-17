@@ -7,11 +7,12 @@ java_test(
     size = "small",
     srcs = ["KeyTemplateProtoConverterTest.java"],
     deps = [
-        "//proto:tink_java_proto",
         "//src/main/java/com/google/crypto/tink:key_template",
+        "//src/main/java/com/google/crypto/tink:parameters",
+        "//src/main/java/com/google/crypto/tink:tink_proto_parameters_format",
+        "//src/main/java/com/google/crypto/tink/aead:aead_config",
         "//src/main/java/com/google/crypto/tink/aead:aes_gcm_key_manager",
         "//src/main/java/com/google/crypto/tink/internal:key_template_proto_converter",
-        "@com_google_protobuf//:protobuf_javalite",
         "@maven//:com_google_truth_truth",
         "@maven//:junit_junit",
     ],
@@ -22,24 +23,11 @@ java_test(
     size = "small",
     srcs = ["UtilTest.java"],
     deps = [
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
         "//src/main/java/com/google/crypto/tink/internal:tink_bug_exception",
         "//src/main/java/com/google/crypto/tink/internal:util",
         "//src/main/java/com/google/crypto/tink/util:bytes",
-        "@maven//:com_google_truth_truth",
-        "@maven//:junit_junit",
-    ],
-)
-
-java_test(
-    name = "KeyTypeManagerTest",
-    size = "small",
-    srcs = ["KeyTypeManagerTest.java"],
-    deps = [
-        "//proto:aes_gcm_java_proto",
-        "//proto:tink_java_proto",
-        "//src/main/java/com/google/crypto/tink/internal:key_type_manager",
-        "//src/main/java/com/google/crypto/tink/internal:primitive_factory",
-        "@com_google_protobuf//:protobuf_javalite",
+        "//src/main/java/com/google/crypto/tink/util:secret_bytes",
         "@maven//:com_google_truth_truth",
         "@maven//:junit_junit",
     ],
@@ -105,6 +93,7 @@ java_test(
         "//proto:test_proto_java_proto",
         "//proto:tink_java_proto",
         "//src/main/java/com/google/crypto/tink/internal:proto_parameters_serialization",
+        "//src/main/java/com/google/crypto/tink/internal:tink_bug_exception",
         "//src/main/java/com/google/crypto/tink/util:bytes",
         "@maven//:com_google_truth_truth",
         "@maven//:junit_junit",
@@ -119,7 +108,7 @@ java_test(
         "//proto:tink_java_proto",
         "//src/main/java/com/google/crypto/tink/internal:proto_key_serialization",
         "//src/main/java/com/google/crypto/tink/util:bytes",
-        "@com_google_protobuf//:protobuf_javalite",
+        "@maven//:com_google_protobuf_protobuf_java",
         "@maven//:com_google_truth_truth",
         "@maven//:junit_junit",
     ],
@@ -186,7 +175,7 @@ java_test(
         "//proto:tink_java_proto",
         "//src/main/java/com/google/crypto/tink/internal:legacy_proto_parameters",
         "//src/main/java/com/google/crypto/tink/internal:proto_parameters_serialization",
-        "@com_google_protobuf//:protobuf_javalite",
+        "@maven//:com_google_protobuf_protobuf_java",
         "@maven//:com_google_truth_truth",
         "@maven//:junit_junit",
     ],
@@ -202,7 +191,7 @@ java_test(
         "//src/main/java/com/google/crypto/tink:secret_key_access",
         "//src/main/java/com/google/crypto/tink/internal:legacy_proto_key",
         "//src/main/java/com/google/crypto/tink/internal:proto_key_serialization",
-        "@com_google_protobuf//:protobuf_javalite",
+        "@maven//:com_google_protobuf_protobuf_java",
         "@maven//:com_google_truth_truth",
         "@maven//:junit_junit",
     ],
@@ -231,9 +220,9 @@ java_test(
         "//src/main/java/com/google/crypto/tink/internal:serialization",
         "//src/main/java/com/google/crypto/tink/internal:util",
         "//src/main/java/com/google/crypto/tink/util:bytes",
-        "@com_google_protobuf//:protobuf_javalite",
         "@maven//:com_google_code_findbugs_jsr305",
         "@maven//:com_google_errorprone_error_prone_annotations",
+        "@maven//:com_google_protobuf_protobuf_java",
         "@maven//:com_google_truth_truth",
         "@maven//:junit_junit",
     ],
@@ -281,17 +270,421 @@ java_test(
     srcs = ["TinkBugExceptionTest.java"],
     deps = [
         "//src/main/java/com/google/crypto/tink/internal:tink_bug_exception",
+        "@maven//:com_google_truth_truth",
         "@maven//:junit_junit",
     ],
 )
 
 java_test(
-    name = "StrictJsonParserTest",
+    name = "JsonParserTest",
     size = "small",
-    srcs = ["StrictJsonParserTest.java"],
+    srcs = ["JsonParserTest.java"],
     deps = [
-        "//src/main/java/com/google/crypto/tink/internal:strict_json_parser",
+        "//src/main/java/com/google/crypto/tink/internal:json_parser",
         "@maven//:com_google_code_gson_gson",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "PrimitiveRegistryTest",
+    size = "small",
+    srcs = ["PrimitiveRegistryTest.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink:key",
+        "//src/main/java/com/google/crypto/tink:parameters",
+        "//src/main/java/com/google/crypto/tink:primitive_wrapper",
+        "//src/main/java/com/google/crypto/tink/internal:primitive_constructor",
+        "//src/main/java/com/google/crypto/tink/internal:primitive_registry",
+        "//src/main/java/com/google/crypto/tink/internal:primitive_set",
+        "@maven//:com_google_code_findbugs_jsr305",
+        "@maven//:com_google_errorprone_error_prone_annotations",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "PrimitiveConstructorTest",
+    size = "small",
+    srcs = ["PrimitiveConstructorTest.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink:key",
+        "//src/main/java/com/google/crypto/tink:parameters",
+        "//src/main/java/com/google/crypto/tink/internal:primitive_constructor",
+        "@maven//:com_google_code_findbugs_jsr305",
+        "@maven//:com_google_errorprone_error_prone_annotations",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "MutablePrimitiveRegistryMultithreadTest",
+    size = "small",
+    srcs = ["MutablePrimitiveRegistryMultithreadTest.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink:key",
+        "//src/main/java/com/google/crypto/tink:parameters",
+        "//src/main/java/com/google/crypto/tink/internal:mutable_primitive_registry",
+        "//src/main/java/com/google/crypto/tink/internal:primitive_constructor",
+        "@maven//:com_google_code_findbugs_jsr305",
+        "@maven//:com_google_errorprone_error_prone_annotations",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "MutablePrimitiveRegistryTest",
+    size = "small",
+    srcs = ["MutablePrimitiveRegistryTest.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink:key",
+        "//src/main/java/com/google/crypto/tink:parameters",
+        "//src/main/java/com/google/crypto/tink:primitive_wrapper",
+        "//src/main/java/com/google/crypto/tink/internal:mutable_primitive_registry",
+        "//src/main/java/com/google/crypto/tink/internal:primitive_constructor",
+        "//src/main/java/com/google/crypto/tink/internal:primitive_set",
+        "@maven//:com_google_code_findbugs_jsr305",
+        "@maven//:com_google_errorprone_error_prone_annotations",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "EllipticCurvesUtilTest",
+    size = "small",
+    srcs = ["EllipticCurvesUtilTest.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink/internal:elliptic_curves_util",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "BigIntegerEncodingTest",
+    size = "small",
+    srcs = ["BigIntegerEncodingTest.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink/internal:big_integer_encoding",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "Curve25519Test",
+    size = "small",
+    srcs = ["Curve25519Test.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink/internal:curve25519",
+        "//src/main/java/com/google/crypto/tink/internal:field25519",
+        "//src/main/java/com/google/crypto/tink/subtle:hex",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "Ed25519Test",
+    size = "small",
+    srcs = ["Ed25519Test.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink/internal:ed25519_cluster",
+        "//src/main/java/com/google/crypto/tink/internal:field25519",
+        "//src/main/java/com/google/crypto/tink/subtle:hex",
+        "//src/main/java/com/google/crypto/tink/subtle:random",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "Field25519Test",
+    size = "small",
+    srcs = ["Field25519Test.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink/internal:field25519",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "EnumTypeProtoConverterTest",
+    size = "small",
+    srcs = ["EnumTypeProtoConverterTest.java"],
+    deps = [
+        "//proto:tink_java_proto",
+        "//src/main/java/com/google/crypto/tink/hybrid:hpke_parameters",
+        "//src/main/java/com/google/crypto/tink/internal:enum_type_proto_converter",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "InternalConfigurationTest",
+    size = "small",
+    srcs = ["InternalConfigurationTest.java"],
+    deps = [
+        "//proto:tink_java_proto",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
+        "//src/main/java/com/google/crypto/tink:key",
+        "//src/main/java/com/google/crypto/tink:parameters",
+        "//src/main/java/com/google/crypto/tink:primitive_wrapper",
+        "//src/main/java/com/google/crypto/tink/internal:internal_configuration",
+        "//src/main/java/com/google/crypto/tink/internal:primitive_constructor",
+        "//src/main/java/com/google/crypto/tink/internal:primitive_registry",
+        "//src/main/java/com/google/crypto/tink/internal:primitive_set",
+        "//src/main/java/com/google/crypto/tink/util:secret_bytes",
+        "@maven//:com_google_code_findbugs_jsr305",
+        "@maven//:com_google_errorprone_error_prone_annotations",
+        "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "RegistryConfigurationTest",
+    size = "small",
+    srcs = ["RegistryConfigurationTest.java"],
+    deps = [
+        "//proto:common_java_proto",
+        "//proto:hmac_java_proto",
+        "//proto:tink_java_proto",
+        "//src/main/java/com/google/crypto/tink:aead",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
+        "//src/main/java/com/google/crypto/tink:mac",
+        "//src/main/java/com/google/crypto/tink:registry",
+        "//src/main/java/com/google/crypto/tink:registry_cluster",
+        "//src/main/java/com/google/crypto/tink/aead:aes_eax_key",
+        "//src/main/java/com/google/crypto/tink/aead:aes_eax_parameters",
+        "//src/main/java/com/google/crypto/tink/internal:legacy_proto_key",
+        "//src/main/java/com/google/crypto/tink/internal:mutable_primitive_registry",
+        "//src/main/java/com/google/crypto/tink/internal:mutable_serialization_registry",
+        "//src/main/java/com/google/crypto/tink/internal:primitive_set",
+        "//src/main/java/com/google/crypto/tink/internal:proto_key_serialization",
+        "//src/main/java/com/google/crypto/tink/internal:registry_configuration",
+        "//src/main/java/com/google/crypto/tink/mac:chunked_mac",
+        "//src/main/java/com/google/crypto/tink/mac:chunked_mac_computation",
+        "//src/main/java/com/google/crypto/tink/mac:hmac_key",
+        "//src/main/java/com/google/crypto/tink/mac:hmac_parameters",
+        "//src/main/java/com/google/crypto/tink/mac:mac_config",
+        "//src/main/java/com/google/crypto/tink/mac/internal:legacy_full_mac",
+        "//src/main/java/com/google/crypto/tink/util:secret_bytes",
+        "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "RandomTest",
+    size = "small",
+    srcs = ["RandomTest.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink/internal:random",
+        "//src/main/java/com/google/crypto/tink/testing:test_util",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+        "@maven//:org_conscrypt_conscrypt_openjdk_uber",
+    ],
+)
+
+java_test(
+    name = "RandomWithoutConscryptTest",
+    size = "small",
+    srcs = ["RandomWithoutConscryptTest.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink/internal:random",
+        "//src/main/java/com/google/crypto/tink/testing:test_util",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "RandomWithoutInstallingConscryptTest",
+    size = "small",
+    srcs = ["RandomWithoutInstallingConscryptTest.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink/internal:random",
+        "//src/main/java/com/google/crypto/tink/testing:test_util",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+        "@maven//:org_conscrypt_conscrypt_openjdk_uber",
+    ],
+)
+
+java_test(
+    name = "MutableParametersRegistryTest",
+    size = "small",
+    srcs = ["MutableParametersRegistryTest.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink:parameters",
+        "//src/main/java/com/google/crypto/tink/aead:predefined_aead_parameters",
+        "//src/main/java/com/google/crypto/tink/internal:mutable_parameters_registry",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "MutableKeyDerivationRegistryTest",
+    size = "small",
+    srcs = ["MutableKeyDerivationRegistryTest.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
+        "//src/main/java/com/google/crypto/tink:key",
+        "//src/main/java/com/google/crypto/tink:secret_key_access",
+        "//src/main/java/com/google/crypto/tink/aead:aes_eax_key",
+        "//src/main/java/com/google/crypto/tink/aead:aes_eax_parameters",
+        "//src/main/java/com/google/crypto/tink/aead:aes_gcm_key",
+        "//src/main/java/com/google/crypto/tink/aead:aes_gcm_parameters",
+        "//src/main/java/com/google/crypto/tink/aead:predefined_aead_parameters",
+        "//src/main/java/com/google/crypto/tink/internal:mutable_key_derivation_registry",
+        "//src/main/java/com/google/crypto/tink/internal:util",
+        "//src/main/java/com/google/crypto/tink/util:secret_bytes",
+        "@maven//:com_google_code_findbugs_jsr305",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "SlowInputStreamTest",
+    size = "small",
+    srcs = ["SlowInputStreamTest.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink/internal:slow_input_stream",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "MutableKeyCreationRegistryTest",
+    size = "small",
+    srcs = ["MutableKeyCreationRegistryTest.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
+        "//src/main/java/com/google/crypto/tink:key",
+        "//src/main/java/com/google/crypto/tink:parameters",
+        "//src/main/java/com/google/crypto/tink:tink_proto_parameters_format",
+        "//src/main/java/com/google/crypto/tink/aead:aes_eax_key",
+        "//src/main/java/com/google/crypto/tink/aead:aes_eax_parameters",
+        "//src/main/java/com/google/crypto/tink/aead:aes_gcm_key",
+        "//src/main/java/com/google/crypto/tink/aead:aes_gcm_parameters",
+        "//src/main/java/com/google/crypto/tink/aead:predefined_aead_parameters",
+        "//src/main/java/com/google/crypto/tink/aead/internal:legacy_aes_ctr_hmac_test_key_manager",
+        "//src/main/java/com/google/crypto/tink/internal:mutable_key_creation_registry",
+        "//src/main/java/com/google/crypto/tink/util:bytes",
+        "//src/main/java/com/google/crypto/tink/util:secret_bytes",
+        "@maven//:com_google_code_findbugs_jsr305",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "LegacyKeyManagerImplTest",
+    size = "small",
+    srcs = ["LegacyKeyManagerImplTest.java"],
+    deps = [
+        "//proto:common_java_proto",
+        "//proto:ecdsa_java_proto",
+        "//proto:hmac_java_proto",
+        "//proto:tink_java_proto",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
+        "//src/main/java/com/google/crypto/tink:key_manager",
+        "//src/main/java/com/google/crypto/tink:mac",
+        "//src/main/java/com/google/crypto/tink:private_key_manager",
+        "//src/main/java/com/google/crypto/tink:public_key_sign",
+        "//src/main/java/com/google/crypto/tink:public_key_verify",
+        "//src/main/java/com/google/crypto/tink/internal:legacy_key_manager_impl",
+        "//src/main/java/com/google/crypto/tink/internal:mutable_key_creation_registry",
+        "//src/main/java/com/google/crypto/tink/internal:mutable_primitive_registry",
+        "//src/main/java/com/google/crypto/tink/internal:primitive_constructor",
+        "//src/main/java/com/google/crypto/tink/mac:hmac_key",
+        "//src/main/java/com/google/crypto/tink/mac:hmac_parameters",
+        "//src/main/java/com/google/crypto/tink/mac/internal:hmac_proto_serialization",
+        "//src/main/java/com/google/crypto/tink/signature:ecdsa_parameters",
+        "//src/main/java/com/google/crypto/tink/signature:ecdsa_private_key",
+        "//src/main/java/com/google/crypto/tink/signature:ecdsa_public_key",
+        "//src/main/java/com/google/crypto/tink/signature/internal:ecdsa_proto_serialization",
+        "//src/main/java/com/google/crypto/tink/subtle:ecdsa_sign_jce",
+        "//src/main/java/com/google/crypto/tink/subtle:ecdsa_verify_jce",
+        "//src/main/java/com/google/crypto/tink/subtle:hex",
+        "//src/main/java/com/google/crypto/tink/subtle:prf_mac",
+        "//src/main/java/com/google/crypto/tink/util:secret_big_integer",
+        "//src/main/java/com/google/crypto/tink/util:secret_bytes",
+        "@maven//:com_google_code_findbugs_jsr305",
+        "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "KeyManagerRegistryTest",
+    size = "small",
+    srcs = ["KeyManagerRegistryTest.java"],
+    tags = ["fips"],
+    deps = [
+        "//proto:tink_java_proto",
+        "//src/main/java/com/google/crypto/tink:aead",
+        "//src/main/java/com/google/crypto/tink:key_manager",
+        "//src/main/java/com/google/crypto/tink/config/internal:tink_fips_util",
+        "//src/main/java/com/google/crypto/tink/internal:key_manager_registry",
+        "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "PrimitiveSetTest",
+    size = "small",
+    srcs = ["PrimitiveSetTest.java"],
+    deps = [
+        "//proto:common_java_proto",
+        "//proto:hmac_java_proto",
+        "//proto:tink_java_proto",
+        "//src/main/java/com/google/crypto/tink:aead",
+        "//src/main/java/com/google/crypto/tink:crypto_format",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
+        "//src/main/java/com/google/crypto/tink:key",
+        "//src/main/java/com/google/crypto/tink:mac",
+        "//src/main/java/com/google/crypto/tink/aead:aes_gcm_key",
+        "//src/main/java/com/google/crypto/tink/aead:predefined_aead_parameters",
+        "//src/main/java/com/google/crypto/tink/internal:legacy_proto_key",
+        "//src/main/java/com/google/crypto/tink/internal:mutable_serialization_registry",
+        "//src/main/java/com/google/crypto/tink/internal:primitive_set",
+        "//src/main/java/com/google/crypto/tink/internal:proto_key_serialization",
+        "//src/main/java/com/google/crypto/tink/mac:hmac_key",
+        "//src/main/java/com/google/crypto/tink/mac:hmac_key_manager",
+        "//src/main/java/com/google/crypto/tink/monitoring:monitoring_annotations",
+        "//src/main/java/com/google/crypto/tink/subtle:aes_gcm_jce",
+        "//src/main/java/com/google/crypto/tink/subtle:hex",
+        "//src/main/java/com/google/crypto/tink/testing:test_util",
+        "//src/main/java/com/google/crypto/tink/util:secret_bytes",
+        "@maven//:com_google_code_findbugs_jsr305",
+        "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "OutputPrefixUtilTest",
+    size = "small",
+    srcs = ["OutputPrefixUtilTest.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink/internal:output_prefix_util",
+        "//src/main/java/com/google/crypto/tink/util:bytes",
         "@maven//:com_google_truth_truth",
         "@maven//:junit_junit",
     ],

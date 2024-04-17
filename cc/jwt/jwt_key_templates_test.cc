@@ -16,10 +16,13 @@
 
 #include "tink/jwt/jwt_key_templates.h"
 
+#include <memory>
 #include <string>
 #include <utility>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "tink/config/global_registry.h"
 #include "tink/jwt/jwt_mac.h"
 #include "tink/jwt/jwt_mac_config.h"
 #include "tink/jwt/jwt_public_key_sign.h"
@@ -28,9 +31,12 @@
 #include "tink/jwt/jwt_validator.h"
 #include "tink/jwt/raw_jwt.h"
 #include "tink/jwt/verified_jwt.h"
+#include "tink/keyset_handle.h"
 #include "tink/util/status.h"
+#include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
 #include "tink/util/test_util.h"
+#include "proto/tink.pb.h"
 
 using ::crypto::tink::test::IsOk;
 using google::crypto::tink::KeyTemplate;
@@ -47,10 +53,11 @@ TEST_P(JwtMacKeyTemplatesTest, CreateComputeVerify) {
   KeyTemplate key_template = GetParam();
 
   util::StatusOr<std::unique_ptr<crypto::tink::KeysetHandle>> keyset_handle =
-      KeysetHandle::GenerateNew(key_template);
+      KeysetHandle::GenerateNew(key_template, KeyGenConfigGlobalRegistry());
   ASSERT_THAT(keyset_handle, IsOk());
   util::StatusOr<std::unique_ptr<crypto::tink::JwtMac>> jwt_mac =
-      (*keyset_handle)->GetPrimitive<JwtMac>();
+      (*keyset_handle)
+          ->GetPrimitive<crypto::tink::JwtMac>(ConfigGlobalRegistry());
   ASSERT_THAT(jwt_mac, IsOk());
 
   util::StatusOr<RawJwt> raw_jwt =
@@ -92,16 +99,20 @@ TEST_P(JwtSignatureKeyTemplatesTest, CreateComputeVerify) {
   KeyTemplate key_template = GetParam();
 
   util::StatusOr<std::unique_ptr<KeysetHandle>> private_handle =
-      KeysetHandle::GenerateNew(key_template);
+      KeysetHandle::GenerateNew(key_template, KeyGenConfigGlobalRegistry());
   ASSERT_THAT(private_handle, IsOk());
   util::StatusOr<std::unique_ptr<JwtPublicKeySign>> sign =
-      (*private_handle)->GetPrimitive<JwtPublicKeySign>();
+      (*private_handle)
+          ->GetPrimitive<crypto::tink::JwtPublicKeySign>(
+              ConfigGlobalRegistry());
   ASSERT_THAT(sign, IsOk());
   util::StatusOr<std::unique_ptr<KeysetHandle>> public_handle =
-      (*private_handle)->GetPublicKeysetHandle();
+      (*private_handle)->GetPublicKeysetHandle(KeyGenConfigGlobalRegistry());
   ASSERT_THAT(public_handle, IsOk());
   util::StatusOr<std::unique_ptr<JwtPublicKeyVerify>> verify =
-      (*public_handle)->GetPrimitive<JwtPublicKeyVerify>();
+      (*public_handle)
+          ->GetPrimitive<crypto::tink::JwtPublicKeyVerify>(
+              ConfigGlobalRegistry());
   ASSERT_THAT(verify, IsOk());
 
   util::StatusOr<RawJwt> raw_jwt =

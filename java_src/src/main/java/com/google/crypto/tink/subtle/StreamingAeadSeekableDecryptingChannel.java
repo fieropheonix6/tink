@@ -16,7 +16,7 @@
 
 package com.google.crypto.tink.subtle;
 
-import androidx.annotation.RequiresApi;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
@@ -29,7 +29,6 @@ import java.util.Arrays;
  * An instance of {@link SeekableByteChannel} that allows random access to the plaintext of some
  * ciphertext.
  */
-@RequiresApi(24) // https://developer.android.com/reference/java/nio/channels/SeekableByteChannel
 class StreamingAeadSeekableDecryptingChannel implements SeekableByteChannel {
   // Each plaintext segment has 16 bytes more of memory than the actual plaintext that it contains.
   // This is a workaround for an incompatibility between Conscrypt and OpenJDK in their
@@ -106,7 +105,7 @@ class StreamingAeadSeekableDecryptingChannel implements SeekableByteChannel {
   /**
    * A description of the state of this StreamingAeadSeekableDecryptingChannel.
    * While this description does not contain plaintext or key material
-   * it contains length information that might be confidential.
+   * it contains length information that might leak some information.
    */
   @Override
   public synchronized String toString() {
@@ -150,10 +149,10 @@ class StreamingAeadSeekableDecryptingChannel implements SeekableByteChannel {
   }
 
   /**
-   * Sets the position in the plaintext.
-   * Setting the position to a value greater than the plaintext size is legal.
-   * A later attempt to read byte will throw an IOException.
+   * Sets the position in the plaintext. Setting the position to a value greater than the plaintext
+   * size is legal. A later attempt to read byte will throw an IOException.
    */
+  @CanIgnoreReturnValue
   @Override
   public synchronized SeekableByteChannel position(long newPosition) {
     plaintextPosition = newPosition;

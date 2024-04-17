@@ -1,4 +1,4 @@
-# Copyright 2019 Google LLC
+# Copyright 2024 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,76 +14,105 @@
 
 """Tests for tink.python.tink.integration.gcp_kms_aead."""
 
-import os
-
 from absl.testing import absltest
+from absl.testing import parameterized
+from google.api_core import exceptions as core_exceptions
+from google.cloud import kms_v1
 
 from tink import core
-from tink.integration import gcpkms
-from tink.testing import helper
-
-CREDENTIAL_PATH = os.path.join(helper.tink_py_testdata_path(),
-                               'gcp/credential.json')
-KEY_URI = 'gcp-kms://projects/tink-test-infrastructure/locations/global/keyRings/unit-and-integration-testing/cryptoKeys/aead-key'
-LOCAL_KEY_URI = 'gcp-kms://projects/tink-test-infrastructure/locations/europe-west1/keyRings/unit-and-integration-test/cryptoKeys/aead-key'
-BAD_KEY_URI = 'aws-kms://arn:aws:kms:us-east-2:235739564943:key/3ee50705-5a82-4f5b-9753-05c4f473922f'
-
-if 'TEST_SRCDIR' in os.environ:
-  # Set root certificates for gRPC in Bazel Test which are needed on MacOS
-  os.environ['GRPC_DEFAULT_SSL_ROOTS_FILE_PATH'] = os.path.join(
-      os.environ['TEST_SRCDIR'], 'google_root_pem/file/downloaded')
+from tink.integration.gcpkms import _gcp_kms_client
 
 
-class GcpKmsAeadTest(absltest.TestCase):
+GCP_KEY_NAME = 'projects/p1/locations/global/keyRings/kr1/cryptoKeys/ck1'
+PLAINTEXT = b'plaintext'
+CIPHERTEXT = b'ciphertext'
+ASSOCIATED_DATA = b'associated_data'
+STRING_63 = 'A' * 63
+STRING_64 = 'A' * 64
+FAKE_PROJECT_ID = '~@#$%^&*()_+|}{POI}?><213:"L{O}µ÷åß∑' * 5
 
-  def test_encrypt_decrypt(self):
-    gcp_client = gcpkms.GcpKmsClient(KEY_URI, CREDENTIAL_PATH)
-    aead = gcp_client.get_aead(KEY_URI)
 
-    plaintext = b'helloworld'
-    ciphertext = aead.encrypt(plaintext, b'')
-    self.assertEqual(plaintext, aead.decrypt(ciphertext, b''))
+class CustomException(core_exceptions.GoogleAPIError):
+  pass
 
-    plaintext = b'hello'
-    associated_data = b'world'
-    ciphertext = aead.encrypt(plaintext, associated_data)
-    self.assertEqual(plaintext, aead.decrypt(ciphertext, associated_data))
 
-  def test_encrypt_decrypt_localized_uri(self):
-    gcp_client = gcpkms.GcpKmsClient(LOCAL_KEY_URI, CREDENTIAL_PATH)
-    aead = gcp_client.get_aead(LOCAL_KEY_URI)
+class GcpKmsAeadTest(parameterized.TestCase):
 
-    plaintext = b'helloworld'
-    ciphertext = aead.encrypt(plaintext, b'')
-    self.assertEqual(plaintext, aead.decrypt(ciphertext, b''))
+  def setUp(self):
+    super().setUp()
+    absltest.mock.patch.object(kms_v1, 'KeyManagementServiceClient').start()
 
-    plaintext = b'hello'
-    associated_data = b'world'
-    ciphertext = aead.encrypt(plaintext, associated_data)
-    self.assertEqual(plaintext, aead.decrypt(ciphertext, associated_data))
+  def tearDown(self):
+    absltest.mock.patch.stopall()
+    super().tearDown()
 
-  def test_encrypt_with_bad_uri(self):
+  def test_client_null(self):
     with self.assertRaises(core.TinkError):
-      gcp_client = gcpkms.GcpKmsClient(KEY_URI, CREDENTIAL_PATH)
-      gcp_client.get_aead(BAD_KEY_URI)
+      _gcp_kms_client._GcpKmsAead(None, GCP_KEY_NAME)
 
-  def test_corrupted_ciphertext(self):
-    gcp_client = gcpkms.GcpKmsClient(KEY_URI, CREDENTIAL_PATH)
-    aead = gcp_client.get_aead(KEY_URI)
+  @parameterized.parameters(
+      '',
+      None,
+      'wrong/kms/key/format',
+      'projects/p1/locations/global/keyRings/kr1/cryptoKeys',
+      'projects/p1/locations/global/keyRings/kr1/cryptoKeys/ck1/',
+      'projects/p1/locations/global@/keyRings/kr1/cryptoKeys/ck1',
+      'projects/p1/locations/global/keyRings/kr1@/cryptoKeys/ck1',
+      'projects/p1/locations/global/keyRings/kr1/cryptoKeys/ck1@',
+      'projects/p1/locations/' + STRING_64 + '/keyRings/kr1/cryptoKeys/ck1',
+      'projects/p1/locations/global/keyRings/' + STRING_64 + '/cryptoKeys/ck1',
+      'projects/p1/locations/global/keyRings/kr1/cryptoKeys/' + STRING_64,
+      'projects/p1/locations/global/keyRings/kr1/cryptoKeys/ck1/cryptoKeyVersions/1',
+      'gcprojects://projects/p1/locations/global/keyRings/kr1/cryptoKeys/ck1',
+  )
+  def test_key_name_format_wrong(self, key_name):
+    with self.assertRaises(core.TinkError):
+      _gcp_kms_client._GcpKmsAead(kms_v1.KeyManagementServiceClient(), key_name)
 
-    plaintext = b'helloworld'
-    ciphertext = aead.encrypt(plaintext, b'')
-    self.assertEqual(plaintext, aead.decrypt(ciphertext, b''))
+  def test_encryption_fails(self):
+    kms_v1.KeyManagementServiceClient().encrypt.side_effect = CustomException()
+    gcp_aead = _gcp_kms_client._GcpKmsAead(
+        kms_v1.KeyManagementServiceClient(), GCP_KEY_NAME
+    )
+    with self.assertRaises(core.TinkError):
+      gcp_aead.encrypt(CIPHERTEXT, ASSOCIATED_DATA)
 
-    # Corrupt each byte once and check that decryption fails
-    # NOTE: Only starting at 4th byte here, as the 3rd byte is malleable
-    #      (see b/146633745).
-    for byte_idx in range(3, len(ciphertext)):
-      tmp_ciphertext = list(ciphertext)
-      tmp_ciphertext[byte_idx] ^= 1
-      corrupted_ciphertext = bytes(tmp_ciphertext)
-      with self.assertRaises(core.TinkError):
-        aead.decrypt(corrupted_ciphertext, b'')
+  def test_decryption_fails(self):
+    kms_v1.KeyManagementServiceClient().decrypt.side_effect = CustomException()
+    gcp_aead = _gcp_kms_client._GcpKmsAead(
+        kms_v1.KeyManagementServiceClient(), GCP_KEY_NAME
+    )
+    with self.assertRaises(core.TinkError):
+      gcp_aead.decrypt(PLAINTEXT, ASSOCIATED_DATA)
+
+  @parameterized.parameters(
+      GCP_KEY_NAME,
+      'projects/p1@comp!/locations/global/keyRings/kr1/cryptoKeys/ck1',
+      'projects/' + FAKE_PROJECT_ID + '/locations/l1/keyRings/k1/cryptoKeys/c1',
+      'projects/p1/locations/' + STRING_63 + '/keyRings/kr1/cryptoKeys/ck1',
+      'projects/p1/locations/global/keyRings/' + STRING_63 + '/cryptoKeys/ck1',
+      'projects/p1/locations/global/keyRings/kr1/cryptoKeys/' + STRING_63,
+  )
+  def test_encryption_works(self, key_name):
+    kms_v1.KeyManagementServiceClient().encrypt.return_value = (
+        kms_v1.types.EncryptResponse(name=GCP_KEY_NAME, ciphertext=CIPHERTEXT)
+    )
+    gcp_aead = _gcp_kms_client._GcpKmsAead(
+        kms_v1.KeyManagementServiceClient(), key_name
+    )
+    ciphertext = gcp_aead.encrypt(PLAINTEXT, ASSOCIATED_DATA)
+    self.assertEqual(ciphertext, CIPHERTEXT)
+
+  def test_decryption_works(self):
+    kms_v1.KeyManagementServiceClient().decrypt.return_value = (
+        kms_v1.types.DecryptResponse(plaintext=PLAINTEXT)
+    )
+    gcp_aead = _gcp_kms_client._GcpKmsAead(
+        kms_v1.KeyManagementServiceClient(), GCP_KEY_NAME
+    )
+    plaintext = gcp_aead.decrypt(CIPHERTEXT, ASSOCIATED_DATA)
+    self.assertEqual(plaintext, PLAINTEXT)
+
 
 if __name__ == '__main__':
   absltest.main()

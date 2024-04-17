@@ -16,6 +16,7 @@
 
 #include "tink/util/secret_data.h"
 
+#include <cstddef>
 #include <string>
 #include <utility>
 
@@ -121,6 +122,7 @@ TEST(SecretValueTest, MoveConstructor) {
   SecretValue<int> s(102);
   SecretValue<int> t(std::move(s));
   EXPECT_THAT(t.value(), Eq(102));
+  // NOLINTNEXTLINE(bugprone-use-after-move)
   EXPECT_THAT(s.value(), AnyOf(Eq(0), Eq(102)));
 }
 
@@ -129,6 +131,7 @@ TEST(SecretValueTest, MoveAssignment) {
   SecretValue<int> t;
   t = std::move(s);
   EXPECT_THAT(t.value(), Eq(102));
+  // NOLINTNEXTLINE(bugprone-use-after-move)
   EXPECT_THAT(s.value(), AnyOf(Eq(0), Eq(102)));
 }
 

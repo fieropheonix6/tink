@@ -19,14 +19,22 @@
 #include <memory>
 #include <string>
 
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
+#include "absl/strings/string_view.h"
 #include "tink/hybrid/internal/hpke_context.h"
 #include "tink/hybrid/internal/hpke_util.h"
+#include "tink/hybrid_encrypt.h"
+#include "tink/util/status.h"
+#include "tink/util/statusor.h"
 #include "proto/hpke.pb.h"
 
 namespace crypto {
 namespace tink {
 
+using ::google::crypto::tink::HpkeAead;
+using ::google::crypto::tink::HpkeKdf;
+using ::google::crypto::tink::HpkeKem;
 using ::google::crypto::tink::HpkePublicKey;
 
 util::StatusOr<std::unique_ptr<HybridEncrypt>> HpkeEncrypt::New(
@@ -38,6 +46,19 @@ util::StatusOr<std::unique_ptr<HybridEncrypt>> HpkeEncrypt::New(
   if (!recipient_public_key.has_params()) {
     return util::Status(absl::StatusCode::kInvalidArgument,
                         "Recipient public key is missing HPKE parameters.");
+  }
+  if (recipient_public_key.params().kem() !=
+      HpkeKem::DHKEM_X25519_HKDF_SHA256) {
+    return util::Status(absl::StatusCode::kInvalidArgument,
+                        "Recipient public key has an unsupported KEM");
+  }
+  if (recipient_public_key.params().kdf() != HpkeKdf::HKDF_SHA256) {
+    return util::Status(absl::StatusCode::kInvalidArgument,
+                        "Recipient public key has an unsupported KDF");
+  }
+  if (recipient_public_key.params().aead() == HpkeAead::AEAD_UNKNOWN) {
+    return util::Status(absl::StatusCode::kInvalidArgument,
+                        "Recipient public key is missing AEAD");
   }
   return {absl::WrapUnique(new HpkeEncrypt(recipient_public_key))};
 }

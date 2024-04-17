@@ -18,14 +18,16 @@
 
 #include <memory>
 #include <string>
-#include <utility>
 
 #include "google/cloud/kms/v1/service.grpc.pb.h"
+#include "grpcpp/client_context.h"
+#include "grpcpp/support/status.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
-#include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "third_party/cloud_cpp/google/cloud/kms/v1/key_management_client.h"
+#include "third_party/re2/re2.h"
 #include "tink/aead.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
@@ -35,74 +37,109 @@ namespace tink {
 namespace integration {
 namespace gcpkms {
 
-using crypto::tink::util::Status;
-using crypto::tink::util::StatusOr;
-using google::cloud::kms::v1::DecryptRequest;
-using google::cloud::kms::v1::DecryptResponse;
-using google::cloud::kms::v1::EncryptRequest;
-using google::cloud::kms::v1::EncryptResponse;
-using google::cloud::kms::v1::KeyManagementService;
-using grpc::ClientContext;
+static constexpr LazyRE2 kKmsKeyNameFormat = {
+    "projects/[^/]+/locations/[^/]+/keyRings/[^/]+/cryptoKeys/.*"};
 
-GcpKmsAead::GcpKmsAead(
+using ::google::cloud::kms::v1::DecryptRequest;
+using ::google::cloud::kms::v1::DecryptResponse;
+using ::google::cloud::kms::v1::EncryptRequest;
+using ::google::cloud::kms::v1::EncryptResponse;
+using ::google::cloud::kms::v1::KeyManagementService;
+
+util::StatusOr<std::unique_ptr<Aead>> NewGcpKmsAead(
     absl::string_view key_name,
-    std::shared_ptr<KeyManagementService::Stub> kms_stub)
-    : key_name_(key_name), kms_stub_(kms_stub) {}
-
-// static
-StatusOr<std::unique_ptr<Aead>>
-GcpKmsAead::New(absl::string_view key_name,
-                std::shared_ptr<KeyManagementService::Stub> kms_stub) {
-  if (key_name.empty()) {
-    return Status(absl::StatusCode::kInvalidArgument,
-                        "Key URI cannot be empty.");
+    std::shared_ptr<google::cloud::kms_v1::KeyManagementServiceClient>
+        kms_client) {
+  if (!RE2::FullMatch(key_name, *kKmsKeyNameFormat)) {
+    return util::Status(
+        absl::StatusCode::kInvalidArgument,
+        absl::StrCat(key_name, " does not match the KMS key name format: ",
+                     kKmsKeyNameFormat->pattern()));
   }
-  if (kms_stub == nullptr) {
-    return Status(absl::StatusCode::kInvalidArgument,
-                        "KMS stub cannot be null.");
+  if (kms_client == nullptr) {
+    return util::Status(absl::StatusCode::kInvalidArgument,
+                        "KMS client cannot be null.");
   }
-  std::unique_ptr<Aead> aead(new GcpKmsAead(key_name, kms_stub));
-  return std::move(aead);
+  return absl::WrapUnique(new GcpKmsAead(key_name, kms_client));
 }
 
-StatusOr<std::string> GcpKmsAead::Encrypt(
+util::StatusOr<std::unique_ptr<Aead>> GcpKmsAead::New(
+    absl::string_view key_name,
+    std::shared_ptr<KeyManagementService::Stub> kms_stub) {
+  if (!RE2::FullMatch(key_name, *kKmsKeyNameFormat)) {
+    return util::Status(
+        absl::StatusCode::kInvalidArgument,
+        absl::StrCat(key_name, " does not match the KMS key name format: ",
+                     kKmsKeyNameFormat->pattern()));
+  }
+  if (kms_stub == nullptr) {
+    return util::Status(absl::StatusCode::kInvalidArgument,
+                        "KMS stub cannot be null.");
+  }
+  return absl::WrapUnique(new GcpKmsAead(key_name, kms_stub));
+}
+
+util::StatusOr<std::string> GcpKmsAead::Encrypt(
     absl::string_view plaintext, absl::string_view associated_data) const {
   EncryptRequest req;
   req.set_name(key_name_);
   req.set_plaintext(std::string(plaintext));
   req.set_additional_authenticated_data(std::string(associated_data));
 
+  if (kms_client_) {
+    auto response = kms_client_->Encrypt(req);
+    if (!response.ok()) {
+      return util::Status(absl::StatusCode::kInvalidArgument,
+                          absl::StrCat("GCP KMS encryption failed: ",
+                                       response.status().message()));
+    }
+    return response->ciphertext();
+  }
+
   EncryptResponse resp;
-  ClientContext context;
+  grpc::ClientContext context;
   context.AddMetadata("x-goog-request-params",
                       absl::StrCat("name=", key_name_));
 
-  auto status =  kms_stub_->Encrypt(&context, req, &resp);
+  grpc::Status status = kms_stub_->Encrypt(&context, req, &resp);
 
-  if (status.ok()) return resp.ciphertext();
-  return Status(
-      absl::StatusCode::kInvalidArgument,
-      absl::StrCat("GCP KMS encryption failed: ", status.error_message()));
+  if (!status.ok()) {
+    return util::Status(
+        static_cast<absl::StatusCode>(status.error_code()),
+        absl::StrCat("GCP KMS encryption failed: ", status.error_message()));
+  }
+  return resp.ciphertext();
 }
 
-StatusOr<std::string> GcpKmsAead::Decrypt(
+util::StatusOr<std::string> GcpKmsAead::Decrypt(
     absl::string_view ciphertext, absl::string_view associated_data) const {
   DecryptRequest req;
   req.set_name(key_name_);
   req.set_ciphertext(std::string(ciphertext));
   req.set_additional_authenticated_data(std::string(associated_data));
+  if (kms_client_) {
+    auto response = kms_client_->Decrypt(req);
+    if (!response.ok()) {
+      return util::Status(absl::StatusCode::kInvalidArgument,
+                          absl::StrCat("GCP KMS decryption failed: ",
+                                       response.status().message()));
+    }
+    return response->plaintext();
+  }
 
   DecryptResponse resp;
-  ClientContext context;
+  grpc::ClientContext context;
   context.AddMetadata("x-goog-request-params",
                       absl::StrCat("name=", key_name_));
 
-  auto status =  kms_stub_->Decrypt(&context, req, &resp);
+  grpc::Status status = kms_stub_->Decrypt(&context, req, &resp);
 
-  if (status.ok()) return resp.plaintext();
-  return Status(
-      absl::StatusCode::kInvalidArgument,
-      absl::StrCat("GCP KMS encryption failed: ", status.error_message()));
+  if (!status.ok()) {
+    return util::Status(
+        static_cast<absl::StatusCode>(status.error_code()),
+        absl::StrCat("GCP KMS decryption failed: ", status.error_message()));
+  }
+  return resp.plaintext();
 }
 
 }  // namespace gcpkms

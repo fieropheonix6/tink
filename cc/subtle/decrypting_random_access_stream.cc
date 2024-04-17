@@ -17,7 +17,10 @@
 #include "tink/subtle/decrypting_random_access_stream.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
+#include <limits>
+#include <memory>
 #include <utility>
 #include <vector>
 

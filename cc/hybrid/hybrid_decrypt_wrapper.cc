@@ -20,7 +20,9 @@
 #include <string>
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
+#include "absl/strings/string_view.h"
 #include "tink/crypto_format.h"
 #include "tink/hybrid_decrypt.h"
 #include "tink/internal/monitoring_util.h"
@@ -52,7 +54,7 @@ class HybridDecryptSetWrapper : public HybridDecrypt {
       absl::string_view ciphertext,
       absl::string_view context_info) const override;
 
-  ~HybridDecryptSetWrapper() override {}
+  ~HybridDecryptSetWrapper() override = default;
 
  private:
   std::unique_ptr<PrimitiveSet<HybridDecrypt>> hybrid_decrypt_set_;
@@ -82,8 +84,6 @@ util::StatusOr<std::string> HybridDecryptSetWrapper::Decrypt(
                 hybrid_decrypt_entry->get_key_id(), ciphertext.size());
           }
           return std::move(decrypt_result.value());
-        } else {
-          // LOG that a matching key didn't decrypt the ciphertext.
         }
       }
     }

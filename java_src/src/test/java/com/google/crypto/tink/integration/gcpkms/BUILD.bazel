@@ -6,9 +6,19 @@ java_test(
     srcs = ["GcpKmsClientTest.java"],
     data = ["//testdata/gcp:credentials"],
     deps = [
+        "//src/main/java/com/google/crypto/tink:aead",
+        "//src/main/java/com/google/crypto/tink:key_template",
+        "//src/main/java/com/google/crypto/tink:key_templates",
         "//src/main/java/com/google/crypto/tink:kms_client",
         "//src/main/java/com/google/crypto/tink:kms_clients",
         "//src/main/java/com/google/crypto/tink:kms_clients_test_util",
+        "//src/main/java/com/google/crypto/tink:registry_cluster",
+        "//src/main/java/com/google/crypto/tink/aead:aead_config",
+        "//src/main/java/com/google/crypto/tink/aead:kms_aead_key_manager",
+        "//src/main/java/com/google/crypto/tink/aead:kms_envelope_aead",
+        "//src/main/java/com/google/crypto/tink/aead:kms_envelope_aead_key_manager",
+        "//src/main/java/com/google/crypto/tink/aead:predefined_aead_parameters",
+        "//src/main/java/com/google/crypto/tink/integration/gcpkms:fake_cloud_kms",
         "//src/main/java/com/google/crypto/tink/integration/gcpkms:gcp_kms_client",
         "@maven//:com_google_truth_truth",
         "@maven//:junit_junit",
@@ -16,9 +26,9 @@ java_test(
 )
 
 java_test(
-    name = "KmsAeadKeyManagerWithGcpTest",
+    name = "GcpKmsIntegrationTest",
     size = "small",
-    srcs = ["KmsAeadKeyManagerWithGcpTest.java"],
+    srcs = ["GcpKmsIntegrationTest.java"],
     data = ["//testdata/gcp:credentials"],
     tags = [
         "manual",
@@ -27,33 +37,19 @@ java_test(
     ],
     deps = [
         "//src/main/java/com/google/crypto/tink:aead",
+        "//src/main/java/com/google/crypto/tink:binary_keyset_reader",
+        "//src/main/java/com/google/crypto/tink:cleartext_keyset_handle",
+        "//src/main/java/com/google/crypto/tink:insecure_secret_key_access",
+        "//src/main/java/com/google/crypto/tink:key_template",
+        "//src/main/java/com/google/crypto/tink:key_templates",
         "//src/main/java/com/google/crypto/tink:registry_cluster",
+        "//src/main/java/com/google/crypto/tink:tink_proto_keyset_format",
         "//src/main/java/com/google/crypto/tink/aead:aead_config",
-        "//src/main/java/com/google/crypto/tink/aead:aead_key_templates",
+        "//src/main/java/com/google/crypto/tink/aead:kms_aead_key_manager",
+        "//src/main/java/com/google/crypto/tink/aead:kms_envelope_aead_key_manager",
         "//src/main/java/com/google/crypto/tink/integration/gcpkms:gcp_kms_client",
-        "//src/main/java/com/google/crypto/tink/testing:test_util",
-        "@maven//:junit_junit",
-    ],
-)
-
-java_test(
-    name = "KmsEnvelopeAeadKeyManagerWithGcpTest",
-    size = "small",
-    srcs = ["KmsEnvelopeAeadKeyManagerWithGcpTest.java"],
-    data = ["//testdata/gcp:credentials"],
-    tags = [
-        "manual",
-        "no_rbe",
-        "requires-network",
-    ],
-    deps = [
-        "//proto:tink_java_proto",
-        "//src/main/java/com/google/crypto/tink:aead",
-        "//src/main/java/com/google/crypto/tink:registry_cluster",
-        "//src/main/java/com/google/crypto/tink/aead:aead_config",
-        "//src/main/java/com/google/crypto/tink/aead:aead_key_templates",
-        "//src/main/java/com/google/crypto/tink/integration/gcpkms:gcp_kms_client",
-        "//src/main/java/com/google/crypto/tink/testing:test_util",
+        "//src/main/java/com/google/crypto/tink/subtle:base64",
+        "@maven//:com_google_truth_truth",
         "@maven//:junit_junit",
     ],
 )
@@ -67,6 +63,32 @@ java_test(
         "//src/main/java/com/google/crypto/tink/integration/gcpkms:fake_cloud_kms",
         "@maven//:com_google_apis_google_api_services_cloudkms",
         "@maven//:com_google_truth_truth",
+        "@maven//:junit_junit",
+    ],
+)
+
+java_test(
+    name = "GcpKmsAeadTest",
+    size = "small",
+    srcs = ["GcpKmsAeadTest.java"],
+    deps = [
+        "//src/main/java/com/google/crypto/tink:aead",
+        "//src/main/java/com/google/crypto/tink:registry_cluster",
+        "//src/main/java/com/google/crypto/tink/aead:aead_config",
+        "//src/main/java/com/google/crypto/tink/aead:predefined_aead_parameters",
+        "//src/main/java/com/google/crypto/tink/integration/gcpkms:fake_cloud_kms",
+        "//src/main/java/com/google/crypto/tink/integration/gcpkms:gcp_kms_aead",
+        "@maven//:com_google_api_gax",
+        "@maven//:com_google_api_gax_grpc",
+        "@maven//:com_google_api_grpc_grpc_google_cloud_kms_v1",
+        "@maven//:com_google_api_grpc_proto_google_cloud_kms_v1",
+        "@maven//:com_google_cloud_google_cloud_kms",
+        "@maven//:com_google_protobuf_protobuf_java",
+        "@maven//:com_google_truth_truth",
+        "@maven//:io_grpc_grpc_api",
+        "@maven//:io_grpc_grpc_inprocess",
+        "@maven//:io_grpc_grpc_stub",
+        "@maven//:io_grpc_grpc_testing",
         "@maven//:junit_junit",
     ],
 )

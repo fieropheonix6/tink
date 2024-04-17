@@ -13,6 +13,7 @@ tink_cc_library(
     absl::strings
     absl::str_format
     absl::time
+    absl::optional
     tink::jwt::internal::json_util
     tink::util::status
     tink::util::statusor
@@ -28,6 +29,7 @@ tink_cc_library(
     absl::status
     absl::strings
     absl::time
+    absl::optional
     tink::util::status
     tink::util::statusor
 )
@@ -46,58 +48,6 @@ tink_cc_library(
     tink::jwt::internal::json_util
     tink::util::status
     tink::util::statusor
-)
-
-# tests
-
-tink_cc_test(
-  NAME raw_jwt_test
-  SRCS
-    raw_jwt_test.cc
-  DEPS
-    tink::jwt::raw_jwt
-    gmock
-    absl::strings
-    absl::time
-    tink::util::test_matchers
-    tink::util::test_util
-)
-
-tink_cc_test(
-  NAME verified_jwt_test
-  SRCS
-    verified_jwt_test.cc
-  DEPS
-    tink::jwt::jwt_mac
-    tink::jwt::jwt_validator
-    tink::jwt::raw_jwt
-    tink::jwt::verified_jwt
-    gmock
-    absl::status
-    absl::strings
-    tink::jwt::internal::jwt_mac_impl
-    tink::jwt::internal::jwt_mac_internal
-    tink::subtle::hmac_boringssl
-    tink::util::constants
-    tink::util::enums
-    tink::util::errors
-    tink::util::protobuf_helper
-    tink::util::secret_data
-    tink::util::test_matchers
-    tink::util::test_util
-)
-
-tink_cc_test(
-  NAME jwt_validator_test
-  SRCS
-    jwt_validator_test.cc
-  DEPS
-    tink::jwt::jwt_validator
-    tink::jwt::raw_jwt
-    gmock
-    absl::strings
-    tink::util::test_matchers
-    tink::util::test_util
 )
 
 tink_cc_library(
@@ -142,16 +92,22 @@ tink_cc_library(
     jwk_set_converter.cc
     jwk_set_converter.h
   DEPS
-    tink::jwt::jwt_public_key_sign
-    tink::jwt::raw_jwt
+    protobuf::libprotobuf
+    absl::memory
+    absl::status
     absl::strings
+    absl::optional
+    crypto
     tink::core::binary_keyset_writer
     tink::core::keyset_handle
+    tink::internal::ec_util
+    tink::internal::ssl_unique_ptr
     tink::jwt::internal::json_util
     tink::jwt::internal::jwt_format
+    tink::subtle::common_enums
     tink::util::keyset_util
+    tink::util::status
     tink::util::statusor
-    tink::proto::common_cc_proto
     tink::proto::jwt_ecdsa_cc_proto
     tink::proto::jwt_rsa_ssa_pkcs1_cc_proto
     tink::proto::jwt_rsa_ssa_pss_cc_proto
@@ -216,6 +172,178 @@ tink_cc_library(
     tink::proto::tink_cc_proto
 )
 
+tink_cc_library(
+  NAME jwt_mac_parameters
+  SRCS
+    jwt_mac_parameters.h
+  DEPS
+    tink::core::parameters
+)
+
+tink_cc_library(
+  NAME jwt_mac_key
+  SRCS
+    jwt_mac_key.h
+  DEPS
+    tink::jwt::jwt_mac_parameters
+    absl::optional
+    tink::core::key
+)
+
+tink_cc_library(
+  NAME jwt_hmac_parameters
+  SRCS
+    jwt_hmac_parameters.cc
+    jwt_hmac_parameters.h
+  DEPS
+    tink::jwt::jwt_mac_parameters
+    absl::status
+    absl::strings
+    tink::core::parameters
+    tink::util::status
+    tink::util::statusor
+)
+
+tink_cc_library(
+  NAME jwt_hmac_key
+  SRCS
+    jwt_hmac_key.cc
+    jwt_hmac_key.h
+  DEPS
+    tink::jwt::jwt_hmac_parameters
+    tink::jwt::jwt_mac_key
+    absl::endian
+    absl::status
+    absl::strings
+    absl::string_view
+    absl::optional
+    tink::core::key
+    tink::core::partial_key_access_token
+    tink::core::restricted_data
+    tink::util::status
+    tink::util::statusor
+)
+
+tink_cc_library(
+  NAME jwt_hmac_proto_serialization
+  SRCS
+    jwt_hmac_proto_serialization.cc
+    jwt_hmac_proto_serialization.h
+  DEPS
+    tink::jwt::jwt_hmac_key
+    tink::jwt::jwt_hmac_parameters
+    absl::status
+    absl::string_view
+    absl::optional
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::core::secret_key_access_token
+    tink::internal::key_parser
+    tink::internal::key_serializer
+    tink::internal::mutable_serialization_registry
+    tink::internal::parameters_parser
+    tink::internal::parameters_serializer
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::util::status
+    tink::util::statusor
+    tink::proto::common_cc_proto
+    tink::proto::jwt_hmac_cc_proto
+    tink::proto::tink_cc_proto
+)
+
+tink_cc_library(
+  NAME jwt_signature_parameters
+  SRCS
+    jwt_signature_parameters.h
+  DEPS
+    tink::core::parameters
+)
+
+tink_cc_library(
+  NAME jwt_signature_public_key
+  SRCS
+    jwt_signature_public_key.h
+  DEPS
+    tink::jwt::jwt_signature_parameters
+    absl::optional
+    tink::core::key
+)
+
+tink_cc_library(
+  NAME jwt_signature_private_key
+  SRCS
+    jwt_signature_private_key.h
+  DEPS
+    tink::jwt::jwt_signature_parameters
+    tink::jwt::jwt_signature_public_key
+    absl::optional
+    tink::core::key
+    tink::core::private_key
+)
+
+# tests
+
+tink_cc_test(
+  NAME raw_jwt_test
+  SRCS
+    raw_jwt_test.cc
+  DEPS
+    tink::jwt::raw_jwt
+    gmock
+    absl::strings
+    absl::time
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::util::test_util
+)
+
+tink_cc_test(
+  NAME verified_jwt_test
+  SRCS
+    verified_jwt_test.cc
+  DEPS
+    tink::jwt::jwt_mac
+    tink::jwt::jwt_validator
+    tink::jwt::raw_jwt
+    tink::jwt::verified_jwt
+    gmock
+    absl::memory
+    absl::status
+    absl::strings
+    absl::time
+    absl::optional
+    tink::core::mac
+    tink::jwt::internal::jwt_mac_impl
+    tink::jwt::internal::jwt_mac_internal
+    tink::subtle::hmac_boringssl
+    tink::util::constants
+    tink::util::enums
+    tink::util::errors
+    tink::util::protobuf_helper
+    tink::util::secret_data
+    tink::util::status
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::util::test_util
+    tink::proto::common_cc_proto
+)
+
+tink_cc_test(
+  NAME jwt_validator_test
+  SRCS
+    jwt_validator_test.cc
+  DEPS
+    tink::jwt::jwt_validator
+    tink::jwt::raw_jwt
+    gmock
+    absl::strings
+    absl::time
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::util::test_util
+)
+
 tink_cc_test(
   NAME jwt_key_templates_test
   SRCS
@@ -231,9 +359,13 @@ tink_cc_test(
     tink::jwt::raw_jwt
     tink::jwt::verified_jwt
     gmock
+    tink::core::keyset_handle
+    tink::config::global_registry
     tink::util::status
+    tink::util::statusor
     tink::util::test_matchers
     tink::util::test_util
+    tink::proto::tink_cc_proto
 )
 
 tink_cc_test(
@@ -246,16 +378,112 @@ tink_cc_test(
     tink::jwt::jwt_public_key_verify
     tink::jwt::jwt_signature_config
     tink::jwt::jwt_validator
+    tink::jwt::raw_jwt
     tink::jwt::verified_jwt
     protobuf::libprotobuf
     gmock
     absl::strings
+    crypto
     tink::core::cleartext_keyset_handle
     tink::core::json_keyset_reader
-    tink::core::json_keyset_writer
     tink::core::keyset_handle
+    tink::core::keyset_reader
+    tink::config::global_registry
     tink::jwt::internal::json_util
+    tink::util::status
+    tink::util::statusor
     tink::util::test_matchers
+    tink::proto::ecdsa_cc_proto
     tink::proto::jwt_ecdsa_cc_proto
     tink::proto::jwt_rsa_ssa_pkcs1_cc_proto
+    tink::proto::tink_cc_proto
+)
+
+tink_cc_test(
+  NAME jwt_signature_config_test
+  SRCS
+    jwt_signature_config_test.cc
+  DEPS
+    tink::jwt::jwt_key_templates
+    tink::jwt::jwt_signature_config
+    gmock
+    crypto
+    tink::core::keyset_handle
+    tink::core::registry
+    tink::config::global_registry
+    tink::internal::fips_utils
+    tink::util::test_matchers
+)
+
+tink_cc_test(
+  NAME jwt_mac_config_test
+  SRCS
+    jwt_mac_config_test.cc
+  DEPS
+    tink::jwt::jwt_key_templates
+    tink::jwt::jwt_mac_config
+    gmock
+    crypto
+    tink::core::keyset_handle
+    tink::core::registry
+    tink::config::global_registry
+    tink::internal::fips_utils
+    tink::util::test_matchers
+)
+
+tink_cc_test(
+  NAME jwt_hmac_parameters_test
+  SRCS
+    jwt_hmac_parameters_test.cc
+  DEPS
+    tink::jwt::jwt_hmac_parameters
+    gmock
+    absl::status
+    tink::util::statusor
+    tink::util::test_matchers
+)
+
+tink_cc_test(
+  NAME jwt_hmac_key_test
+  SRCS
+    jwt_hmac_key_test.cc
+  DEPS
+    tink::jwt::jwt_hmac_key
+    tink::jwt::jwt_hmac_parameters
+    gmock
+    absl::status
+    absl::optional
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::util::statusor
+    tink::util::test_matchers
+)
+
+tink_cc_test(
+  NAME jwt_hmac_proto_serialization_test
+  SRCS
+    jwt_hmac_proto_serialization_test.cc
+  DEPS
+    tink::jwt::jwt_hmac_key
+    tink::jwt::jwt_hmac_parameters
+    tink::jwt::jwt_hmac_proto_serialization
+    gmock
+    absl::status
+    absl::string_view
+    absl::optional
+    tink::core::insecure_secret_key_access
+    tink::core::key
+    tink::core::parameters
+    tink::core::partial_key_access
+    tink::core::restricted_data
+    tink::internal::mutable_serialization_registry
+    tink::internal::proto_key_serialization
+    tink::internal::proto_parameters_serialization
+    tink::internal::serialization
+    tink::subtle::random
+    tink::util::statusor
+    tink::util::test_matchers
+    tink::proto::common_cc_proto
+    tink::proto::jwt_hmac_cc_proto
+    tink::proto::tink_cc_proto
 )

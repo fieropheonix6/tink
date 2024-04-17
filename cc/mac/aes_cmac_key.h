@@ -17,10 +17,12 @@
 #ifndef TINK_MAC_AES_CMAC_KEY_H_
 #define TINK_MAC_AES_CMAC_KEY_H_
 
-#include <memory>
 #include <string>
+#include <utility>
 
+#include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
+#include "tink/key.h"
 #include "tink/mac/aes_cmac_parameters.h"
 #include "tink/mac/mac_key.h"
 #include "tink/partial_key_access_token.h"
@@ -40,17 +42,17 @@ class AesCmacKey : public MacKey {
 
   // Creates a new AES-CMAC key.  If the parameters specify a variant that uses
   // a prefix, then the id is used to compute this prefix.
-  static util::StatusOr<AesCmacKey> Create(AesCmacParameters parameters,
-                                           RestrictedData aes_key_bytes,
+  static util::StatusOr<AesCmacKey> Create(const AesCmacParameters& parameters,
+                                           const RestrictedData& key_bytes,
                                            absl::optional<int> id_requirement,
                                            PartialKeyAccessToken token);
 
   // Returns the underlying AES key.
-  util::StatusOr<RestrictedData> GetAesKey(PartialKeyAccessToken token) const {
-    return aes_key_bytes_;
+  const RestrictedData& GetKeyBytes(PartialKeyAccessToken token) const {
+    return key_bytes_;
   }
 
-  util::StatusOr<std::string> GetOutputPrefix() const override;
+  absl::string_view GetOutputPrefix() const override { return output_prefix_; }
 
   const AesCmacParameters& GetParameters() const override {
     return parameters_;
@@ -63,15 +65,21 @@ class AesCmacKey : public MacKey {
   bool operator==(const Key& other) const override;
 
  private:
-  AesCmacKey(AesCmacParameters parameters, RestrictedData aes_key_bytes,
-             absl::optional<int> id_requirement)
+  AesCmacKey(const AesCmacParameters& parameters,
+             const RestrictedData& key_bytes,
+             absl::optional<int> id_requirement, std::string output_prefix)
       : parameters_(parameters),
-        aes_key_bytes_(aes_key_bytes),
-        id_requirement_(id_requirement) {}
+        key_bytes_(key_bytes),
+        id_requirement_(id_requirement),
+        output_prefix_(std::move(output_prefix)) {}
+
+  static util::StatusOr<std::string> ComputeOutputPrefix(
+      const AesCmacParameters& parameters, absl::optional<int> id_requirement);
 
   AesCmacParameters parameters_;
-  RestrictedData aes_key_bytes_;
+  RestrictedData key_bytes_;
   absl::optional<int> id_requirement_;
+  std::string output_prefix_;
 };
 
 }  // namespace tink

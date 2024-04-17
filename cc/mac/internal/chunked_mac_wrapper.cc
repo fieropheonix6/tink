@@ -21,8 +21,10 @@
 #include <utility>
 #include <vector>
 
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/string_view.h"
 #include "tink/chunked_mac.h"
 #include "tink/crypto_format.h"
 #include "tink/internal/util.h"
@@ -155,7 +157,7 @@ class ChunkedMacSetWrapper : public ChunkedMac {
   util::StatusOr<std::unique_ptr<ChunkedMacVerification>> CreateVerification(
       absl::string_view tag) const override;
 
-  ~ChunkedMacSetWrapper() override {}
+  ~ChunkedMacSetWrapper() override = default;
 
  private:
   std::unique_ptr<PrimitiveSet<ChunkedMac>> mac_set_;

@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2017 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,11 +16,17 @@
 
 package com.google.crypto.tink.streamingaead;
 
-import com.google.crypto.tink.PrimitiveSet;
 import com.google.crypto.tink.PrimitiveWrapper;
-import com.google.crypto.tink.Registry;
 import com.google.crypto.tink.StreamingAead;
+import com.google.crypto.tink.internal.LegacyProtoKey;
+import com.google.crypto.tink.internal.MutablePrimitiveRegistry;
+import com.google.crypto.tink.internal.PrimitiveConstructor;
+import com.google.crypto.tink.internal.PrimitiveRegistry;
+import com.google.crypto.tink.internal.PrimitiveSet;
+import com.google.crypto.tink.streamingaead.internal.LegacyFullStreamingAead;
 import java.security.GeneralSecurityException;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * StreamingAeadWrapper is the implementation of PrimitiveWrapper for the StreamingAead primitive.
@@ -31,6 +37,13 @@ import java.security.GeneralSecurityException;
  * {@link com.google.crypto.tink.proto.OutputPrefixType#RAW}.
  */
 public class StreamingAeadWrapper implements PrimitiveWrapper<StreamingAead, StreamingAead> {
+
+  private static final StreamingAeadWrapper WRAPPER = new StreamingAeadWrapper();
+  private static final PrimitiveConstructor<LegacyProtoKey, StreamingAead>
+      LEGACY_FULL_STREAMING_AEAD_PRIMITIVE_CONSTRUCTOR =
+          PrimitiveConstructor.create(
+              LegacyFullStreamingAead::create, LegacyProtoKey.class, StreamingAead.class);
+
   StreamingAeadWrapper() {}
 
   /**
@@ -40,7 +53,23 @@ public class StreamingAeadWrapper implements PrimitiveWrapper<StreamingAead, Str
   @Override
   public StreamingAead wrap(final PrimitiveSet<StreamingAead> primitives)
       throws GeneralSecurityException {
-    return new StreamingAeadHelper(primitives);
+    List<StreamingAead> allStreamingAeads = new ArrayList<>();
+    for (List<PrimitiveSet.Entry<StreamingAead>> entryList : primitives.getAll()) {
+      // For legacy reasons (Tink always encrypted with non-RAW keys) we use all
+      // primitives, even those which have output_prefix_type != RAW.
+      for (PrimitiveSet.Entry<StreamingAead> entry : entryList) {
+        if (entry.getFullPrimitive() == null) {
+          throw new GeneralSecurityException(
+              "No full primitive set for key id " + entry.getKeyId());
+        }
+        allStreamingAeads.add(entry.getFullPrimitive());
+      }
+    }
+    PrimitiveSet.Entry<StreamingAead> primary = primitives.getPrimary();
+    if (primary == null || primary.getFullPrimitive() == null) {
+      throw new GeneralSecurityException("No primary set");
+    }
+    return new StreamingAeadHelper(allStreamingAeads, primary.getFullPrimitive());
   }
 
   @Override
@@ -54,6 +83,18 @@ public class StreamingAeadWrapper implements PrimitiveWrapper<StreamingAead, Str
   }
 
   public static void register() throws GeneralSecurityException {
-    Registry.registerPrimitiveWrapper(new StreamingAeadWrapper());
+    MutablePrimitiveRegistry.globalInstance().registerPrimitiveWrapper(WRAPPER);
+    MutablePrimitiveRegistry.globalInstance()
+        .registerPrimitiveConstructor(LEGACY_FULL_STREAMING_AEAD_PRIMITIVE_CONSTRUCTOR);
+  }
+
+  /**
+   * registerToInternalPrimitiveRegistry is a non-public method (it takes an argument of an
+   * internal-only type) registering an instance of {@code StreamingAeadWrapper} to the provided
+   * {@code PrimitiveRegistry.Builder}.
+   */
+  public static void registerToInternalPrimitiveRegistry(
+      PrimitiveRegistry.Builder primitiveRegistryBuilder) throws GeneralSecurityException {
+    primitiveRegistryBuilder.registerPrimitiveWrapper(WRAPPER);
   }
 }

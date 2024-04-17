@@ -11,8 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package signature
 
@@ -22,22 +20,17 @@ import (
 
 	"github.com/google/tink/go/core/cryptofmt"
 	"github.com/google/tink/go/core/primitiveset"
-	"github.com/google/tink/go/core/registry"
+	"github.com/google/tink/go/internal/internalregistry"
+	"github.com/google/tink/go/internal/monitoringutil"
 	"github.com/google/tink/go/keyset"
+	"github.com/google/tink/go/monitoring"
 	"github.com/google/tink/go/tink"
 	tinkpb "github.com/google/tink/go/proto/tink_go_proto"
 )
 
 // NewVerifier returns a Verifier primitive from the given keyset handle.
-func NewVerifier(h *keyset.Handle) (tink.Verifier, error) {
-	return NewVerifierWithKeyManager(h, nil /*keyManager*/)
-}
-
-// NewVerifierWithKeyManager returns a Verifier primitive from the given keyset handle and custom key manager.
-//
-// Deprecated: Use [NewVerifier].
-func NewVerifierWithKeyManager(h *keyset.Handle, km registry.KeyManager) (tink.Verifier, error) {
-	ps, err := h.PrimitivesWithKeyManager(km)
+func NewVerifier(handle *keyset.Handle) (tink.Verifier, error) {
+	ps, err := handle.Primitives()
 	if err != nil {
 		return nil, fmt.Errorf("verifier_factory: cannot obtain primitive set: %s", err)
 	}
@@ -47,7 +40,8 @@ func NewVerifierWithKeyManager(h *keyset.Handle, km registry.KeyManager) (tink.V
 // verifierSet is a Verifier implementation that uses the
 // underlying primitive set for verifying.
 type wrappedVerifier struct {
-	ps *primitiveset.PrimitiveSet
+	ps     *primitiveset.PrimitiveSet
+	logger monitoring.Logger
 }
 
 // Asserts that verifierSet implements the Verifier interface.
@@ -65,11 +59,30 @@ func newWrappedVerifier(ps *primitiveset.PrimitiveSet) (*wrappedVerifier, error)
 			}
 		}
 	}
+	logger, err := createVerifierLogger(ps)
+	if err != nil {
+		return nil, err
+	}
+	return &wrappedVerifier{
+		ps:     ps,
+		logger: logger,
+	}, nil
+}
 
-	ret := new(wrappedVerifier)
-	ret.ps = ps
-
-	return ret, nil
+func createVerifierLogger(ps *primitiveset.PrimitiveSet) (monitoring.Logger, error) {
+	// only keysets which contain annotations are monitored.
+	if len(ps.Annotations) == 0 {
+		return &monitoringutil.DoNothingLogger{}, nil
+	}
+	keysetInfo, err := monitoringutil.KeysetInfoFromPrimitiveSet(ps)
+	if err != nil {
+		return nil, err
+	}
+	return internalregistry.GetMonitoringClient().NewLogger(&monitoring.Context{
+		KeysetInfo:  keysetInfo,
+		Primitive:   "public_key_verify",
+		APIFunction: "verify",
+	})
 }
 
 var errInvalidSignature = errors.New("verifier_factory: invalid signature")
@@ -89,7 +102,9 @@ func (v *wrappedVerifier) Verify(signature, data []byte) error {
 		for i := 0; i < len(entries); i++ {
 			var signedData []byte
 			if entries[i].PrefixType == tinkpb.OutputPrefixType_LEGACY {
-				signedData = append(data, byte(0))
+				signedData = make([]byte, 0, len(data)+1)
+				signedData = append(signedData, data...)
+				signedData = append(signedData, byte(0))
 			} else {
 				signedData = data
 			}
@@ -100,6 +115,7 @@ func (v *wrappedVerifier) Verify(signature, data []byte) error {
 			}
 
 			if err = verifier.Verify(signatureNoPrefix, signedData); err == nil {
+				v.logger.Log(entries[i].KeyID, len(signedData))
 				return nil
 			}
 		}
@@ -115,10 +131,11 @@ func (v *wrappedVerifier) Verify(signature, data []byte) error {
 			}
 
 			if err = verifier.Verify(signature, data); err == nil {
+				v.logger.Log(entries[i].KeyID, len(data))
 				return nil
 			}
 		}
 	}
-
+	v.logger.LogFailure()
 	return errInvalidSignature
 }

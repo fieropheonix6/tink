@@ -16,10 +16,13 @@
 
 #include "tink/signature/public_key_sign_wrapper.h"
 
+#include <memory>
 #include <string>
 #include <utility>
 
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
+#include "absl/strings/string_view.h"
 #include "tink/crypto_format.h"
 #include "tink/internal/monitoring_util.h"
 #include "tink/internal/registry_impl.h"
@@ -27,6 +30,7 @@
 #include "tink/monitoring/monitoring.h"
 #include "tink/primitive_set.h"
 #include "tink/public_key_sign.h"
+#include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "proto/tink.pb.h"
 
@@ -63,7 +67,7 @@ class PublicKeySignSetWrapper : public PublicKeySign {
   crypto::tink::util::StatusOr<std::string> Sign(
       absl::string_view data) const override;
 
-  ~PublicKeySignSetWrapper() override {}
+  ~PublicKeySignSetWrapper() override = default;
 
  private:
   std::unique_ptr<PrimitiveSet<PublicKeySign>> public_key_sign_set_;

@@ -37,16 +37,6 @@ namespace tink {
 //
 class HybridConfig {
  public:
-  static constexpr char kHybridDecryptCatalogueName[] = "TinkHybridDecrypt";
-  static constexpr char kHybridDecryptPrimitiveName[] = "HybridDecrypt";
-  static constexpr char kHybridEncryptCatalogueName[] = "TinkHybridEncrypt";
-  static constexpr char kHybridEncryptPrimitiveName[] = "HybridEncrypt";
-
-  // Returns config with implementations of HybridEncrypt and HybridDecrypt
-  // supported in the current Tink release.
-  ABSL_DEPRECATED("This is not supported anymore.")
-  static const google::crypto::tink::RegistryConfig& Latest();
-
   // Registers HybridEncrypt and HybridDecrypt primitive wrappers, and key
   // managers for all implementations of HybridEncrypt and HybridDecrypt from
   // the current Tink release.

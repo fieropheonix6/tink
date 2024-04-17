@@ -19,10 +19,10 @@
 
 #include <memory>
 
-#include "absl/strings/string_view.h"
-#include "absl/synchronization/mutex.h"
 #include "aws/core/auth/AWSCredentialsProvider.h"
 #include "aws/kms/KMSClient.h"
+#include "absl/strings/string_view.h"
+#include "absl/synchronization/mutex.h"
 #include "tink/aead.h"
 #include "tink/kms_client.h"
 #include "tink/kms_clients.h"
@@ -34,19 +34,32 @@ namespace tink {
 namespace integration {
 namespace awskms {
 
-// AwsKmsClient is an implementation of KmsClient for
-// <a href="https://aws.amazon.com/kms/">AWS KMS</a>
+// AwsKmsClient is an implementation of KmsClient for AWS KMS
+// (https://aws.amazon.com/kms/).
 class AwsKmsClient : public crypto::tink::KmsClient {
  public:
+  // Move only.
+  AwsKmsClient(AwsKmsClient&& other) = default;
+  AwsKmsClient& operator=(AwsKmsClient&& other) = default;
+  AwsKmsClient(const AwsKmsClient&) = delete;
+  AwsKmsClient& operator=(const AwsKmsClient&) = delete;
+
   // Creates a new AwsKmsClient that is bound to the key specified in `key_uri`,
   // if not empty, and that uses the credentials in `credentials_path`, if not
   // empty, or the default ones to authenticate to the KMS.
   //
   // If `key_uri` is empty, then the client is not bound to any particular key.
-  static crypto::tink::util::StatusOr<std::unique_ptr<AwsKmsClient>>
-  New(absl::string_view key_uri, absl::string_view credentials_path);
+  static crypto::tink::util::StatusOr<std::unique_ptr<AwsKmsClient>> New(
+      absl::string_view key_uri, absl::string_view credentials_path);
 
-  // Creates a new client and registers it in KMSClients.
+  // Creates a new client and adds it to the global list of KMSClients.
+  //
+  // This function should only be called on startup and not on every operation.
+  // Avoid registering a client more than once.
+  //
+  // It is often not necessary to use this function.  Instead, you can call
+  // AwsKmsAead::New to directly create an Aead object without creating or
+  // registering a client.
   static crypto::tink::util::Status RegisterNewClient(
       absl::string_view key_uri, absl::string_view credentials_path);
 
@@ -55,21 +68,14 @@ class AwsKmsClient : public crypto::tink::KmsClient {
   // to a specific key.
   bool DoesSupport(absl::string_view key_uri) const override;
 
-  // Returns an Aead-primitive backed by KMS key specified by `key_uri`,
-  // provided that this KmsClient does support `key_uri`.
-  crypto::tink::util::StatusOr<std::unique_ptr<Aead>>
-  GetAead(absl::string_view key_uri) const override;
+  crypto::tink::util::StatusOr<std::unique_ptr<Aead>> GetAead(
+      absl::string_view key_uri) const override;
 
  private:
   AwsKmsClient(absl::string_view key_arn, Aws::Auth::AWSCredentials credentials)
       : key_arn_(key_arn), credentials_(credentials) {}
   AwsKmsClient(Aws::Auth::AWSCredentials credentials)
       : credentials_(credentials) {}
-
-  // Initializes AWS API.
-  static void InitAwsApi();
-  static bool aws_api_is_initialized_;
-  static absl::Mutex aws_api_init_mutex_;
 
   std::string key_arn_;
   Aws::Auth::AWSCredentials credentials_;

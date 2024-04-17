@@ -16,6 +16,7 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:optional",
         "@com_google_protobuf//:protobuf",
     ],
 )
@@ -51,6 +52,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:optional",
     ],
 )
 
@@ -142,20 +144,26 @@ cc_library(
     include_prefix = "tink/jwt",
     visibility = ["//visibility:public"],
     deps = [
-        ":jwt_public_key_sign",
-        ":raw_jwt",
         "//:binary_keyset_writer",
         "//:keyset_handle",
+        "//internal:ec_util",
+        "//internal:ssl_unique_ptr",
         "//jwt/internal:json_util",
         "//jwt/internal:jwt_format",
-        "//proto:common_cc_proto",
         "//proto:jwt_ecdsa_cc_proto",
         "//proto:jwt_rsa_ssa_pkcs1_cc_proto",
         "//proto:jwt_rsa_ssa_pss_cc_proto",
         "//proto:tink_cc_proto",
+        "//subtle:common_enums",
         "//util:keyset_util",
+        "//util:status",
         "//util:statusor",
+        "@boringssl//:crypto",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:optional",
+        "@com_google_protobuf//:protobuf",
     ],
 )
 
@@ -184,6 +192,120 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "jwt_mac_parameters",
+    hdrs = ["jwt_mac_parameters.h"],
+    include_prefix = "tink/jwt",
+    deps = ["//:parameters"],
+)
+
+cc_library(
+    name = "jwt_mac_key",
+    hdrs = ["jwt_mac_key.h"],
+    include_prefix = "tink/jwt",
+    deps = [
+        ":jwt_mac_parameters",
+        "//:key",
+        "@com_google_absl//absl/types:optional",
+    ],
+)
+
+cc_library(
+    name = "jwt_hmac_parameters",
+    srcs = ["jwt_hmac_parameters.cc"],
+    hdrs = ["jwt_hmac_parameters.h"],
+    include_prefix = "tink/jwt",
+    deps = [
+        ":jwt_mac_parameters",
+        "//:parameters",
+        "//util:status",
+        "//util:statusor",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_library(
+    name = "jwt_hmac_key",
+    srcs = ["jwt_hmac_key.cc"],
+    hdrs = ["jwt_hmac_key.h"],
+    include_prefix = "tink/jwt",
+    deps = [
+        ":jwt_hmac_parameters",
+        ":jwt_mac_key",
+        "//:key",
+        "//:partial_key_access_token",
+        "//:restricted_data",
+        "//util:status",
+        "//util:statusor",
+        "@com_google_absl//absl/base:endian",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:optional",
+    ],
+)
+
+cc_library(
+    name = "jwt_hmac_proto_serialization",
+    srcs = ["jwt_hmac_proto_serialization.cc"],
+    hdrs = ["jwt_hmac_proto_serialization.h"],
+    include_prefix = "tink/jwt",
+    deps = [
+        ":jwt_hmac_key",
+        ":jwt_hmac_parameters",
+        "//:partial_key_access",
+        "//:restricted_data",
+        "//:secret_key_access_token",
+        "//internal:key_parser",
+        "//internal:key_serializer",
+        "//internal:mutable_serialization_registry",
+        "//internal:parameters_parser",
+        "//internal:parameters_serializer",
+        "//internal:proto_key_serialization",
+        "//internal:proto_parameters_serialization",
+        "//proto:common_cc_proto",
+        "//proto:jwt_hmac_cc_proto",
+        "//proto:tink_cc_proto",
+        "//util:status",
+        "//util:statusor",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:optional",
+    ],
+)
+
+cc_library(
+    name = "jwt_signature_parameters",
+    hdrs = ["jwt_signature_parameters.h"],
+    include_prefix = "tink/jwt",
+    deps = ["//:parameters"],
+)
+
+cc_library(
+    name = "jwt_signature_public_key",
+    hdrs = ["jwt_signature_public_key.h"],
+    include_prefix = "tink/jwt",
+    deps = [
+        ":jwt_signature_parameters",
+        "//:key",
+        "@com_google_absl//absl/types:optional",
+    ],
+)
+
+cc_library(
+    name = "jwt_signature_private_key",
+    hdrs = ["jwt_signature_private_key.h"],
+    include_prefix = "tink/jwt",
+    deps = [
+        ":jwt_signature_parameters",
+        ":jwt_signature_public_key",
+        "//:key",
+        "//:private_key",
+        "@com_google_absl//absl/types:optional",
+    ],
+)
+
 # tests
 
 cc_test(
@@ -192,6 +314,7 @@ cc_test(
     srcs = ["raw_jwt_test.cc"],
     deps = [
         ":raw_jwt",
+        "//util:statusor",
         "//util:test_matchers",
         "//util:test_util",
         "@com_google_absl//absl/strings",
@@ -209,18 +332,25 @@ cc_test(
         ":jwt_validator",
         ":raw_jwt",
         ":verified_jwt",
+        "//:mac",
         "//jwt/internal:jwt_mac_impl",
         "//jwt/internal:jwt_mac_internal",
+        "//proto:common_cc_proto",
         "//subtle:hmac_boringssl",
         "//util:constants",
         "//util:enums",
         "//util:errors",
         "//util:protobuf_helper",
         "//util:secret_data",
+        "//util:status",
+        "//util:statusor",
         "//util:test_matchers",
         "//util:test_util",
+        "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:optional",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -232,9 +362,11 @@ cc_test(
     deps = [
         ":jwt_validator",
         ":raw_jwt",
+        "//util:statusor",
         "//util:test_matchers",
         "//util:test_util",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -252,7 +384,11 @@ cc_test(
         ":jwt_validator",
         ":raw_jwt",
         ":verified_jwt",
+        "//:keyset_handle",
+        "//config:global_registry",
+        "//proto:tink_cc_proto",
         "//util:status",
+        "//util:statusor",
         "//util:test_matchers",
         "//util:test_util",
         "@com_google_googletest//:gtest_main",
@@ -268,17 +404,115 @@ cc_test(
         ":jwt_public_key_verify",
         ":jwt_signature_config",
         ":jwt_validator",
+        ":raw_jwt",
         ":verified_jwt",
         "//:cleartext_keyset_handle",
         "//:json_keyset_reader",
-        "//:json_keyset_writer",
         "//:keyset_handle",
+        "//:keyset_reader",
+        "//config:global_registry",
         "//jwt/internal:json_util",
+        "//proto:ecdsa_cc_proto",
         "//proto:jwt_ecdsa_cc_proto",
         "//proto:jwt_rsa_ssa_pkcs1_cc_proto",
+        "//proto:tink_cc_proto",
+        "//util:status",
+        "//util:statusor",
         "//util:test_matchers",
+        "@boringssl//:crypto",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
         "@com_google_protobuf//:protobuf",
+    ],
+)
+
+cc_test(
+    name = "jwt_mac_config_test",
+    srcs = ["jwt_mac_config_test.cc"],
+    tags = ["fips"],
+    deps = [
+        ":jwt_key_templates",
+        ":jwt_mac_config",
+        "//:keyset_handle",
+        "//:registry",
+        "//config:global_registry",
+        "//internal:fips_utils",
+        "//util:test_matchers",
+        "@boringssl//:crypto",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "jwt_signature_config_test",
+    srcs = ["jwt_signature_config_test.cc"],
+    tags = ["fips"],
+    deps = [
+        ":jwt_key_templates",
+        ":jwt_signature_config",
+        "//:keyset_handle",
+        "//:registry",
+        "//config:global_registry",
+        "//internal:fips_utils",
+        "//util:test_matchers",
+        "@boringssl//:crypto",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "jwt_hmac_parameters_test",
+    srcs = ["jwt_hmac_parameters_test.cc"],
+    deps = [
+        ":jwt_hmac_parameters",
+        "//util:statusor",
+        "//util:test_matchers",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "jwt_hmac_key_test",
+    srcs = ["jwt_hmac_key_test.cc"],
+    deps = [
+        ":jwt_hmac_key",
+        ":jwt_hmac_parameters",
+        "//:partial_key_access",
+        "//:restricted_data",
+        "//util:statusor",
+        "//util:test_matchers",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:optional",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "jwt_hmac_proto_serialization_test",
+    srcs = ["jwt_hmac_proto_serialization_test.cc"],
+    deps = [
+        ":jwt_hmac_key",
+        ":jwt_hmac_parameters",
+        ":jwt_hmac_proto_serialization",
+        "//:insecure_secret_key_access",
+        "//:key",
+        "//:parameters",
+        "//:partial_key_access",
+        "//:restricted_data",
+        "//internal:mutable_serialization_registry",
+        "//internal:proto_key_serialization",
+        "//internal:proto_parameters_serialization",
+        "//internal:serialization",
+        "//proto:common_cc_proto",
+        "//proto:jwt_hmac_cc_proto",
+        "//proto:tink_cc_proto",
+        "//subtle:random",
+        "//util:statusor",
+        "//util:test_matchers",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:optional",
+        "@com_google_googletest//:gtest_main",
     ],
 )

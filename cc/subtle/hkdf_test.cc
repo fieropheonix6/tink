@@ -16,7 +16,9 @@
 
 #include "tink/subtle/hkdf.h"
 
+#include <cstddef>
 #include <string>
+#include <vector>
 
 #include "gtest/gtest.h"
 #include "absl/strings/escaping.h"

@@ -17,16 +17,20 @@
 #ifndef TINK_STREAMINGAEAD_DECRYPTING_RANDOM_ACCESS_STREAM_H_
 #define TINK_STREAMINGAEAD_DECRYPTING_RANDOM_ACCESS_STREAM_H_
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/base/thread_annotations.h"
+#include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
 #include "tink/primitive_set.h"
 #include "tink/random_access_stream.h"
 #include "tink/streaming_aead.h"
 #include "tink/util/buffer.h"
+#include "tink/util/status.h"
 #include "tink/util/statusor.h"
 
 namespace crypto {
@@ -50,7 +54,7 @@ class DecryptingRandomAccessStream : public crypto::tink::RandomAccessStream {
       std::unique_ptr<crypto::tink::RandomAccessStream> ciphertext_source,
       absl::string_view associated_data);
 
-  ~DecryptingRandomAccessStream() override {}
+  ~DecryptingRandomAccessStream() override = default;
   crypto::tink::util::Status PRead(int64_t position, int count,
       crypto::tink::util::Buffer* dest_buffer) override;
   crypto::tink::util::StatusOr<int64_t> size() override;
@@ -66,13 +70,17 @@ class DecryptingRandomAccessStream : public crypto::tink::RandomAccessStream {
         associated_data_(associated_data),
         attempted_matching_(false),
         matching_stream_(nullptr) {}
+
+  crypto::tink::util::StatusOr<crypto::tink::RandomAccessStream*>
+  GetMatchedStream() const;
+
   std::shared_ptr<
       crypto::tink::PrimitiveSet<crypto::tink::StreamingAead>> primitives_;
   std::unique_ptr<crypto::tink::RandomAccessStream> ciphertext_source_;
   std::string associated_data_;
   mutable absl::Mutex matching_mutex_;
-  bool attempted_matching_ ABSL_GUARDED_BY(matching_mutex_);
-  std::unique_ptr<crypto::tink::RandomAccessStream> matching_stream_
+  mutable bool attempted_matching_ ABSL_GUARDED_BY(matching_mutex_);
+  mutable std::unique_ptr<crypto::tink::RandomAccessStream> matching_stream_
       ABSL_GUARDED_BY(matching_mutex_);
 };
 

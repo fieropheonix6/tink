@@ -11,7 +11,9 @@ cc_library(
         "//util:errors",
         "//util:statusor",
         "@boringssl//:crypto",
+        "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -35,6 +37,7 @@ cc_library(
     include_prefix = "tink/aead/internal",
     deps = [
         ":aead_util",
+        "//internal:call_with_core_dump_protection",
         "//internal:err_util",
         "//internal:ssl_unique_ptr",
         "//internal:util",
@@ -42,6 +45,7 @@ cc_library(
         "//util:status",
         "//util:statusor",
         "@boringssl//:crypto",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
@@ -61,14 +65,14 @@ cc_library(
         "//internal:ssl_unique_ptr",
         "//subtle:random",
         "//subtle:subtle_util",
-        "//util:errors",
         "//util:secret_data",
         "//util:status",
         "//util:statusor",
         "@boringssl//:crypto",
+        "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:cord",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -79,6 +83,7 @@ cc_library(
     deps = [
         "//util:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -91,6 +96,7 @@ cc_library(
         ":zero_copy_aead",
         "//util:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -108,6 +114,8 @@ cc_library(
         "//util:statusor",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -123,8 +131,12 @@ cc_library(
         "//:primitive_set",
         "//:primitive_wrapper",
         "//subtle:subtle_util",
+        "//util:status",
         "//util:statusor",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -147,6 +159,44 @@ cc_library(
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "key_gen_config_v0",
+    srcs = ["key_gen_config_v0.cc"],
+    hdrs = ["key_gen_config_v0.h"],
+    include_prefix = "tink/aead/internal",
+    deps = [
+        "//:key_gen_configuration",
+        "//aead:aes_ctr_hmac_aead_key_manager",
+        "//aead:aes_eax_key_manager",
+        "//aead:aes_gcm_key_manager",
+        "//aead:aes_gcm_siv_key_manager",
+        "//aead:xchacha20_poly1305_key_manager",
+        "//internal:key_gen_configuration_impl",
+        "//util:status",
+        "@com_google_absl//absl/memory",
+    ],
+)
+
+cc_library(
+    name = "config_v0",
+    srcs = ["config_v0.cc"],
+    hdrs = ["config_v0.h"],
+    include_prefix = "tink/aead/internal",
+    deps = [
+        "//:configuration",
+        "//aead:aead_wrapper",
+        "//aead:aes_ctr_hmac_aead_key_manager",
+        "//aead:aes_eax_key_manager",
+        "//aead:aes_gcm_key_manager",
+        "//aead:aes_gcm_siv_key_manager",
+        "//aead:xchacha20_poly1305_key_manager",
+        "//internal:configuration_impl",
+        "//util:status",
+        "@com_google_absl//absl/memory",
     ],
 )
 
@@ -154,13 +204,14 @@ cc_test(
     name = "cord_aes_gcm_boringssl_test",
     size = "small",
     srcs = ["cord_aes_gcm_boringssl_test.cc"],
-    data = ["@wycheproof//testvectors:aes_gcm"],
+    data = ["//testvectors:aes_gcm"],
     deps = [
         ":cord_aes_gcm_boringssl",
+        "//:aead",
+        "//aead:cord_aead",
         "//subtle:aes_gcm_boringssl",
         "//subtle:wycheproof_util",
         "//util:secret_data",
-        "//util:status",
         "//util:statusor",
         "//util:test_matchers",
         "@boringssl//:crypto",
@@ -178,6 +229,7 @@ cc_test(
     srcs = ["aead_util_test.cc"],
     deps = [
         ":aead_util",
+        "//util:statusor",
         "//util:test_matchers",
         "@boringssl//:crypto",
         "@com_google_googletest//:gtest_main",
@@ -189,9 +241,19 @@ cc_test(
     srcs = ["zero_copy_aead_wrapper_test.cc"],
     deps = [
         ":mock_zero_copy_aead",
+        ":zero_copy_aead",
         ":zero_copy_aead_wrapper",
+        "//:aead",
+        "//:crypto_format",
+        "//:primitive_set",
+        "//proto:tink_cc_proto",
         "//subtle:subtle_util",
+        "//util:statusor",
         "//util:test_matchers",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -199,12 +261,13 @@ cc_test(
 cc_test(
     name = "zero_copy_aes_gcm_boringssl_test",
     srcs = ["zero_copy_aes_gcm_boringssl_test.cc"],
-    data = ["@wycheproof//testvectors:aes_gcm"],
+    data = ["//testvectors:aes_gcm"],
     deps = [
         ":wycheproof_aead",
         ":zero_copy_aead",
         ":zero_copy_aes_gcm_boringssl",
         "//subtle:subtle_util",
+        "//util:secret_data",
         "//util:statusor",
         "//util:test_matchers",
         "@boringssl//:crypto",
@@ -221,6 +284,7 @@ cc_test(
     deps = [
         ":aead_from_zero_copy",
         ":mock_zero_copy_aead",
+        "//util:status",
         "//util:statusor",
         "//util:test_matchers",
         "@com_google_absl//absl/memory",
@@ -235,21 +299,20 @@ cc_test(
     name = "ssl_aead_test",
     srcs = ["ssl_aead_test.cc"],
     data = [
-        "@wycheproof//testvectors:aes_gcm",
-        "@wycheproof//testvectors:aes_gcm_siv",
-        "@wycheproof//testvectors:chacha20_poly1305",
+        "//testvectors:aes_gcm",
+        "//testvectors:aes_gcm_siv",
+        "//testvectors:chacha20_poly1305",
     ],
     deps = [
         ":ssl_aead",
         ":wycheproof_aead",
-        "//config:tink_fips",
+        "//internal:fips_utils",
         "//internal:ssl_util",
         "//subtle:subtle_util",
         "//util:secret_data",
         "//util:statusor",
         "//util:test_matchers",
         "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
@@ -265,8 +328,10 @@ cc_test(
         ":ssl_aead",
         "//config:tink_fips",
         "//internal:ssl_util",
+        "//internal:util",
         "//subtle:subtle_util",
         "//util:secret_data",
+        "//util:status",
         "//util:statusor",
         "//util:test_matchers",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -274,6 +339,34 @@ cc_test(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "config_v0_test",
+    srcs = ["config_v0_test.cc"],
+    deps = [
+        ":config_v0",
+        ":key_gen_config_v0",
+        "//:aead",
+        "//:configuration",
+        "//:key_gen_configuration",
+        "//:keyset_handle",
+        "//aead:aead_key_templates",
+        "//aead:aes_ctr_hmac_aead_key_manager",
+        "//aead:aes_eax_key_manager",
+        "//aead:aes_gcm_key_manager",
+        "//aead:aes_gcm_siv_key_manager",
+        "//aead:xchacha20_poly1305_key_manager",
+        "//internal:configuration_impl",
+        "//internal:key_gen_configuration_impl",
+        "//internal:key_type_info_store",
+        "//internal:keyset_wrapper_store",
+        "//internal:ssl_util",
+        "//proto:tink_cc_proto",
+        "//util:statusor",
+        "//util:test_matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )

@@ -16,6 +16,7 @@
 
 #include "tink/experimental/pqcrypto/signature/sphincs_verify_key_manager.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -28,11 +29,14 @@
 #include "tink/experimental/pqcrypto/signature/subtle/sphincs_subtle_utils.h"
 #include "tink/experimental/pqcrypto/signature/subtle/sphincs_verify.h"
 #include "tink/experimental/pqcrypto/signature/util/enums.h"
+#include "tink/public_key_sign.h"
 #include "tink/public_key_verify.h"
 #include "tink/util/secret_data.h"
 #include "tink/util/status.h"
 #include "tink/util/statusor.h"
 #include "tink/util/test_matchers.h"
+#include "proto/experimental/pqcrypto/sphincs.pb.h"
+#include "proto/tink.pb.h"
 
 extern "C" {
 #include "third_party/pqclean/crypto_sign/sphincs-haraka-128f-robust/api.h"
@@ -103,7 +107,7 @@ struct SphincsTestCase {
 using SphincsVerifyKeyManagerTest = testing::TestWithParam<SphincsTestCase>;
 
 // Helper function that returns a valid sphincs private key.
-StatusOr<SphincsPrivateKey> CreateValidPrivateKey(int32 private_key_size,
+StatusOr<SphincsPrivateKey> CreateValidPrivateKey(int32_t private_key_size,
                                                   SphincsHashType hash_type,
                                                   SphincsVariant variant,
                                                   SphincsSignatureType type) {
@@ -118,7 +122,7 @@ StatusOr<SphincsPrivateKey> CreateValidPrivateKey(int32 private_key_size,
 }
 
 // Helper function that returns a valid sphincs public key.
-StatusOr<SphincsPublicKey> CreateValidPublicKey(int32 private_key_size,
+StatusOr<SphincsPublicKey> CreateValidPublicKey(int32_t private_key_size,
                                                 SphincsHashType hash_type,
                                                 SphincsVariant variant,
                                                 SphincsSignatureType type) {

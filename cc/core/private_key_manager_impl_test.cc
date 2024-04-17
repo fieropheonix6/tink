@@ -15,14 +15,19 @@
 ///////////////////////////////////////////////////////////////////////////////
 #include "tink/core/private_key_manager_impl.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "tink/core/key_manager_impl.h"
+#include "tink/core/key_type_manager.h"
 #include "tink/core/private_key_type_manager.h"
+#include "tink/core/template_util.h"
+#include "tink/key_manager.h"
 #include "tink/registry.h"
 #include "tink/subtle/aes_gcm_boringssl.h"
 #include "tink/subtle/random.h"
@@ -43,16 +48,21 @@ using ::google::crypto::tink::EcdsaKeyFormat;
 using ::google::crypto::tink::EcdsaPrivateKey;
 using ::google::crypto::tink::EcdsaPublicKey;
 using ::google::crypto::tink::EcdsaSignatureEncoding;
-using ::google::crypto::tink::KeyData;
 using ::testing::Eq;
 using ::testing::HasSubstr;
 using ::testing::Return;
 
+}  // namespace
+
 // Placeholders for the primitives. We don't really want to test anything with
 // these except that things compile and List<PrivatePrimitive> is never confused
 // with List<PublicPrimitive> in private_key_manager_impl.
+// NOTE: These are outside of the anonymous namespace to allow compiling with
+// MSVC.
 class PrivatePrimitive {};
 class PublicPrimitive {};
+
+namespace {
 
 class ExamplePrivateKeyTypeManager
     : public PrivateKeyTypeManager<EcdsaPrivateKey, EcdsaKeyFormat,

@@ -11,13 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-////////////////////////////////////////////////////////////////////////////////
 
 package aead
 
 import (
 	"fmt"
+	"io"
 
 	"google.golang.org/protobuf/proto"
 	"github.com/google/tink/go/aead/subtle"
@@ -45,7 +44,7 @@ type aesGCMKeyManager struct{}
 var _ registry.KeyManager = (*aesGCMKeyManager)(nil)
 
 // Primitive creates an AESGCM subtle for the given serialized AESGCMKey proto.
-func (km *aesGCMKeyManager) Primitive(serializedKey []byte) (interface{}, error) {
+func (km *aesGCMKeyManager) Primitive(serializedKey []byte) (any, error) {
 	if len(serializedKey) == 0 {
 		return nil, errInvalidAESGCMKey
 	}
@@ -97,7 +96,7 @@ func (km *aesGCMKeyManager) NewKeyData(serializedKeyFormat []byte) (*tinkpb.KeyD
 	return &tinkpb.KeyData{
 		TypeUrl:         aesGCMTypeURL,
 		Value:           serializedKey,
-		KeyMaterialType: tinkpb.KeyData_SYMMETRIC,
+		KeyMaterialType: km.KeyMaterialType(),
 	}, nil
 }
 
@@ -111,10 +110,41 @@ func (km *aesGCMKeyManager) TypeURL() string {
 	return aesGCMTypeURL
 }
 
+// KeyMaterialType returns the key material type of the key manager.
+func (km *aesGCMKeyManager) KeyMaterialType() tinkpb.KeyData_KeyMaterialType {
+	return tinkpb.KeyData_SYMMETRIC
+}
+
+// DeriveKey derives a new key from serializedKeyFormat and pseudorandomness.
+func (km *aesGCMKeyManager) DeriveKey(serializedKeyFormat []byte, pseudorandomness io.Reader) (proto.Message, error) {
+	if len(serializedKeyFormat) == 0 {
+		return nil, errInvalidAESGCMKeyFormat
+	}
+	keyFormat := new(gcmpb.AesGcmKeyFormat)
+	if err := proto.Unmarshal(serializedKeyFormat, keyFormat); err != nil {
+		return nil, errInvalidAESGCMKeyFormat
+	}
+	if err := km.validateKeyFormat(keyFormat); err != nil {
+		return nil, fmt.Errorf("aes_gcm_key_manager: invalid key format: %s", err)
+	}
+	if err := keyset.ValidateKeyVersion(keyFormat.GetVersion(), aesGCMKeyVersion); err != nil {
+		return nil, fmt.Errorf("aes_gcm_key_manager: invalid key version: %s", err)
+	}
+
+	keyValue := make([]byte, keyFormat.GetKeySize())
+	if _, err := io.ReadFull(pseudorandomness, keyValue); err != nil {
+		return nil, fmt.Errorf("aes_gcm_key_manager: not enough pseudorandomness given")
+	}
+
+	return &gcmpb.AesGcmKey{
+		Version:  aesGCMKeyVersion,
+		KeyValue: keyValue,
+	}, nil
+}
+
 // validateKey validates the given AESGCMKey.
 func (km *aesGCMKeyManager) validateKey(key *gcmpb.AesGcmKey) error {
-	err := keyset.ValidateKeyVersion(key.Version, aesGCMKeyVersion)
-	if err != nil {
+	if err := keyset.ValidateKeyVersion(key.Version, aesGCMKeyVersion); err != nil {
 		return fmt.Errorf("aes_gcm_key_manager: %s", err)
 	}
 	keySize := uint32(len(key.KeyValue))

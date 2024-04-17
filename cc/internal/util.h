@@ -16,6 +16,7 @@
 #ifndef TINK_INTERNAL_UTIL_H_
 #define TINK_INTERNAL_UTIL_H_
 
+#include "absl/base/attributes.h"
 #include "absl/strings/string_view.h"
 
 namespace crypto {
@@ -30,6 +31,23 @@ bool BuffersOverlap(absl::string_view first, absl::string_view second);
 
 // Returns true if `first` fully overlaps with `second`.
 bool BuffersAreIdentical(absl::string_view first, absl::string_view second);
+
+// Returns true if `input` only contains printable ASCII characters (whitespace
+// is not allowed).
+bool IsPrintableAscii(absl::string_view input);
+
+// Returns true if built on Windows; false otherwise.
+inline bool IsWindows() {
+#if defined(_WIN32)
+  return true;
+#else
+  return false;
+#endif
+}
+
+// Wraps Abseil's LOG(FATAL) macro and sets the [noreturn] attribute, which is
+// useful for avoiding false positive [-Werror=return-type] compiler errors.
+ABSL_ATTRIBUTE_NORETURN void LogFatal(absl::string_view msg);
 
 }  // namespace internal
 }  // namespace tink
